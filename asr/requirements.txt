@@ -1,0 +1,7 @@
+faster-whisper
+fastapi
+uvicorn
+python-multipart
+# CUDA 12 runtime for GPU inference; server falls back to CPU without these
+nvidia-cublas-cu12
+nvidia-cudnn-cu12

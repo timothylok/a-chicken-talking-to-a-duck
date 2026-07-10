@@ -206,7 +206,7 @@ Text → Command Router → Agents
 
 #### 1. iPhone client (Cantonese audio → HTTPS)
 
-- `POST https://your-app.vercel.app/api/voice`
+- `POST https://a-chicken-talking-to-a-duck.vercel.app/api/voice`
 - Headers: `Authorization: Bearer <YOUR_VOICE_KEY>`
 - Body: `multipart/form-data` with `file` (audio)
 
