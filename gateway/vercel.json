@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "api/voice.ts": {
+      "maxDuration": 60
+    }
+  }
+}
