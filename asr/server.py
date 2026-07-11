@@ -9,6 +9,7 @@ import io
 import logging
 import os
 import threading
+import time
 
 import numpy as np
 import uvicorn
@@ -16,7 +17,7 @@ from fastapi import FastAPI, HTTPException, Request
 from faster_whisper import WhisperModel
 from starlette.concurrency import run_in_threadpool
 
-from router import route
+from router import route, status_info
 
 MODEL_SIZE = os.environ.get("ASR_MODEL", "medium")
 REQUESTED_LANGUAGE = os.environ.get("ASR_LANGUAGE", "yue")
@@ -61,6 +62,7 @@ def _load_model() -> tuple[WhisperModel, str]:
 
 
 model, DEVICE = _load_model()
+status_info.update(model=MODEL_SIZE, device=DEVICE, started=time.time())
 log.info("model=%s device=%s language=%s", MODEL_SIZE, DEVICE, LANGUAGE)
 
 # One request at a time: inference saturates the machine, and overlapping
@@ -132,7 +134,7 @@ async def inference(request: Request):
 async def command(request: Request):
     data = await _read_audio(request)
     result = await run_in_threadpool(transcribe, data)
-    outcome = route(result["text"])
+    outcome = await run_in_threadpool(route, result["text"])
     log.info("command: %r -> %s (%s)", result["text"], outcome["command"], outcome["status"])
     return {"text": result["text"], **outcome}
 

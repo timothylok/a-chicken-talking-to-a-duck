@@ -76,7 +76,8 @@ Duplicate the shortcut, remove `?mode=command` from the URL, and change step 3 t
 |---|---|
 | command reply (e.g. "voice OS online") | Command matched and executed |
 | "say 確認 to run …" | Destructive command is pending — run the shortcut again and say 確認 (you have 60 seconds), or 取消 to cancel |
-| "no command for: …" | Transcription didn't match any allowlisted phrase — check `asr/router.py` COMMANDS |
+| an English answer to what you said | No command matched — the text went to the Ollama chat fallback (reply-only; chat can never trigger commands) |
+| "chat engine unavailable" | No command matched and Ollama isn't running on the Win11 box |
 | "nothing heard" | Silence or non-speech audio |
 
 ## Troubleshooting
