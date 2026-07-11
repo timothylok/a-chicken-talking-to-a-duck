@@ -43,11 +43,19 @@ Open Shortcuts → **+** (new shortcut), then add these actions in order:
 - Add the action **"Get Dictionary Value"**
 - Configure it to get the value for key **`reply`** in **Contents of URL**
 
-### 4. Speak Text
+### 4. If (error branch — so failures are never silent)
 
-- Add the action **"Speak Text"**
-- Set the text to the **Dictionary Value** variable from step 3
-- Expand and set **Language** to Chinese (Hong Kong) so replies with 確認 are pronounced correctly
+- Add the action **"If"**
+- Condition: **Dictionary Value** (from step 3) **has any value**
+- Inside the **If** branch, add **"Speak Text"**:
+  - Text: the **Dictionary Value** variable from step 3
+  - Expand and set **Language** to Chinese (Hong Kong) so replies with 確認 are pronounced correctly
+- Inside the **Otherwise** branch:
+  - Add **"Get Dictionary Value"**: key **`error`** in **Contents of URL**
+  - Add **"Speak Text"**: a text containing `錯誤 ` followed by that **Dictionary Value** variable
+- The **End If** closes the shortcut
+
+Now a successful command speaks the reply, and a failure speaks the server's reason (e.g. "multipart body must include a 'file' field").
 
 ### 5. Name and trigger
 
@@ -75,6 +83,7 @@ Duplicate the shortcut, remove `?mode=command` from the URL, and change step 3 t
 
 | Symptom | Cause |
 |---|---|
+| "錯誤 multipart body must include a 'file' field" | Step 2 form field misconfigured — Key must be exactly `file`, **Type must be `File`** (Shortcuts defaults to Text!), Value must be the Recorded Audio variable |
 | Spoken reply never comes, shortcut shows 401 | Wrong/missing Authorization header — check `Bearer ` prefix and key |
 | 413 error | Recording too long — keep commands under ~2 minutes (16 MB cap) |
 | 502 error | Win11 box unreachable — check the `Cloudflared` and `VoiceASR` services are running |

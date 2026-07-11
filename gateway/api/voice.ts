@@ -65,8 +65,15 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   if (!upstream.ok) {
+    const detail = await upstream
+      .json()
+      .then((body) => body?.detail)
+      .catch(() => undefined);
     return Response.json(
-      { error: "asr service error", upstreamStatus: upstream.status },
+      {
+        error: typeof detail === "string" ? detail : "asr service error",
+        upstreamStatus: upstream.status,
+      },
       { status: 502 },
     );
   }

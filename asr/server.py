@@ -104,14 +104,18 @@ async def _read_audio(request: Request) -> bytes:
         form = await request.form()
         upload = form.get("file")
         if upload is None or isinstance(upload, str):
+            fields = {k: type(v).__name__ for k, v in form.multi_items()}
+            log.warning("rejected upload: no usable 'file' field, got %s", fields)
             raise HTTPException(status_code=400, detail="multipart body must include a 'file' field")
         data = await upload.read()
     elif content_type.startswith("audio/"):
         data = await request.body()
     else:
+        log.warning("rejected upload: content-type %r", content_type)
         raise HTTPException(status_code=415, detail="expected multipart/form-data or audio/* body")
 
     if not data:
+        log.warning("rejected upload: empty audio body")
         raise HTTPException(status_code=400, detail="empty audio")
     if len(data) > MAX_BODY_BYTES:
         raise HTTPException(status_code=413, detail=f"audio exceeds {MAX_BODY_BYTES} bytes")
