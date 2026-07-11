@@ -294,7 +294,7 @@ Findings from the 2026-07-11 design review, in priority order. Check items off a
 
 #### Critical — do before anything goes live
 
-- [ ] **Lock the tunnel with Cloudflare Access service tokens.** The tunnel hostname is public and bypasses the Vercel gateway key entirely. Gateway sends `CF-Access-Client-Id`/`CF-Access-Client-Secret` headers; Cloudflare rejects all other traffic at the edge so the Win11 box never sees unauthenticated requests.
+- [x] **Lock the tunnel with Cloudflare Access service tokens.** *(Done 2026-07-11: app `voice-asr`, service token `voice-gateway`.)* The tunnel hostname is public and bypasses the Vercel gateway key entirely. Gateway sends `CF-Access-Client-Id`/`CF-Access-Client-Secret` headers; Cloudflare rejects all other traffic at the edge so the Win11 box never sees unauthenticated requests.
 - [ ] **Command allowlist, not fuzzy matching.** Destructive commands (deploys, writes) match only exact allowlisted phrases. If an LLM router is added, it may only output a command ID from a fixed enum — never free-form actions (prompt-injection guard).
 - [ ] **Confirmation step for destructive commands.** Echo the transcription back and require confirm before executing (also guards against Cantonese misrecognition).
 - [ ] **Upload limits at the gateway.** Max file size, max audio duration, content-type validation, rate limiting. ASR inference is compute-heavy — unlimited uploads = trivial DoS of the Win11 box. Note Vercel's ~4.5 MB body limit: enforce compressed audio (AAC/Opus) client-side.
@@ -308,7 +308,7 @@ Findings from the 2026-07-11 design review, in priority order. Check items off a
 
 #### Reliability / usability
 
-- [ ] **Run cloudflared and the ASR server as auto-restarting Windows services**; disable sleep/hibernate on the Win11 box.
+- [x] **Run cloudflared and the ASR server as auto-restarting Windows services**; disable sleep/hibernate on the Win11 box. *(Done 2026-07-11: services `Cloudflared` and `VoiceASR` (NSSM), both auto-start; AC sleep/hibernate disabled.)*
 - [ ] **Health check + external uptime ping** so silent failure (sleep, Windows Update reboot, dead tunnel) gets noticed.
 - [ ] **User feedback channel.** Push or spoken confirmation of success/failure — never silent execution.
 - [ ] **Idempotency keys at the gateway** so double-taps/retries don't run a command twice.

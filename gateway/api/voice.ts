@@ -22,6 +22,8 @@ export async function POST(request: Request): Promise<Response> {
   if (!asrUrl) {
     return Response.json({ error: "gateway misconfigured: ASR_URL not set" }, { status: 500 });
   }
+  const isCommand = new URL(request.url).searchParams.get("mode") === "command";
+  const targetUrl = isCommand ? asrUrl.replace(/\/inference$/, "/command") : asrUrl;
 
   const contentType = request.headers.get("content-type") ?? "";
   if (!contentType.startsWith("multipart/form-data") && !contentType.startsWith("audio/")) {
@@ -52,7 +54,7 @@ export async function POST(request: Request): Promise<Response> {
 
   let upstream: Response;
   try {
-    upstream = await fetch(asrUrl, {
+    upstream = await fetch(targetUrl, {
       method: "POST",
       headers,
       body,
@@ -72,6 +74,11 @@ export async function POST(request: Request): Promise<Response> {
   const result = await upstream.json().catch(() => null);
   if (!result || typeof result.text !== "string") {
     return Response.json({ error: "invalid asr response" }, { status: 502 });
+  }
+
+  if (isCommand) {
+    // Command responses carry router fields (command, status, reply) — pass through.
+    return Response.json(result);
   }
 
   return Response.json({

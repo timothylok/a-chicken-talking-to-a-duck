@@ -16,6 +16,8 @@ from fastapi import FastAPI, HTTPException, Request
 from faster_whisper import WhisperModel
 from starlette.concurrency import run_in_threadpool
 
+from router import route
+
 MODEL_SIZE = os.environ.get("ASR_MODEL", "medium")
 REQUESTED_LANGUAGE = os.environ.get("ASR_LANGUAGE", "yue")
 PORT = int(os.environ.get("ASR_PORT", "9000"))
@@ -96,8 +98,7 @@ def transcribe(data: bytes) -> dict:
     }
 
 
-@app.post("/inference")
-async def inference(request: Request):
+async def _read_audio(request: Request) -> bytes:
     content_type = request.headers.get("content-type", "")
     if content_type.startswith("multipart/form-data"):
         form = await request.form()
@@ -114,8 +115,22 @@ async def inference(request: Request):
         raise HTTPException(status_code=400, detail="empty audio")
     if len(data) > MAX_BODY_BYTES:
         raise HTTPException(status_code=413, detail=f"audio exceeds {MAX_BODY_BYTES} bytes")
+    return data
 
+
+@app.post("/inference")
+async def inference(request: Request):
+    data = await _read_audio(request)
     return await run_in_threadpool(transcribe, data)
+
+
+@app.post("/command")
+async def command(request: Request):
+    data = await _read_audio(request)
+    result = await run_in_threadpool(transcribe, data)
+    outcome = route(result["text"])
+    log.info("command: %r -> %s (%s)", result["text"], outcome["command"], outcome["status"])
+    return {"text": result["text"], **outcome}
 
 
 if __name__ == "__main__":
