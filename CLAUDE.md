@@ -310,7 +310,7 @@ Findings from the 2026-07-11 design review, in priority order. Check items off a
 
 - [x] **Run cloudflared and the ASR server as auto-restarting Windows services**; disable sleep/hibernate on the Win11 box. *(Done 2026-07-11: services `Cloudflared` and `VoiceASR` (NSSM), both auto-start; AC sleep/hibernate disabled.)*
 - [ ] **Health check + external uptime ping** so silent failure (sleep, Windows Update reboot, dead tunnel) gets noticed.
-- [ ] **User feedback channel.** Push or spoken confirmation of success/failure — never silent execution.
+- [x] **User feedback channel.** Push or spoken confirmation of success/failure — never silent execution. *(Done 2026-07-12: shortcut speaks the router's `reply`, with an error branch for failures.)*
 - [ ] **Idempotency keys at the gateway** so double-taps/retries don't run a command twice.
 - [ ] **Benchmark latency on real hardware before locking model size.** Target <3 s end-to-end; `large` on CPU is unusable. Watch the gateway function timeout on long transcriptions.
 - [ ] **Validate Cantonese accuracy early.** Whisper `yue` is weak and Canto-English code-switching degrades it; evaluate SenseVoice against real command phrases. iOS Safari records `audio/mp4` (not webm) — plan server-side conversion to 16 kHz WAV.
