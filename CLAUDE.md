@@ -215,7 +215,7 @@ Text → Command Router → Agents
 Route: `/api/voice`. Responsibilities:
 
 - **Auth** — read `VOICE_GATEWAY_KEY` from env, compare with `Authorization` header.
-- **Forward audio** — stream file to the Cloudflare Tunnel URL, e.g. `https://voice.tt-tunnel.com/inference`.
+- **Forward audio** — stream file to the Cloudflare Tunnel URL, e.g. `https://voice.fittertrack.com/inference`.
 - **Normalize response** — return JSON:
 
 ```json
@@ -234,16 +234,16 @@ Setup on Win11:
 
 1. Install `cloudflared`
 2. Create tunnel
-3. Map hostname (e.g. `voice.tt-tunnel.com`) → `http://localhost:9000`
+3. Map hostname (e.g. `voice.fittertrack.com`) → `http://localhost:9000`
 
 Config example (`config.yml`):
 
 ```yaml
-tunnel: <TUNNEL_UUID>
-credentials-file: C:\Users\tt\.cloudflared\<TUNNEL_UUID>.json
+tunnel: 77c3012c-98ad-4e5d-83c0-80e3423fcc40
+credentials-file: C:\Users\timlo\.cloudflared\77c3012c-98ad-4e5d-83c0-80e3423fcc40.json
 
 ingress:
-  - hostname: voice.tt-tunnel.com
+  - hostname: voice.fittertrack.com
     service: http://localhost:9000
   - service: http_status:404
 ```
@@ -251,10 +251,10 @@ ingress:
 Run tunnel:
 
 ```powershell
-cloudflared tunnel run <TUNNEL_NAME>
+cloudflared tunnel run voice-asr
 ```
 
-Any request to `https://voice.tt-tunnel.com` is forwarded to the local ASR service.
+Any request to `https://voice.fittertrack.com` is forwarded to the local ASR service.
 
 #### 4. Local ASR service (Win11, Cantonese)
 
