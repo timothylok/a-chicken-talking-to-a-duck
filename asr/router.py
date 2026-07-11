@@ -92,8 +92,8 @@ def _ollama_fallback(text: str) -> dict:
     payload = json.dumps({
         "model": OLLAMA_MODEL,
         "prompt": (
-            "Reply in English, in one or two short sentences. "
-            f"The user said:\n{text}"
+            "用香港口語廣東話回覆，一至兩句，唔好用書面語，唔好用普通話詞彙。"
+            f"用戶講咗：\n{text}"
         ),
         "stream": False,
     }).encode()
