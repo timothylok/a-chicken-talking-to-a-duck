@@ -39,6 +39,9 @@ def _register_cuda_dlls():
             bin_dir = os.path.join(list(spec.submodule_search_locations)[0], "bin")
             if os.path.isdir(bin_dir):
                 os.add_dll_directory(bin_dir)
+                # ctranslate2 resolves cuBLAS via plain PATH search, which
+                # add_dll_directory does not affect.
+                os.environ["PATH"] = bin_dir + os.pathsep + os.environ.get("PATH", "")
 
 
 def _load_model() -> tuple[WhisperModel, str]:
