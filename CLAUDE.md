@@ -194,13 +194,14 @@ HTTPS → Cloudflare Tunnel
 Text → Command Router → Agents
 ```
 
-### Stack
+### Stack (as built — live since 2026-07-12)
 
-- **iPhone client** — captures Cantonese audio and sends it over HTTPS. Options: native iOS app (AVAudioRecorder) or web app in Safari using MediaRecorder (`audio/webm` or `audio/wav`).
-- **Vercel API gateway** — Node/TypeScript, stateless secure proxy.
-- **Cloudflare Tunnel** — `cloudflared` on Win11, exposes the local ASR service without opening the machine to the public internet.
-- **Local ASR service** — Faster-Whisper or whisper.cpp on Win11, Cantonese-capable.
-- **Command router + agents** — on the same Win11 box (or nearby server).
+- **iPhone client** — iOS Shortcut (recipe: `iphone-shortcut.md`): Record Audio → POST → speak the `reply` (error branch speaks failures).
+- **Vercel API gateway** — `gateway/api/voice.ts` (ESM, `"type": "module"` required). `POST /api/voice` returns transcription; `?mode=command` routes to the command router and passes its response through.
+- **Cloudflare Tunnel** — Windows service `Cloudflared`, tunnel `voice-asr`, hostname voice.fittertrack.com, locked by Cloudflare Access service token (only the gateway can pass).
+- **Local ASR service** — Windows service `VoiceASR` (NSSM): FastAPI + faster-whisper `medium` on CUDA, `language=zh` (handles spoken Cantonese well), `initial_prompt` built from command vocabulary for phrase accuracy. Python 3.12 at `C:\Program Files\Python312` (Store Python unusable by services).
+- **Command router** — `asr/router.py`: exact normalized-phrase allowlist; destructive commands need 確認 within 60 s. Unmatched speech goes to the Ollama chat fallback (`gemma3:4b`, replies in spoken Cantonese, reply-only — chat can never trigger commands).
+- **Monitoring** — scheduled task "VoiceOS Heartbeat" (`ops/heartbeat.ps1`, every 10 min) → healthchecks.io; logs at `asr/logs/service.log` and `logs/cloudflared.log`.
 
 ### Components
 
@@ -264,23 +265,34 @@ Use Faster-Whisper or whisper.cpp:
 - Endpoint: `POST /inference` with audio
 - Response: transcription JSON (Cantonese supported)
 
-Cantonese settings:
+Cantonese settings (validated in production):
 
-- `language: "yue"` or `zh` with auto-detect
-- Model: `medium` or `large` for better Cantonese accuracy
+- `language=zh` with model `medium` handles spoken Cantonese well (produces 口語 like 講嘢); the `yue` token requires `large-v3`, which doesn't fit the 4 GB GPU — server auto-downgrades `yue`→`zh` for other models
+- Accuracy comes from the command-vocabulary `initial_prompt`, not model size
 
 This is the private speech-to-text engine.
 
 #### 5. Command router + agents
 
-- **Command router** — input: transcription text. Maps phrases → command IDs (e.g. `RUN_DEMARK_SCAN`, `UPDATE_NOTION`). Simple pattern matching + optional LLM router.
-- **Agents** — each command triggers: Notion updates, Vercel deploy hooks, MCP pipelines, quant analysis jobs, or any other defined automation.
+- **Command router** — `asr/router.py`, `POST /command` on the ASR service. Adding a command = one entry in `COMMANDS`: phrases (include traditional + simplified + English variants; mine `asr/logs/service.log` for real misheard forms), `destructive` flag, `run` callable. The Whisper `initial_prompt` rebuilds from `COMMANDS` at startup, so new phrases automatically improve recognition.
+- **Current commands** — `SYSTEM_STATUS` (health info), `LIST_COMMANDS` (self-generating), `RESTART_ASR` (reply-then-exit; NSSM relaunches), `TRIGGER_DEPLOY` (destructive; needs `DEPLOY_HOOK_URL` on the VoiceASR service env).
+- **Chat fallback** — unmatched speech → local Ollama (`OLLAMA_MODEL`, default `gemma3:4b` — best spoken Cantonese of the local models), spoken reply returned. Reply-only by design: LLM output is never routed back into `COMMANDS` (prompt-injection guard).
+- **Planned agents** — Notion updates, Vercel deploy hooks, MCP pipelines, quant analysis jobs (`RUN_DEMARK_SCAN`).
 
 This layer is the automation brain.
 
 ### Environment variables
 
-- `VOICE_GATEWAY_KEY` — stored in Vercel env; shared secret required in the `Authorization` header to hit `/api/voice`
+Gateway (Vercel env; local copy in `gateway/.env`, gitignored):
+- `VOICE_GATEWAY_KEY` — shared secret required in the `Authorization` header to hit `/api/voice`
+- `ASR_URL` — `https://voice.fittertrack.com/inference`
+- `CF_ACCESS_CLIENT_ID` / `CF_ACCESS_CLIENT_SECRET` — Cloudflare Access service token (`voice-gateway`, expires ~2027-07)
+
+ASR service (set via `nssm set VoiceASR AppEnvironmentExtra`; currently only HF_HOME is set):
+- `HF_HOME` — model cache (`C:\Users\timlo\.cache\huggingface`)
+- `ASR_MODEL` / `ASR_LANGUAGE` / `ASR_PORT` — default `medium` / `yue`(→`zh`) / `9000`
+- `OLLAMA_URL` / `OLLAMA_MODEL` — chat fallback, default `http://localhost:11434` / `gemma3:4b`
+- `DEPLOY_HOOK_URL` — arms `TRIGGER_DEPLOY` (not yet configured)
 
 ### Security model
 
