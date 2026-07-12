@@ -26,4 +26,5 @@
 - Chat fallback moved to pure Cantonese: qwen2.5:7b mixed English/emoji into replies ("今日 weather 好似good啦！👋🏻", "Rihanna"); model comparison found gemma3:4b produces genuine 口語 (qwen3:8b gives 書面語). Switched default to gemma3:4b via /api/chat with system prompt; strips <think> tags for thinking models; chat replies now logged (cf6fe85).
 - Accuracy pass from real logs (af384bb): added observed misses 系統狀況/System Health to SYSTEM_STATUS; new LIST_COMMANDS command (有咩指令 — self-generating from COMMANDS); Whisper initial_prompt built from command vocabulary biases decoding toward exact allowlisted phrases.
 - Declined pasted "Agnes AI" language-routing design: Agnes undefined (no endpoint/auth), and forced language=zh means English speech often arrives pre-translated so text-based language detection would misroute. User dropped it.
-- Next: add real commands (Notion, quant jobs, DEPLOY_HOOK_URL), external uptime ping, key-rotation procedure.
+- Heartbeat monitoring: `ops/heartbeat.ps1` checks local ASR /health + Cloudflared service, pings healthchecks.io (check a221e72c…, 30-min period) or POSTs reason to /fail. Scheduled task "VoiceOS Heartbeat" (SYSTEM, every 10 min) registered and verified. Checklist uptime item ticked.
+- Next: add real commands (Notion, quant jobs, DEPLOY_HOOK_URL), rate limiting, key-rotation procedure.
