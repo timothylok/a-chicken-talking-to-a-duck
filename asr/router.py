@@ -17,7 +17,13 @@ log = logging.getLogger("router")
 
 CONFIRM_TTL_SECONDS = 60
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5:7b")
+# gemma3:4b produces the most natural spoken Cantonese of the local models
+# (qwen2.5:7b mixes in English words; qwen3:8b answers in written Chinese).
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "gemma3:4b")
+OLLAMA_SYSTEM_PROMPT = (
+    "你係香港人語音助手。只可以用香港口語廣東話回答，一至兩句。"
+    "絕對唔准用英文單詞、唔准用emoji、唔准用書面語、唔准用普通話詞彙，唔好講粗口。"
+)
 
 # Populated by server.py at startup.
 status_info = {"model": "?", "device": "?", "started": time.time()}
@@ -29,6 +35,10 @@ def _system_status() -> str:
         f"系統正常，模型 {status_info['model']}，"
         f"設備 {status_info['device']}，已運行 {hours:.1f} 小時"
     )
+
+
+def _list_commands() -> str:
+    return "可用指令：" + "、".join(spec["phrases"][0] for spec in COMMANDS.values())
 
 
 def _restart_service() -> str:
@@ -53,11 +63,20 @@ def _trigger_deploy() -> str:
 COMMANDS = {
     "SYSTEM_STATUS": {
         "phrases": [
-            "系統狀態", "系统状态", "檢查系統狀態", "检查系统状态",
-            "健康檢查", "健康检查", "system status", "status", "health check",
+            "系統狀態", "系统状态", "系統狀況", "系统状况",
+            "檢查系統狀態", "检查系统状态", "健康檢查", "健康检查",
+            "system status", "system health", "status", "health check",
         ],
         "destructive": False,
         "run": _system_status,
+    },
+    "LIST_COMMANDS": {
+        "phrases": [
+            "有咩指令", "有什麼指令", "有什么指令", "指令列表",
+            "list commands", "what commands",
+        ],
+        "destructive": False,
+        "run": _list_commands,
     },
     "RESTART_ASR": {
         "phrases": [
@@ -91,25 +110,28 @@ def _ollama_fallback(text: str) -> dict:
     # output is spoken back, never routed into COMMANDS.
     payload = json.dumps({
         "model": OLLAMA_MODEL,
-        "prompt": (
-            "用香港口語廣東話回覆，一至兩句，唔好用書面語，唔好用普通話詞彙。"
-            f"用戶講咗：\n{text}"
-        ),
+        "messages": [
+            {"role": "system", "content": OLLAMA_SYSTEM_PROMPT},
+            {"role": "user", "content": text},
+        ],
         "stream": False,
     }).encode()
     req = urllib.request.Request(
-        f"{OLLAMA_URL}/api/generate",
+        f"{OLLAMA_URL}/api/chat",
         data=payload,
         headers={"Content-Type": "application/json"},
     )
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
-            reply = json.loads(resp.read()).get("response", "").strip()
+            reply = json.loads(resp.read()).get("message", {}).get("content", "")
     except Exception as exc:
         log.error("ollama fallback failed: %s", exc)
         return {"command": None, "status": "chat_error", "reply": "chat engine unavailable"}
+    # Thinking models (qwen3, deepseek-r1) wrap reasoning in <think> tags.
+    reply = re.sub(r"<think>.*?</think>", "", reply, flags=re.S).strip()
     if not reply:
         return {"command": None, "status": "chat_error", "reply": "chat engine returned nothing"}
+    log.info("chat reply (%s): %r", OLLAMA_MODEL, reply)
     return {"command": None, "status": "chat", "reply": reply}
 
 

@@ -17,7 +17,7 @@ from fastapi import FastAPI, HTTPException, Request
 from faster_whisper import WhisperModel
 from starlette.concurrency import run_in_threadpool
 
-from router import route, status_info
+from router import COMMANDS, route, status_info
 
 MODEL_SIZE = os.environ.get("ASR_MODEL", "medium")
 REQUESTED_LANGUAGE = os.environ.get("ASR_LANGUAGE", "yue")
@@ -65,6 +65,12 @@ model, DEVICE = _load_model()
 status_info.update(model=MODEL_SIZE, device=DEVICE, started=time.time())
 log.info("model=%s device=%s language=%s", MODEL_SIZE, DEVICE, LANGUAGE)
 
+# Bias decoding toward the command vocabulary so allowlisted phrases are
+# transcribed exactly (e.g. 系統狀態, not the synonym 系統狀況).
+INITIAL_PROMPT = "以下係廣東話指令或者問題。" + "。".join(
+    p for spec in COMMANDS.values() for p in spec["phrases"] if not p.isascii()
+) + "。確認。取消。"
+
 # One request at a time: inference saturates the machine, and overlapping
 # transcriptions on a 4 GB GPU will OOM.
 inference_lock = threading.Lock()
@@ -81,7 +87,10 @@ def transcribe(data: bytes) -> dict:
     with inference_lock:
         try:
             segments, info = model.transcribe(
-                io.BytesIO(data), language=LANGUAGE, vad_filter=True
+                io.BytesIO(data),
+                language=LANGUAGE,
+                vad_filter=True,
+                initial_prompt=INITIAL_PROMPT,
             )
         except Exception as exc:
             raise HTTPException(status_code=400, detail="could not decode audio") from exc
