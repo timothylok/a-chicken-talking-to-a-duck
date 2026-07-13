@@ -65,12 +65,10 @@ FUEL_LOCATION = os.environ.get("FUEL_LOCATION", "auckland")
 
 
 def _fuel_prices() -> str:
-    out = subprocess.run(
-        [sys.executable, FUEL_CLI, "search", "--location", FUEL_LOCATION,
-         "--fuel", "PULP95", "--limit", "3", "--json"],
-        capture_output=True, text=True, encoding="utf-8", timeout=20,
-    )
-    stations = json.loads(out.stdout)["stations"]
+    stations = _run_skill(
+        FUEL_CLI, "search", "--location", FUEL_LOCATION,
+        "--fuel", "PULP95", "--limit", "3", "--json", timeout=20,
+    )["stations"]
     if not stations:
         return "攞唔到油價資料"
     parts = [f"{s['name']}每公升{float(s['price']) / 100:.2f}蚊" for s in stations]
@@ -88,11 +86,7 @@ def _bus_times() -> str:
     now = dt.datetime.now(dt.timezone.utc)
     stop_name, departures = "", []
     for stop in BUS_STOPS.split(","):
-        out = subprocess.run(
-            [sys.executable, AT_CLI, "departures", stop.strip(), "--json"],
-            capture_output=True, text=True, encoding="utf-8", timeout=20,
-        )
-        data = json.loads(out.stdout)
+        data = _run_skill(AT_CLI, "departures", stop.strip(), "--json", timeout=20)
         stop_name = stop_name or data["stop"]["stop_name"]
         for d in data["departures"]:
             if d.get("expected_time"):
@@ -129,11 +123,7 @@ def _speak_time(hhmm: str) -> str:
 
 
 def _tide_times() -> str:
-    out = subprocess.run(
-        [sys.executable, TIDES_CLI, "next-tide", TIDE_PORT, "--json"],
-        capture_output=True, text=True, encoding="utf-8", timeout=20,
-    )
-    data = json.loads(out.stdout)
+    data = _run_skill(TIDES_CLI, "next-tide", TIDE_PORT, "--json", timeout=20)
     events = data["events"][:2]
     if not events:
         return "攞唔到潮汐資料"
@@ -178,11 +168,7 @@ def _bin_day() -> str:
     if not BIN_ADDRESS:
         return "未設定屋企地址，要喺服務環境變數加BIN_ADDRESS"
     args = ["--property-id", BIN_ADDRESS] if BIN_ADDRESS.isdigit() else [BIN_ADDRESS]
-    out = subprocess.run(
-        [sys.executable, BINS_CLI, "--json", *args],
-        capture_output=True, text=True, encoding="utf-8", timeout=30,
-    )
-    dates = json.loads(out.stdout)["household"]["next_dates"]
+    dates = _run_skill(BINS_CLI, "--json", *args)["household"]["next_dates"]
     labels = [("rubbish", "垃圾"), ("food_scraps", "廚餘"), ("recycling", "回收")]
     by_date = {}
     for key, label in labels:
@@ -192,6 +178,62 @@ def _bin_day() -> str:
         return "攞唔到收垃圾日資料"
     parts = [f"{'同'.join(ls)}{_speak_date(d)}收" for d, ls in by_date.items()]
     return "，".join(parts) + "。記住前一晚或者朝早七點前擺出嚟"
+
+
+def _run_skill(cli: str, *args: str, timeout: int = 30) -> dict:
+    # PYTHONIOENCODING forces the child's stdout to UTF-8: under the service
+    # it defaults to cp1252, and JSON containing macrons (rūnanga, Whangārei)
+    # kills the child with UnicodeEncodeError before it prints anything.
+    out = subprocess.run(
+        [sys.executable, cli, *args],
+        capture_output=True, text=True, encoding="utf-8", timeout=timeout,
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+    )
+    return json.loads(out.stdout)
+
+
+# TheColab nz-news skill: keyless RSS aggregation across major NZ outlets.
+NEWS_CLI = "D:/ai/thecolab-skills/skills/nz-news/scripts/cli.py"
+
+
+def _translate_headline(title: str) -> str:
+    # iOS TTS reads English headlines poorly mid-Cantonese, so translate them
+    # locally; person and place names stay in English (translating them makes
+    # the TTS worse, not better). One call per headline: batch translation
+    # proved unparseable (the model adds preambles or splits lines).
+    prompt = (
+        "將呢條新聞標題翻譯做香港口語廣東話，人名、地名同機構名保留英文原文。"
+        "只准輸出譯文嗰一句，唔好加編號、引號、解釋：\n" + title
+    )
+    payload = json.dumps({
+        "model": OLLAMA_MODEL,
+        "messages": [{"role": "user", "content": prompt}],
+        "stream": False,
+    }).encode()
+    req = urllib.request.Request(
+        f"{OLLAMA_URL}/api/chat",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        reply = json.loads(resp.read())["message"]["content"]
+    line = next(ln for ln in reply.strip().splitlines() if ln.strip())
+    return line.strip().strip('"「」').rstrip("。.．")
+
+
+def _news_headlines() -> str:
+    items = _run_skill(NEWS_CLI, "headlines", "--limit", "3", "--json")["items"]
+    if not items:
+        return "攞唔到新聞"
+    spoken = []
+    for item in items[:3]:
+        try:
+            spoken.append(_translate_headline(item["title"]))
+        except Exception as exc:
+            log.error("headline translation failed, using English: %s", exc)
+            spoken.append(item["title"])
+    parts = [f"{o}，{t}" for o, t in zip(("第一", "第二", "第三"), spoken)]
+    return "今日新聞：" + "。".join(parts)
 
 
 # Auckland, New Zealand. Open-Meteo is keyless; forecast_days=1 keeps it to today.
@@ -300,6 +342,16 @@ COMMANDS = {
         "destructive": False,
         "run": _bin_day,
     },
+    "NEWS_HEADLINES": {
+        "phrases": [
+            "新聞", "新闻", "今日新聞", "今日新闻", "有咩新聞", "新聞頭條",
+            "news", "news headlines", "headlines", "what's the news",
+        ],
+        "destructive": False,
+        # Full English headlines: word-by-word pauses would mangle them.
+        "pause_english": False,
+        "run": _news_headlines,
+    },
     "RESTART_ASR": {
         "phrases": [
             "重啟語音系統", "重启语音系统", "重新啟動語音系統", "重新启动语音系统",
@@ -366,7 +418,9 @@ def _pause_english(text: str) -> str:
 
 def _execute(command_id: str) -> dict:
     try:
-        reply = _pause_english(COMMANDS[command_id]["run"]())
+        reply = COMMANDS[command_id]["run"]()
+        if COMMANDS[command_id].get("pause_english", True):
+            reply = _pause_english(reply)
         log.info("command %s reply: %r", command_id, reply)
         return {"command": command_id, "status": "executed", "reply": reply}
     except Exception as exc:

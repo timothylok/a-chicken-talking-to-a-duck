@@ -29,6 +29,7 @@ DESCRIPTIONS = {
     "BUS_TIMES": "報告Glenfield Mall嚟緊嘅三班巴士：路線同幾多分鐘後開",
     "TIDE_TIMES": "報告奧克蘭下次潮漲潮退嘅時間同水位",
     "BIN_DAY": "報告屋企下次收垃圾、廚餘同回收嘅日子",
+    "NEWS_HEADLINES": "用廣東話讀出紐西蘭今日三條頭條新聞（人名地名保留英文）",
     "RESTART_ASR": "重新啟動語音系統（約三十秒後恢復）",
     "TRIGGER_DEPLOY": "重新部署網站",
 }
