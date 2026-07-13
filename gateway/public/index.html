@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>雞同鴨講 — 廣東話語音OS</title>
+<style>
+  :root { --bg: #ffffff; --fg: #1a1a1a; --muted: #666; --line: #e0e0e0; --accent: #b45309; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #16181d; --fg: #e8e8e8; --muted: #9a9a9a; --line: #333; --accent: #f59e0b; }
+  }
+  body { margin: 0 auto; max-width: 44rem; padding: 2rem 1.25rem 4rem;
+         background: var(--bg); color: var(--fg);
+         font-family: -apple-system, "PingFang HK", "Microsoft JhengHei", sans-serif;
+         line-height: 1.75; }
+  h1 { font-size: 1.6rem; margin-bottom: 0.25rem; }
+  h2 { font-size: 1.15rem; margin-top: 2.5rem; border-bottom: 1px solid var(--line);
+       padding-bottom: 0.35rem; }
+  .tagline { color: var(--muted); margin-top: 0; }
+  .flow { color: var(--muted); font-size: 0.9rem; overflow-x: auto; white-space: nowrap; }
+  table { border-collapse: collapse; width: 100%; margin-top: 1rem; }
+  th, td { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--line);
+           vertical-align: top; }
+  th { font-size: 0.85rem; color: var(--muted); font-weight: 600; }
+  .phrase { font-weight: 600; white-space: nowrap; }
+  .alt { color: var(--muted); font-size: 0.85rem; }
+  .confirm { color: var(--accent); font-size: 0.85rem; white-space: nowrap; }
+  footer { margin-top: 3rem; color: var(--muted); font-size: 0.8rem;
+           border-top: 1px solid var(--line); padding-top: 1rem; }
+</style>
+</head>
+<body>
+<h1>雞同鴨講</h1>
+<p class="tagline">私人廣東話語音OS</p>
+
+<h2>呢個係乜嘢嚟？</h2>
+<p>一個自己屋企自己搞掂嘅語音助手。喺iPhone對住個捷徑講廣東話，
+段聲音會經加密通道送返屋企部Windows機，用本地模型認出你講乜，
+再執行指令；唔係指令嘅嘢就交畀本地AI同你傾偈。</p>
+<p>成個過程語音同文字都留喺自己機度做辨識，唔會送去第三方雲端AI，
+指令仲要一字不差先會執行，危險動作重要講「確認」先做。</p>
+<p class="flow">iPhone 🎤 → Vercel → Cloudflare Tunnel → 屋企Win11（語音辨識）→ 指令／AI傾偈 → 講返畀你聽</p>
+
+<h2>指令一覽</h2>
+<table>
+<tr><th>噉樣講</th><th>做乜嘢</th><th>其他講法</th></tr>
+<tr><td class="phrase">系統狀態</td><td>報告系統狀態：模型、設備、已運行幾耐</td><td class="alt">系统状态、系統狀況、系统状况、檢查系統狀態、检查系统状态、健康檢查、健康检查、system status、system health、status、health check</td></tr>
+<tr><td class="phrase">有咩指令</td><td>讀出所有可用指令</td><td class="alt">有什麼指令、有什么指令、指令列表、list commands、what commands</td></tr>
+<tr><td class="phrase">今日天氣</td><td>報告奧克蘭今日天氣：氣溫、天色、最高最低溫、落雨機會</td><td class="alt">今日天气、今天天氣、今天天气、今日天氣如何、今日天气如何、今日天氣點樣、天氣報告、天气报告、weather today、today&#x27;s weather、weather report、weather</td></tr>
+<tr><td class="phrase">重啟語音系統</td><td>重新啟動語音系統（約三十秒後恢復）</td><td class="alt">重启语音系统、重新啟動語音系統、重新启动语音系统、重啟语音系统、restart voice system</td></tr>
+<tr><td class="phrase">重新部署</td><td>重新部署網站<div class="confirm">⚠ 要講「確認」先執行</div></td><td class="alt">重新部署網站、redeploy、deploy</td></tr>
+</table>
+<p>危險指令會先讀返你嘅指令出嚟，六十秒之內講「<strong>確認</strong>」先會執行，講「<strong>取消</strong>」就唔做。</p>
+<p>講其他嘢？唔使指令，直接問 — 本地AI會用廣東話答你。</p>
+
+<footer>私人系統：所有指令都要有授權金鑰先用得。呢頁由 asr/router.py 嘅指令表自動生成。</footer>
+</body>
+</html>

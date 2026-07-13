@@ -28,3 +28,12 @@
 - Declined pasted "Agnes AI" language-routing design: Agnes undefined (no endpoint/auth), and forced language=zh means English speech often arrives pre-translated so text-based language detection would misroute. User dropped it.
 - Heartbeat monitoring: `ops/heartbeat.ps1` checks local ASR /health + Cloudflared service, pings healthchecks.io (check a221e72c…, 30-min period) or POSTs reason to /fail. Scheduled task "VoiceOS Heartbeat" (SYSTEM, every 10 min) registered and verified. Checklist uptime item ticked.
 - Next: add real commands (Notion, quant jobs, DEPLOY_HOOK_URL), rate limiting, key-rotation procedure.
+
+## 2026-07-13
+- Heartbeat validated in real life: server shutdown on 2026-07-12 triggered the healthchecks.io email as designed.
+- Root-caused nonsense weather reply: 今日天氣如何 matched no command → gemma3:4b chat fallback hallucinated (no weather data); today's retry hit an Ollama 30 s timeout (chat_error). Log mining note: service.log stores CJK as \uXXXX escapes — grep escaped forms, not raw characters.
+- New WEATHER_TODAY command (asr/router.py): Open-Meteo API (keyless) for Auckland, New Zealand — user's location, NOT Hong Kong. Current temp + WMO code → spoken-Cantonese description + today's high/low/rain probability. Phrases include the real logged form 今日天氣如何. Route-tested locally: correct Cantonese reply with live data.
+- Voice restart failed first: Whisper produced mixed-script 重啟语音系统 (traditional 啟 + simplified 语音系统), not in the exact-match allowlist → chat fallback → another Ollama timeout. Added the mixed form to RESTART_ASR phrases. Ollama timeout root cause: gemma3:4b cold-load after the shutdown exceeds the router's 30 s limit; warm it replies in ~9 s.
+- Service restarted via elevated Start-Process (Restart-Service needs admin; service runs as SYSTEM — Claude's shell can trigger UAC with Start-Process -Verb RunAs). LIVE-VERIFIED: 今日天氣 → WEATHER_TODAY executed through the full chain, ~3 s.
+- Not yet committed: WEATHER_TODAY + restart phrase changes in asr/router.py.
+- Next: consider warming Ollama at boot (or longer first-call timeout) so post-reboot chat doesn't time out; add real commands (Notion, quant jobs, DEPLOY_HOOK_URL).

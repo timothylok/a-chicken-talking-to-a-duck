@@ -52,6 +52,43 @@ def _restart_service() -> str:
     return "語音系統重啟中，約三十秒後恢復"
 
 
+# Auckland, New Zealand. Open-Meteo is keyless; forecast_days=1 keeps it to today.
+OPEN_METEO_URL = (
+    "https://api.open-meteo.com/v1/forecast"
+    "?latitude=-36.85&longitude=174.76"
+    "&current=temperature_2m,weather_code"
+    "&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max"
+    "&timezone=Pacific%2FAuckland&forecast_days=1"
+)
+
+# WMO weather codes -> spoken Cantonese, as (upper bound, description) ranges.
+_WEATHER_DESCRIPTIONS = [
+    (0, "天晴"), (2, "少雲"), (3, "多雲"), (48, "有霧"), (57, "毛毛雨"),
+    (67, "落緊雨"), (77, "落緊雪"), (82, "有驟雨"), (86, "有驟雪"), (99, "有雷暴"),
+]
+
+
+def _describe_weather(code: int) -> str:
+    for upper, desc in _WEATHER_DESCRIPTIONS:
+        if code <= upper:
+            return desc
+    return ""
+
+
+def _weather_today() -> str:
+    with urllib.request.urlopen(OPEN_METEO_URL, timeout=10) as resp:
+        data = json.loads(resp.read())
+    current = data["current"]
+    daily = data["daily"]
+    return (
+        f"奧克蘭而家{round(current['temperature_2m'])}度，"
+        f"{_describe_weather(current['weather_code'])}。"
+        f"今日最高{round(daily['temperature_2m_max'][0])}度，"
+        f"最低{round(daily['temperature_2m_min'][0])}度，"
+        f"落雨機會百分之{daily['precipitation_probability_max'][0]}"
+    )
+
+
 def _trigger_deploy() -> str:
     hook = os.environ.get("DEPLOY_HOOK_URL")
     if not hook:
@@ -78,9 +115,19 @@ COMMANDS = {
         "destructive": False,
         "run": _list_commands,
     },
+    "WEATHER_TODAY": {
+        "phrases": [
+            "今日天氣", "今日天气", "今天天氣", "今天天气",
+            "今日天氣如何", "今日天气如何", "今日天氣點樣", "天氣報告", "天气报告",
+            "weather today", "today's weather", "weather report", "weather",
+        ],
+        "destructive": False,
+        "run": _weather_today,
+    },
     "RESTART_ASR": {
         "phrases": [
             "重啟語音系統", "重启语音系统", "重新啟動語音系統", "重新启动语音系统",
+            "重啟语音系统",  # observed 2026-07-13: Whisper mixes scripts
             "restart voice system",
         ],
         "destructive": False,
