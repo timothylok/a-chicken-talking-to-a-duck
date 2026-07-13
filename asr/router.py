@@ -164,14 +164,20 @@ def _speak_date(text: str) -> str:
         return text
 
 
+_BIN_STREAMS = [("rubbish", "垃圾"), ("food_scraps", "廚餘"), ("recycling", "回收")]
+
+
+def _bin_next_dates() -> dict:
+    args = ["--property-id", BIN_ADDRESS] if BIN_ADDRESS.isdigit() else [BIN_ADDRESS]
+    return _run_skill(BINS_CLI, "--json", *args)["household"]["next_dates"]
+
+
 def _bin_day() -> str:
     if not BIN_ADDRESS:
         return "未設定屋企地址，要喺服務環境變數加BIN_ADDRESS"
-    args = ["--property-id", BIN_ADDRESS] if BIN_ADDRESS.isdigit() else [BIN_ADDRESS]
-    dates = _run_skill(BINS_CLI, "--json", *args)["household"]["next_dates"]
-    labels = [("rubbish", "垃圾"), ("food_scraps", "廚餘"), ("recycling", "回收")]
+    dates = _bin_next_dates()
     by_date = {}
-    for key, label in labels:
+    for key, label in _BIN_STREAMS:
         if dates.get(key) and dates[key] != "—":
             by_date.setdefault(dates[key], []).append(label)
     if not by_date:
@@ -273,6 +279,38 @@ def _weather_today() -> str:
     )
 
 
+def _briefing_bins() -> str:
+    # Bin reminder only when collection is today or tomorrow — the full
+    # schedule is BIN_DAY's job.
+    if not BIN_ADDRESS:
+        return ""
+    dates = _bin_next_dates()
+    now = dt.datetime.now(NZ_TZ)
+    for offset, word in ((0, "今日"), (1, "聽日")):
+        d = now + dt.timedelta(days=offset)
+        key = f"{d.strftime('%A')}, {d.day} {d.strftime('%B')}"
+        streams = [label for k, label in _BIN_STREAMS if dates.get(k) == key]
+        if streams:
+            return f"{word}收{'同'.join(streams)}，記住朝早七點前擺出嚟"
+    return ""
+
+
+def _morning_briefing() -> str:
+    # Compose existing sections; a failed source drops out instead of
+    # killing the whole briefing.
+    sections = []
+    for fn in (_weather_today, _bus_times, _briefing_bins, _news_headlines):
+        try:
+            part = fn()
+            if part:
+                sections.append(part)
+        except Exception as exc:
+            log.error("briefing section %s failed: %s", fn.__name__, exc)
+    if not sections:
+        return "攞唔到簡報資料"
+    return "早晨！" + "。".join(sections)
+
+
 def _trigger_deploy() -> str:
     hook = os.environ.get("DEPLOY_HOOK_URL")
     if not hook:
@@ -351,6 +389,16 @@ COMMANDS = {
         # Full English headlines: word-by-word pauses would mangle them.
         "pause_english": False,
         "run": _news_headlines,
+    },
+    "MORNING_BRIEFING": {
+        "phrases": [
+            "早晨", "早晨簡報", "今日簡報", "簡報", "早安",
+            "good morning", "morning briefing", "briefing", "daily briefing",
+        ],
+        "destructive": False,
+        # Includes the news section's full English names.
+        "pause_english": False,
+        "run": _morning_briefing,
     },
     "RESTART_ASR": {
         "phrases": [
