@@ -8,6 +8,7 @@ import importlib.util
 import io
 import logging
 import os
+import sys
 import threading
 import time
 
@@ -30,6 +31,9 @@ LANGUAGE = REQUESTED_LANGUAGE
 if REQUESTED_LANGUAGE == "yue" and "large-v3" not in MODEL_SIZE:
     LANGUAGE = "zh"
 
+# Under NSSM stderr defaults to cp1252, which turns Cantonese log lines into
+# \uXXXX escapes; force UTF-8 so transcriptions and replies stay readable.
+sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("asr")
 

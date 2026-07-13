@@ -55,21 +55,24 @@ def _restart_service() -> str:
 
 
 # TheColab petrolmate skill (vetted 2026-07-13, see D:\ai\thecolab-skills):
-# keyless Gaspy-backed fuel prices near Auckland, cheapest first.
+# keyless Gaspy-backed fuel prices, cheapest first. FUEL_LOCATION needs a
+# disambiguated name ("glenfield auckland") — the API covers AU too and a bare
+# suburb can resolve across the Tasman.
 FUEL_CLI = "D:/ai/thecolab-skills/skills/petrolmate-nz-au/scripts/cli.py"
+FUEL_LOCATION = os.environ.get("FUEL_LOCATION", "auckland")
 
 
 def _fuel_prices() -> str:
     out = subprocess.run(
-        [sys.executable, FUEL_CLI, "search", "--location", "auckland",
-         "--fuel", "ULP", "--limit", "3", "--json"],
+        [sys.executable, FUEL_CLI, "search", "--location", FUEL_LOCATION,
+         "--fuel", "PULP95", "--limit", "3", "--json"],
         capture_output=True, text=True, encoding="utf-8", timeout=20,
     )
     stations = json.loads(out.stdout)["stations"]
     if not stations:
         return "攞唔到油價資料"
     parts = [f"{s['name']}每公升{float(s['price']) / 100:.2f}蚊" for s in stations]
-    return "奧克蘭附近最平91汽油：" + "，".join(parts)
+    return f"{FUEL_LOCATION.split()[0].title()}附近最平95汽油：" + "，".join(parts)
 
 
 # Auckland, New Zealand. Open-Meteo is keyless; forecast_days=1 keeps it to today.
@@ -214,6 +217,7 @@ def _ollama_fallback(text: str) -> dict:
 def _execute(command_id: str) -> dict:
     try:
         reply = COMMANDS[command_id]["run"]()
+        log.info("command %s reply: %r", command_id, reply)
         return {"command": command_id, "status": "executed", "reply": reply}
     except Exception as exc:
         log.error("command %s failed: %s", command_id, exc)

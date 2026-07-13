@@ -24,7 +24,7 @@ DESCRIPTIONS = {
     "SYSTEM_STATUS": "報告系統狀態：模型、設備、已運行幾耐",
     "LIST_COMMANDS": "讀出所有可用指令",
     "WEATHER_TODAY": "報告奧克蘭今日天氣：氣溫、天色、最高最低溫、落雨機會",
-    "FUEL_PRICES": "報告奧克蘭附近最平嘅91汽油油站同價錢",
+    "FUEL_PRICES": "報告附近最平嘅95汽油油站同價錢，最平排最先",
     "RESTART_ASR": "重新啟動語音系統（約三十秒後恢復）",
     "TRIGGER_DEPLOY": "重新部署網站",
 }
