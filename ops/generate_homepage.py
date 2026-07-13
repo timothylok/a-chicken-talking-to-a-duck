@@ -25,6 +25,7 @@ DESCRIPTIONS = {
     "LIST_COMMANDS": "讀出所有可用指令",
     "WEATHER_TODAY": "報告奧克蘭今日天氣：氣溫、天色、最高最低溫、落雨機會",
     "FUEL_PRICES": "報告附近最平嘅95汽油油站同價錢，最平排最先",
+    "BUS_TIMES": "報告Glenfield Mall嚟緊嘅三班巴士：路線同幾多分鐘後開",
     "RESTART_ASR": "重新啟動語音系統（約三十秒後恢復）",
     "TRIGGER_DEPLOY": "重新部署網站",
 }

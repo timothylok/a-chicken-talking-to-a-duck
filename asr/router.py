@@ -5,6 +5,7 @@ allowlisted phrases after normalization, and require a confirmation phrase
 within CONFIRM_TTL_SECONDS before executing.
 """
 
+import datetime as dt
 import json
 import logging
 import os
@@ -14,6 +15,7 @@ import sys
 import threading
 import time
 import urllib.request
+import zoneinfo
 
 log = logging.getLogger("router")
 
@@ -73,6 +75,45 @@ def _fuel_prices() -> str:
         return "攞唔到油價資料"
     parts = [f"{s['name']}每公升{float(s['price']) / 100:.2f}蚊" for s in stations]
     return f"{FUEL_LOCATION.split()[0].title()}附近最平95汽油：" + "，".join(parts)
+
+
+# TheColab at-transport skill: live AT departures. BUS_STOPS holds AT stop
+# codes; defaults are the two Glenfield Mall stops (one per direction).
+AT_CLI = "D:/ai/thecolab-skills/skills/at-transport/scripts/cli.py"
+BUS_STOPS = os.environ.get("BUS_STOPS", "3881,4010")
+NZ_TZ = zoneinfo.ZoneInfo("Pacific/Auckland")
+
+
+def _bus_times() -> str:
+    now = dt.datetime.now(dt.timezone.utc)
+    stop_name, departures = "", []
+    for stop in BUS_STOPS.split(","):
+        out = subprocess.run(
+            [sys.executable, AT_CLI, "departures", stop.strip(), "--json"],
+            capture_output=True, text=True, encoding="utf-8", timeout=20,
+        )
+        data = json.loads(out.stdout)
+        stop_name = stop_name or data["stop"]["stop_name"]
+        for d in data["departures"]:
+            if d.get("expected_time"):
+                when = dt.datetime.fromisoformat(d["expected_time"].replace("Z", "+00:00"))
+            elif d.get("scheduled_time"):
+                h, m, s = map(int, d["scheduled_time"].split(":"))
+                local = dt.datetime.now(NZ_TZ)
+                when = local.replace(hour=h % 24, minute=m, second=s)
+            else:
+                continue
+            minutes = round((when - now).total_seconds() / 60)
+            if 0 <= minutes <= 120:
+                departures.append((minutes, d["route_short_name"]))
+    if not departures:
+        return "而家實時系統未見有巴士喺路上，遲啲再問下"
+    departures.sort()
+    parts = [
+        f"{route}號{minutes}分鐘後" if minutes else f"{route}號即刻到"
+        for minutes, route in departures[:3]
+    ]
+    return f"{stop_name}巴士：" + "，".join(parts)
 
 
 # Auckland, New Zealand. Open-Meteo is keyless; forecast_days=1 keeps it to today.
@@ -156,6 +197,14 @@ COMMANDS = {
         "destructive": False,
         "run": _fuel_prices,
     },
+    "BUS_TIMES": {
+        "phrases": [
+            "巴士", "巴士幾時", "幾時有巴士", "巴士時間", "巴士时间", "巴士班次",
+            "bus", "bus times", "bus time", "when is the bus", "next bus",
+        ],
+        "destructive": False,
+        "run": _bus_times,
+    },
     "RESTART_ASR": {
         "phrases": [
             "重啟語音系統", "重启语音系统", "重新啟動語音系統", "重新启动语音系统",
@@ -214,9 +263,15 @@ def _ollama_fallback(text: str) -> dict:
     return {"command": None, "status": "chat", "reply": reply}
 
 
+def _pause_english(text: str) -> str:
+    # iOS TTS reading a Chinese sentence runs adjacent English words together;
+    # a Chinese comma between them forces a clear pause.
+    return re.sub(r"(?<=[A-Za-z'])[ ](?=[A-Za-z'])", "，", text)
+
+
 def _execute(command_id: str) -> dict:
     try:
-        reply = COMMANDS[command_id]["run"]()
+        reply = _pause_english(COMMANDS[command_id]["run"]())
         log.info("command %s reply: %r", command_id, reply)
         return {"command": command_id, "status": "executed", "reply": reply}
     except Exception as exc:
