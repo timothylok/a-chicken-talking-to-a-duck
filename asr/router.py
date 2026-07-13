@@ -145,6 +145,55 @@ def _tide_times() -> str:
     return f"{data['resolved_port']}潮汐：" + "，".join(parts)
 
 
+# TheColab auckland-bin-schedule skill. Collection days are per-property, so
+# BIN_ADDRESS must be a real street address (or numeric property ID) — set it
+# in the service env, not here: a bare suburb fuzzy-matches the wrong area
+# (e.g. "glenfield auckland" resolves to Glenfield Road, Papakura).
+BINS_CLI = "D:/ai/thecolab-skills/skills/auckland-bin-schedule/scripts/cli.py"
+BIN_ADDRESS = os.environ.get("BIN_ADDRESS", "")
+
+_WEEKDAYS_YUE = {
+    "Monday": "禮拜一", "Tuesday": "禮拜二", "Wednesday": "禮拜三",
+    "Thursday": "禮拜四", "Friday": "禮拜五", "Saturday": "禮拜六",
+    "Sunday": "禮拜日",
+}
+_MONTHS = {
+    "January": 1, "February": 2, "March": 3, "April": 4, "May": 5, "June": 6,
+    "July": 7, "August": 8, "September": 9, "October": 10, "November": 11,
+    "December": 12,
+}
+
+
+def _speak_date(text: str) -> str:
+    # "Thursday, 16 July" -> "禮拜四7月16號"
+    try:
+        weekday, rest = text.split(", ")
+        day, month = rest.split(" ")
+        return f"{_WEEKDAYS_YUE[weekday]}{_MONTHS[month]}月{day}號"
+    except (ValueError, KeyError):
+        return text
+
+
+def _bin_day() -> str:
+    if not BIN_ADDRESS:
+        return "未設定屋企地址，要喺服務環境變數加BIN_ADDRESS"
+    args = ["--property-id", BIN_ADDRESS] if BIN_ADDRESS.isdigit() else [BIN_ADDRESS]
+    out = subprocess.run(
+        [sys.executable, BINS_CLI, "--json", *args],
+        capture_output=True, text=True, encoding="utf-8", timeout=30,
+    )
+    dates = json.loads(out.stdout)["household"]["next_dates"]
+    labels = [("rubbish", "垃圾"), ("food_scraps", "廚餘"), ("recycling", "回收")]
+    by_date = {}
+    for key, label in labels:
+        if dates.get(key) and dates[key] != "—":
+            by_date.setdefault(dates[key], []).append(label)
+    if not by_date:
+        return "攞唔到收垃圾日資料"
+    parts = [f"{'同'.join(ls)}{_speak_date(d)}收" for d, ls in by_date.items()]
+    return "，".join(parts) + "。記住前一晚或者朝早七點前擺出嚟"
+
+
 # Auckland, New Zealand. Open-Meteo is keyless; forecast_days=1 keeps it to today.
 OPEN_METEO_URL = (
     "https://api.open-meteo.com/v1/forecast"
@@ -241,6 +290,15 @@ COMMANDS = {
         ],
         "destructive": False,
         "run": _tide_times,
+    },
+    "BIN_DAY": {
+        "phrases": [
+            "幾時收垃圾", "邊日收垃圾", "收垃圾", "倒垃圾", "垃圾日", "垃圾",
+            "幾時倒垃圾", "rubbish day", "bin day", "rubbish collection",
+            "when is rubbish day",
+        ],
+        "destructive": False,
+        "run": _bin_day,
     },
     "RESTART_ASR": {
         "phrases": [
