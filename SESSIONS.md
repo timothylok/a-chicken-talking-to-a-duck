@@ -56,4 +56,5 @@
 - Ollama warm-up at startup: router.warm_ollama() preloads OLLAMA_MODEL via /api/chat with empty messages; server.py fires it in a daemon thread after Whisper loads so a slow/absent Ollama never delays ASR availability. Live-tested: gemma3:4b warmed in 7.5 s.
 - Voice test: first restart attempts failed — user said 重啟語音系統+確認 in one utterance, which the exact-match router sent to chat (RESTART_ASR isn't destructive, so no 確認 needed; declined auto-stripping trailing confirms for destructive commands — would collapse the two-step guard). Command alone worked: service restarted, warm-up confirmed in log, BIN_DAY fine after restart. Committed.
 - README.md written (hackathon-style sections) on request.
-- Gateway rate limiting takes effect on the next push/deploy.
+- Gateway rate limiting takes effect on the next push/deploy. (Pushed; live.)
+- EARTHQUAKES command (地震) added via vetted geonet-nz skill (quakes --mmi 3, felt quakes only): Cantonese locality conversion ("5 km south-east of X" → "X東南面5公里"), relative time (分鐘前/個鐘前/日前), pause_english off for English place names. Voice-tested and committed.

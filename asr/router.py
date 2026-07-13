@@ -216,6 +216,52 @@ def _run_skill(cli: str, *args: str, timeout: int = 30) -> dict:
     return json.loads(out.stdout)
 
 
+# TheColab geonet-nz skill: GeoNet public quake feed, keyless. MMI >= 3
+# limits it to quakes people actually felt.
+QUAKE_CLI = "D:/ai/thecolab-skills/skills/geonet-nz/scripts/cli.py"
+
+_DIRECTIONS_YUE = {
+    "north": "北", "south": "南", "east": "東", "west": "西",
+    "north-east": "東北", "north-west": "西北",
+    "south-east": "東南", "south-west": "西南",
+}
+
+
+def _speak_locality(text: str) -> str:
+    # "5 km south-east of Tokomaru Bay" -> "Tokomaru Bay東南面5公里"
+    m = re.fullmatch(r"(\d+) km ([a-z-]+) of (.+)", text)
+    if m and m.group(2) in _DIRECTIONS_YUE:
+        return f"{m.group(3)}{_DIRECTIONS_YUE[m.group(2)]}面{m.group(1)}公里"
+    m = re.fullmatch(r"Within (\d+) km of (.+)", text)
+    if m:
+        return f"{m.group(2)}附近"
+    return text
+
+
+def _speak_ago(iso: str) -> str:
+    when = dt.datetime.fromisoformat(iso.replace("Z", "+00:00"))
+    minutes = round((dt.datetime.now(dt.timezone.utc) - when).total_seconds() / 60)
+    if minutes < 60:
+        return f"{max(minutes, 1)}分鐘前"
+    if minutes < 24 * 60:
+        return f"{minutes // 60}個鐘前"
+    return f"{minutes // (24 * 60)}日前"
+
+
+def _earthquakes() -> str:
+    quakes = _run_skill(
+        QUAKE_CLI, "quakes", "--mmi", "3", "--limit", "5", "--json", timeout=20,
+    )["quakes"]
+    if not quakes:
+        return "最近冇有感地震"
+    latest = quakes[0]
+    return (
+        f"最近一次有感地震喺{_speak_ago(latest['time'])}，"
+        f"{_speak_locality(latest['locality'])}，"
+        f"{latest['magnitude']:.1f}級，深{round(latest['depth_km'])}公里"
+    )
+
+
 # TheColab nz-news skill: keyless RSS aggregation across major NZ outlets.
 NEWS_CLI = "D:/ai/thecolab-skills/skills/nz-news/scripts/cli.py"
 
@@ -397,6 +443,17 @@ COMMANDS = {
         ],
         "destructive": False,
         "run": _bin_day,
+    },
+    "EARTHQUAKES": {
+        "phrases": [
+            "地震", "有冇地震", "最近地震", "最近有冇地震", "地震消息",
+            "earthquake", "earthquakes", "recent earthquakes", "any earthquakes",
+        ],
+        "destructive": False,
+        # Locality keeps English place names ("Tokomaru Bay") — word-by-word
+        # pauses would mangle them.
+        "pause_english": False,
+        "run": _earthquakes,
     },
     "NEWS_HEADLINES": {
         "phrases": [
