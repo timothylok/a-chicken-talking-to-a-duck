@@ -1,1 +1,3 @@
 logs/
+# third-party skills junctioned from D:\ai\thecolab-skills (not ours to vendor)
+.claude/skills/

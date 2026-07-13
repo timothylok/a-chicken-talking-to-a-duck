@@ -9,6 +9,8 @@ import json
 import logging
 import os
 import re
+import subprocess
+import sys
 import threading
 import time
 import urllib.request
@@ -50,6 +52,24 @@ def _restart_service() -> str:
     timer.start()
     log.warning("restart requested via voice command; exiting in 2 s")
     return "語音系統重啟中，約三十秒後恢復"
+
+
+# TheColab petrolmate skill (vetted 2026-07-13, see D:\ai\thecolab-skills):
+# keyless Gaspy-backed fuel prices near Auckland, cheapest first.
+FUEL_CLI = "D:/ai/thecolab-skills/skills/petrolmate-nz-au/scripts/cli.py"
+
+
+def _fuel_prices() -> str:
+    out = subprocess.run(
+        [sys.executable, FUEL_CLI, "search", "--location", "auckland",
+         "--fuel", "ULP", "--limit", "3", "--json"],
+        capture_output=True, text=True, encoding="utf-8", timeout=20,
+    )
+    stations = json.loads(out.stdout)["stations"]
+    if not stations:
+        return "攞唔到油價資料"
+    parts = [f"{s['name']}每公升{float(s['price']) / 100:.2f}蚊" for s in stations]
+    return "奧克蘭附近最平91汽油：" + "，".join(parts)
 
 
 # Auckland, New Zealand. Open-Meteo is keyless; forecast_days=1 keeps it to today.
@@ -123,6 +143,15 @@ COMMANDS = {
         ],
         "destructive": False,
         "run": _weather_today,
+    },
+    "FUEL_PRICES": {
+        "phrases": [
+            "油價", "油价", "油價幾多", "今日油價", "汽油價錢", "汽油价钱",
+            "邊度入油平", "入油", "fuel price", "fuel prices", "petrol price",
+            "gas price",
+        ],
+        "destructive": False,
+        "run": _fuel_prices,
     },
     "RESTART_ASR": {
         "phrases": [
