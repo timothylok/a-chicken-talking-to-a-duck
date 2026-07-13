@@ -116,6 +116,35 @@ def _bus_times() -> str:
     return f"{stop_name}巴士：" + "，".join(parts)
 
 
+# TheColab nz-tides-surf skill: LINZ tide predictions, keyless.
+TIDES_CLI = "D:/ai/thecolab-skills/skills/nz-tides-surf/scripts/cli.py"
+TIDE_PORT = os.environ.get("TIDE_PORT", "auckland")
+
+
+def _speak_time(hhmm: str) -> str:
+    h, m = map(int, hhmm.split(":"))
+    period = "朝早" if 6 <= h < 12 else "晏晝" if 12 <= h < 18 else "夜晚" if h >= 18 else "半夜"
+    h12 = h % 12 or 12
+    return f"{period}{h12}點{m:02d}分" if m else f"{period}{h12}點"
+
+
+def _tide_times() -> str:
+    out = subprocess.run(
+        [sys.executable, TIDES_CLI, "next-tide", TIDE_PORT, "--json"],
+        capture_output=True, text=True, encoding="utf-8", timeout=20,
+    )
+    data = json.loads(out.stdout)
+    events = data["events"][:2]
+    if not events:
+        return "攞唔到潮汐資料"
+    names = {"high": "潮漲", "low": "潮退"}
+    parts = [
+        f"{names.get(e['type'], e['type'])}{_speak_time(e['time_local'])}，{e['height_m']}米"
+        for e in events
+    ]
+    return f"{data['resolved_port']}潮汐：" + "，".join(parts)
+
+
 # Auckland, New Zealand. Open-Meteo is keyless; forecast_days=1 keeps it to today.
 OPEN_METEO_URL = (
     "https://api.open-meteo.com/v1/forecast"
@@ -204,6 +233,14 @@ COMMANDS = {
         ],
         "destructive": False,
         "run": _bus_times,
+    },
+    "TIDE_TIMES": {
+        "phrases": [
+            "潮汐", "潮漲", "潮退", "幾時潮漲", "幾時潮退", "潮水", "潮汐時間",
+            "tide", "tides", "tide times", "high tide", "next tide",
+        ],
+        "destructive": False,
+        "run": _tide_times,
     },
     "RESTART_ASR": {
         "phrases": [
