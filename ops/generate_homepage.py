@@ -1,8 +1,9 @@
-"""Generate gateway/public/index.html from the command table in asr/router.py.
+"""Generate gateway/public/index.html and CLAUDE.md's command list from COMMANDS.
 
 Run by the pre-commit hook (ops/githooks/pre-commit) whenever asr/router.py
-is committed, so the public home page always matches COMMANDS. Output is
-deterministic: same COMMANDS -> byte-identical HTML.
+is committed, so the public home page and the CLAUDE.md "Current commands"
+marker block always match COMMANDS. Output is deterministic: same COMMANDS ->
+byte-identical files.
 
 Run manually:  python ops/generate_homepage.py
 """
@@ -106,8 +107,26 @@ def render() -> str:
     return PAGE.format(rows="\n".join(rows))
 
 
+CLAUDE_MD = os.path.join(ROOT, "CLAUDE.md")
+MARK_BEGIN, MARK_END = "<!-- COMMANDS:BEGIN -->", "<!-- COMMANDS:END -->"
+
+
+def sync_claude_md() -> None:
+    items = []
+    for command_id, spec in COMMANDS.items():
+        suffix = "，destructive" if spec["destructive"] else ""
+        items.append(f"`{command_id}` ({spec['phrases'][0]}{suffix})")
+    with open(CLAUDE_MD, encoding="utf-8") as f:
+        text = f.read()
+    head, rest = text.split(MARK_BEGIN, 1)
+    _, tail = rest.split(MARK_END, 1)
+    with open(CLAUDE_MD, "w", encoding="utf-8", newline="\n") as f:
+        f.write(head + MARK_BEGIN + "、".join(items) + MARK_END + tail)
+
+
 if __name__ == "__main__":
     os.makedirs(os.path.dirname(OUT_PATH), exist_ok=True)
     with open(OUT_PATH, "w", encoding="utf-8", newline="\n") as f:
         f.write(render())
-    print(f"wrote {os.path.relpath(OUT_PATH, ROOT)} ({len(COMMANDS)} commands)")
+    sync_claude_md()
+    print(f"wrote {os.path.relpath(OUT_PATH, ROOT)} + CLAUDE.md commands ({len(COMMANDS)} commands)")
