@@ -4,6 +4,23 @@ import { createHash, timingSafeEqual } from "node:crypto";
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
 const UPSTREAM_TIMEOUT_MS = 55_000;
 
+// Best-effort per-instance rate limit (no shared store on Vercel functions).
+// Protects the Win11 box from a leaked key or a looping Shortcut: ASR
+// inference is serialized locally, so anything past this is a DoS, not use.
+const RATE_LIMIT_MAX = 10;
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const recentRequests: number[] = [];
+
+function rateLimited(): boolean {
+  const now = Date.now();
+  while (recentRequests.length > 0 && now - recentRequests[0] > RATE_LIMIT_WINDOW_MS) {
+    recentRequests.shift();
+  }
+  if (recentRequests.length >= RATE_LIMIT_MAX) return true;
+  recentRequests.push(now);
+  return false;
+}
+
 function keyMatches(header: string | null): boolean {
   const expected = process.env.VOICE_GATEWAY_KEY;
   if (!expected || !header?.startsWith("Bearer ")) return false;
@@ -16,6 +33,11 @@ function keyMatches(header: string | null): boolean {
 export async function POST(request: Request): Promise<Response> {
   if (!keyMatches(request.headers.get("authorization"))) {
     return Response.json({ error: "unauthorized" }, { status: 401 });
+  }
+
+  // After auth so unauthenticated noise can't lock out the real user.
+  if (rateLimited()) {
+    return Response.json({ error: "too many requests, wait a minute" }, { status: 429 });
   }
 
   const asrUrl = process.env.ASR_URL;

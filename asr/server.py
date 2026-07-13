@@ -18,7 +18,7 @@ from fastapi import FastAPI, HTTPException, Request
 from faster_whisper import WhisperModel
 from starlette.concurrency import run_in_threadpool
 
-from router import COMMANDS, route, status_info
+from router import COMMANDS, route, status_info, warm_ollama
 
 MODEL_SIZE = os.environ.get("ASR_MODEL", "medium")
 REQUESTED_LANGUAGE = os.environ.get("ASR_LANGUAGE", "yue")
@@ -68,6 +68,9 @@ def _load_model() -> tuple[WhisperModel, str]:
 model, DEVICE = _load_model()
 status_info.update(model=MODEL_SIZE, device=DEVICE, started=time.time())
 log.info("model=%s device=%s language=%s", MODEL_SIZE, DEVICE, LANGUAGE)
+
+# Background so a slow/absent Ollama never delays ASR availability.
+threading.Thread(target=warm_ollama, daemon=True).start()
 
 # Bias decoding toward the command vocabulary so allowlisted phrases are
 # transcribed exactly (e.g. 系統狀態, not the synonym 系統狀況).

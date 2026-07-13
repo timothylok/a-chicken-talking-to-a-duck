@@ -33,6 +33,24 @@ OLLAMA_SYSTEM_PROMPT = (
 status_info = {"model": "?", "device": "?", "started": time.time()}
 
 
+def warm_ollama() -> None:
+    # Preload the chat model (an empty messages array makes Ollama load the
+    # model and return) so the first chat or headline translation after a
+    # reboot doesn't burn its 30 s timeout on weight loading.
+    payload = json.dumps({"model": OLLAMA_MODEL, "messages": [], "stream": False}).encode()
+    req = urllib.request.Request(
+        f"{OLLAMA_URL}/api/chat",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=300):
+            pass
+        log.info("ollama model %s warmed", OLLAMA_MODEL)
+    except Exception as exc:
+        log.warning("ollama warm-up failed (chat fallback will load lazily): %s", exc)
+
+
 def _system_status() -> str:
     hours = (time.time() - status_info["started"]) / 3600
     return (
