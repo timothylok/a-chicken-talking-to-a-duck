@@ -616,6 +616,11 @@ COMMANDS = {
     "TIDE_TIMES": {
         "phrases": [
             "潮汐", "潮漲", "潮退", "幾時潮漲", "幾時潮退", "潮水", "潮汐時間",
+            "潮漲潮退", "何時潮漲", "何時潮退",
+            # observed 2026-07-15: Whisper mishearings of the 潮- phrases
+            # (撤退 is a real word, but like 巴西 the command wins here)
+            "超值", "超值時間", "何時朝退", "幾時朝章", "撤退",
+            "潮涨", "潮汐时间", "潮涨潮退",  # simplified as Whisper mixes scripts
             "tide", "tides", "tide times", "high tide", "next tide",
         ],
         "destructive": False,
