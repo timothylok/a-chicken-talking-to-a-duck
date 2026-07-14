@@ -82,7 +82,7 @@ FUEL_CLI = "D:/ai/thecolab-skills/skills/petrolmate-nz-au/scripts/cli.py"
 FUEL_LOCATION = os.environ.get("FUEL_LOCATION", "auckland")
 
 
-def _fuel_prices() -> str:
+def _fuel_prices() -> tuple[str, dict] | str:
     stations = _run_skill(
         FUEL_CLI, "search", "--location", FUEL_LOCATION,
         "--fuel", "PULP95", "--limit", "3", "--json", timeout=20,
@@ -90,7 +90,15 @@ def _fuel_prices() -> str:
     if not stations:
         return "攞唔到油價資料"
     parts = [f"{s['name']}每公升{float(s['price']) / 100:.2f}蚊" for s in stations]
-    return f"{FUEL_LOCATION.split()[0].title()}附近最平95汽油：" + "，".join(parts)
+    reply = f"{FUEL_LOCATION.split()[0].title()}附近最平95汽油：" + "，".join(parts)
+    data = {
+        "fuel": "PULP95",
+        "stations": [
+            {"name": s["name"], "price": round(float(s["price"]) / 100, 2)}
+            for s in stations
+        ],
+    }
+    return reply, data
 
 
 # TheColab at-transport skill: live AT departures. BUS_STOPS holds AT stop
@@ -201,7 +209,9 @@ def _bin_day() -> tuple[str, dict] | str:
     if not by_date:
         return "攞唔到收垃圾日資料"
     parts = [f"{'同'.join(ls)}{_speak_date(d)}收" for d, ls in by_date.items()]
-    return "，".join(parts) + "。記住前一晚或者朝早七點前擺出嚟"
+    reply = "，".join(parts) + "。記住前一晚或者朝早七點前擺出嚟"
+    data = {key: dates[key] for key, _ in _BIN_STREAMS if dates.get(key) and dates[key] != "—"}
+    return reply, data
 
 
 def _run_skill(cli: str, *args: str, timeout: int = 30) -> dict:
@@ -584,6 +594,7 @@ COMMANDS = {
     "BUS_TIMES": {
         "phrases": [
             "巴士", "巴士幾時", "幾時有巴士", "巴士時間", "巴士时间", "巴士班次",
+            "巴西",  # observed 2026-07-14: Whisper mishears 巴士 on short clips
             "bus", "bus times", "bus time", "when is the bus", "next bus",
         ],
         "destructive": False,
@@ -648,6 +659,9 @@ COMMANDS = {
         "phrases": [
             "重啟語音系統", "重启语音系统", "重新啟動語音系統", "重新启动语音系统",
             "重啟语音系统",  # observed 2026-07-13: Whisper mixes scripts
+            # observed 2026-07-14: user naturally says 重置/系統重置/重啟系統
+            "重置語音系統", "重置语音系统", "系統重置", "系统重置",
+            "重啟系統", "重启系统", "重启系統",  # last: mixed-script as Whisper emits it
             "restart voice system",
         ],
         "destructive": False,
