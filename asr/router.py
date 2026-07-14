@@ -108,7 +108,7 @@ BUS_STOPS = os.environ.get("BUS_STOPS", "3881,4010")
 NZ_TZ = zoneinfo.ZoneInfo("Pacific/Auckland")
 
 
-def _bus_times() -> str:
+def _bus_times() -> tuple[str, dict] | str:
     now = dt.datetime.now(dt.timezone.utc)
     stop_name, departures = "", []
     for stop in BUS_STOPS.split(","):
@@ -133,7 +133,13 @@ def _bus_times() -> str:
         f"{route}號{minutes}分鐘後" if minutes else f"{route}號即刻到"
         for minutes, route in departures[:3]
     ]
-    return f"{stop_name}巴士：" + "，".join(parts)
+    data = {
+        "stop": stop_name,
+        "departures": [
+            {"route": route, "minutes": minutes} for minutes, route in departures[:3]
+        ],
+    }
+    return f"{stop_name}巴士：" + "，".join(parts), data
 
 
 # TheColab nz-tides-surf skill: LINZ tide predictions, keyless.

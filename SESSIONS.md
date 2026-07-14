@@ -66,3 +66,14 @@
 - FUEL_PRICES and BIN_DAY now return (reply, data) — stations+prices / per-stream collection dates — so their Notion Data column populates for future comparisons.
 - Log mining round 2: 巴士 misheard as 巴西; restart said naturally as 重置語音系統/系統重置/重启系統 (incl. mixed-script form) — all added as phrase variants.
 - Next: key hygiene (rotation, replay bounding), idempotency keys, watch translation name-hallucination (Middlemore→沙田).
+
+## 2026-07-15
+- Verified WEATHER_COMPARE's first real comparison: yesterday's WEATHER_TODAY data (high 17/low 9) is in history.jsonl; runner invoked directly returned real deltas — 今日最高15度，比琴日低2度，最低8度，比琴日低1度. Ready for the first real voice use.
+- Verified Notion Data column: WEATHER_TODAY rows populate (today's + yesterday's confirmed via API query). FUEL_PRICES/BIN_DAY Notion rows are empty only because the logged entries predate f23f28e; both runners invoked directly now return structured data ({fuel, stations[]} / per-stream dates), so the next voice use will populate.
+- Key hygiene checklist item done: timing-safe compare was already in gateway/api/voice.ts; added required X-Timestamp header (ISO 8601, ±5 min skew) to bound replay, and documented the VOICE_GATEWAY_KEY rotation procedure in CLAUDE.md (Security model). iphone-shortcut.md updated (header setup + troubleshooting rows).
+- Idempotency checklist item done: SHA-256 body dedupe at the gateway — identical bytes within 60 s → 409 duplicate. Catches network-level retries/double-sends; separate recordings differ by design. Per-instance best-effort like the rate limit.
+- Both changes typechecked and exercised in Node (bad key 401, missing/stale/garbage timestamp 401, fresh passes, identical resend 409, new body passes).
+- NOT committed/pushed. ⚠️ Deploying is a breaking change for the current Shortcut: add the X-Timestamp header (iphone-shortcut.md step 2) at the same time as pushing, or every run 401s.
+- Log-mining check: last night's 18:xx misses (系统重置, 巴西 → chat) all predate f23f28e, whose variants are live (service restarted ~21:30). Nothing new to add. No NEWS_HEADLINES runs since the 沙田醫院 hallucination — still watching.
+- User reported mid-session: BUS_TIMES had no Data on Notion — its runner never returned structured data (only weather/fuel/bin did). _bus_times now returns (reply, data) with stop + top-3 {route, minutes}; verified directly (Glenfield Mall, 906 即刻到). User restarted the service by voice, so it's live. TIDE_TIMES is now the only skill command without data.
+- Next: deploy + update Shortcut together, then speak 同琴日比 for the first real comparison; remaining checklist: ASR/agent credential isolation, file handling safety, secrets/audio out of logs; DEPLOY_HOOK_URL still unconfigured.
