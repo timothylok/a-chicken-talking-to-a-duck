@@ -154,7 +154,7 @@ def _speak_time(hhmm: str) -> str:
     return f"{period}{h12}點{m:02d}分" if m else f"{period}{h12}點"
 
 
-def _tide_times() -> str:
+def _tide_times() -> tuple[str, dict] | str:
     data = _run_skill(TIDES_CLI, "next-tide", TIDE_PORT, "--json", timeout=20)
     events = data["events"][:2]
     if not events:
@@ -164,7 +164,14 @@ def _tide_times() -> str:
         f"{names.get(e['type'], e['type'])}{_speak_time(e['time_local'])}，{e['height_m']}米"
         for e in events
     ]
-    return f"{data['resolved_port']}潮汐：" + "，".join(parts)
+    structured = {
+        "port": data["resolved_port"],
+        "events": [
+            {"type": e["type"], "time": e["time_local"], "height_m": e["height_m"]}
+            for e in events
+        ],
+    }
+    return f"{data['resolved_port']}潮汐：" + "，".join(parts), structured
 
 
 # TheColab auckland-bin-schedule skill. Collection days are per-property, so
