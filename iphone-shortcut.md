@@ -6,6 +6,43 @@ Build this in the **Shortcuts** app on the iPhone. Takes about 5 minutes. The re
 
 You need the `VOICE_GATEWAY_KEY` value (from `gateway/.env` line 2 / Vercel env). It gets pasted into one header below.
 
+## How the shortcut flows
+
+One shortcut handles every kind of response. The server always returns JSON with these fields:
+
+| Field | When present | What the shortcut does with it |
+|---|---|---|
+| `reply` | every successful request — commands, chat fallback, confirmations, reminders | speak it |
+| `reminder` | only when you said 提我／提醒我／remind me and it parsed | create an iOS Reminder locally (the `title` includes the due time), then still speak `reply` |
+| `error` | request failed (auth, upload, server unreachable) | speak it so failures are never silent |
+
+```
+Record Audio → POST to gateway
+   → reminder present?  → yes: create iOS Reminder (silent)
+   → speak reply — or speak error if there is no reply
+```
+
+The complete action list — two sequential If blocks, **no nesting anywhere**, and **no alert on the reminder**: iOS 2026's "Add New Reminder" action rejects every dynamic alert value (tested exhaustively: date variable, formatted text, time-only — all "alert time provided was invalid"; only static picker values work). Instead the server puts the due time in the reminder's title, e.g. 「買牛奶（7月15號朝早9點）」.
+
+```
+ 1. Record Audio
+ 2. Get Contents of URL                       (POST, form field "file")
+ 3. Get Dictionary Value  reminder            ← Contents of URL
+ 4. If [Dictionary Value] has any value
+ 5.     Get Dictionary Value  title           ← reminder value from 3
+ 6.     Add New Reminder  title               (Alert: None)
+ 7. End If
+ 8. Get Dictionary Value  reply               ← Contents of URL
+ 9. If [reply] has any value
+10.     Speak Text  reply
+11. Otherwise
+12.     Get Dictionary Value  error           ← Contents of URL
+13.     Speak Text  「錯誤」 + error
+14. End If
+```
+
+Non-reminder commands sail straight through: `reminder` is absent, the If at line 4 does nothing, and the reply is spoken at line 10. Reminder commands do both — create the reminder, then speak the confirmation. A reminder spoken without a time isn't created — the server replies asking you to say it again with one (the time goes into the title).
+
 ## Steps
 
 Open Shortcuts → **+** (new shortcut), then add these actions in order:
@@ -38,24 +75,33 @@ Open Shortcuts → **+** (new shortcut), then add these actions in order:
     - **Type**: `File`
     - **Value**: select the **Recorded Audio** variable (the output of step 1)
 
-### 3. Get Dictionary Value
+### 3. Reminder branch (lines 3–7 of the action list)
 
-- Add the action **"Get Dictionary Value"**
-- Configure it to get the value for key **`reply`** in **Contents of URL**
+Commands starting with 提我／提醒我／remind me return a `reminder` object; this branch turns it into a real iOS Reminder. The server never touches your Reminders — the phone creates it locally. Non-reminder responses have no `reminder` key, so this whole branch is skipped and execution falls through to step 4.
 
-### 4. If (error branch — so failures are never silent)
+- Add **"Get Dictionary Value"**: key **`reminder`** in **Contents of URL**
+- Add **"If"**: condition — that **Dictionary Value** **has any value**
+- Inside the **If** branch (drag these two actions between **If** and **End If**):
+  - **"Get Dictionary Value"**: key **`title`** in the **reminder** Dictionary Value
+  - **"Add New Reminder"**: the **title** variable, **Alert: None** — do not set an alert; dynamic alert values are broken in Shortcuts (see the note above the action list). The due time is already in the title text
+- **End If**
+- First run: iOS will ask for permission to access Reminders — allow it
+- Type every key (`reminder`, `title`) with the English keyboard and no trailing spaces
 
-- Add the action **"If"**
-- Condition: **Dictionary Value** (from step 3) **has any value**
+### 4. Speak the result (lines 8–14 — every flow ends here)
+
+This is where **all** responses — commands, chat, confirmations, reminders — get spoken. Failures speak the server's reason instead, so they are never silent.
+
+- Add **"Get Dictionary Value"**: key **`reply`** in **Contents of URL**
+  - ⚠️ Make sure the dictionary is **Contents of URL**, not the `reminder` value from step 3 — after the If block, Shortcuts may auto-suggest the wrong variable
+- Add **"If"**: condition — that **Dictionary Value** **has any value**
 - Inside the **If** branch, add **"Speak Text"**:
-  - Text: the **Dictionary Value** variable from step 3
+  - Text: the **reply** Dictionary Value variable
   - Expand and set **Language** to Chinese (Hong Kong) so replies with 確認 are pronounced correctly
 - Inside the **Otherwise** branch:
   - Add **"Get Dictionary Value"**: key **`error`** in **Contents of URL**
   - Add **"Speak Text"**: a text containing `錯誤 ` followed by that **Dictionary Value** variable
 - The **End If** closes the shortcut
-
-Now a successful command speaks the reply, and a failure speaks the server's reason (e.g. "multipart body must include a 'file' field").
 
 ### 5. Name and trigger
 
@@ -68,7 +114,7 @@ Now a successful command speaks the reply, and a failure speaks the server's rea
 
 ## Transcribe-only variant
 
-Duplicate the shortcut, remove `?mode=command` from the URL, and change step 3 to read the key **`text`** instead of `reply`. That one just types back what you said — useful for dictation into notes.
+Duplicate the shortcut, remove `?mode=command` from the URL, delete the reminder branch (step 3), and change step 4 to read the key **`text`** instead of `reply`. That one just types back what you said — useful for dictation into notes.
 
 ## How to read the replies
 
@@ -76,6 +122,9 @@ Duplicate the shortcut, remove `?mode=command` from the URL, and change step 3 t
 |---|---|
 | command reply (e.g. "voice OS online") | Command matched and executed |
 | "say 確認 to run …" | Destructive command is pending — run the shortcut again and say 確認 (you have 60 seconds), or 取消 to cancel |
+| "好，聽日朝早9點提你買牛奶" | Reminder created in the Reminders app (the spoken time/title echoes exactly what was parsed — if it sounds wrong, delete it on the phone) |
+| "唔明你想提咩…" | Reminder phrasing couldn't be parsed — say it again with the task and time |
+| "要講埋幾點提你…" | Reminder understood but no time given — a time is required; say it again with one |
 | an English answer to what you said | No command matched — the text went to the Ollama chat fallback (reply-only; chat can never trigger commands) |
 | "chat engine unavailable" | No command matched and Ollama isn't running on the Win11 box |
 | "nothing heard" | Silence or non-speech audio |
@@ -84,11 +133,14 @@ Duplicate the shortcut, remove `?mode=command` from the URL, and change step 3 t
 
 | Symptom | Cause |
 |---|---|
+| Every run lands in the error branch even though the server is fine | Invisible trailing space in a dictionary key (iOS auto-inserts one after typed words) — delete the key text in "Get Dictionary Value" and retype it with the English keyboard: `reply`, `error`, `reminder`, `title` |
 | "錯誤 multipart body must include a 'file' field" | Step 2 form field misconfigured — Key must be exactly `file`, **Type must be `File`** (Shortcuts defaults to Text!), Value must be the Recorded Audio variable |
 | Spoken reply never comes, shortcut shows 401 | Wrong/missing Authorization header — check `Bearer ` prefix and key |
 | 413 error | Recording too long — keep commands under ~2 minutes (16 MB cap) |
 | 502 error | Win11 box unreachable — check the `Cloudflared` and `VoiceASR` services are running |
 | Very slow first response after a reboot | Model loading into GPU on service start (~30 s), one-time per boot |
+| Reminder speaks OK but nothing appears in Reminders | Shortcut's Reminders permission denied — Settings → Privacy → Reminders → Shortcuts, or re-run and allow |
+| "The alert time provided was invalid… ensure you provide a time of day" | An alert is set on "Add New Reminder" — set **Alert: None**. Shortcuts rejects every dynamic alert value on this iOS version; the due time lives in the title instead |
 
 ## Security notes
 

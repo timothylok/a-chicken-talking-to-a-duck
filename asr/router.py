@@ -190,7 +190,7 @@ def _bin_next_dates() -> dict:
     return _run_skill(BINS_CLI, "--json", *args)["household"]["next_dates"]
 
 
-def _bin_day() -> str:
+def _bin_day() -> tuple[str, dict] | str:
     if not BIN_ADDRESS:
         return "未設定屋企地址，要喺服務環境變數加BIN_ADDRESS"
     dates = _bin_next_dates()
@@ -391,6 +391,107 @@ def _weather_compare() -> str:
     return "今日" + "，".join(parts)
 
 
+# CREATE_REMINDER: the one deliberate exception to exact matching — any
+# utterance starting with these (normalized) prefixes routes here. The action
+# is fixed-type and non-destructive (create one iOS reminder); the LLM only
+# extracts {title, due} as data, validated below — it never picks a command.
+# The router returns the payload; the iPhone Shortcut does the actual write
+# (Apple exposes no server-side Reminders API).
+REMINDER_PREFIXES = ("提醒我", "提我", "remindme")
+
+
+def _extract_reminder(text: str) -> tuple[str, "dt.datetime | None"]:
+    now = dt.datetime.now(NZ_TZ)
+    # Spell out the dates — gemma3:4b copies reliably but computes "tomorrow"
+    # wrongly (observed 聽日 resolving two days out).
+    calendar = "。".join(
+        f"{label}係{now + dt.timedelta(days=i):%Y-%m-%d}"
+        for i, label in ((0, "今日"), (1, "聽日"), (2, "後日"))
+    ) + "。" + "。".join(
+        f"{_WEEKDAYS_YUE[(now + dt.timedelta(days=i)).strftime('%A')]}"
+        f"係{now + dt.timedelta(days=i):%Y-%m-%d}"
+        for i in range(1, 8)
+    )
+    prompt = (
+        f"而家係{now:%Y-%m-%d %H:%M}，紐西蘭時間。{calendar}。"
+        "從下面呢句廣東話抽取提醒事項，只輸出JSON，格式："
+        '{"title": "要做嘅嘢", "due": "YYYY-MM-DD HH:MM"}。'
+        '如果冇講時間，due用null。title要簡短，唔好包時間字眼。\n'
+        "說話：" + text
+    )
+    payload = json.dumps({
+        "model": OLLAMA_MODEL,
+        "messages": [{"role": "user", "content": prompt}],
+        "format": "json",
+        "stream": False,
+    }).encode()
+    req = urllib.request.Request(
+        f"{OLLAMA_URL}/api/chat",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        parsed = json.loads(json.loads(resp.read())["message"]["content"])
+    title = str(parsed.get("title") or "").strip()[:100]
+    if not title:
+        raise ValueError("no title extracted")
+    due = None
+    if parsed.get("due"):
+        due = dt.datetime.strptime(str(parsed["due"]), "%Y-%m-%d %H:%M").replace(tzinfo=NZ_TZ)
+        if not (now - dt.timedelta(minutes=5) <= due <= now + dt.timedelta(days=366)):
+            raise ValueError(f"due out of range: {due}")
+    return title, due
+
+
+def _speak_due(due: "dt.datetime") -> str:
+    days = (due.date() - dt.datetime.now(NZ_TZ).date()).days
+    if days == 0:
+        day = "今日"
+    elif days == 1:
+        day = "聽日"
+    elif days == 2:
+        day = "後日"
+    elif days < 7:
+        day = _WEEKDAYS_YUE[due.strftime("%A")]
+    else:
+        day = f"{due.month}月{due.day}號"
+    return day + _speak_time(f"{due.hour}:{due.minute:02d}")
+
+
+def _create_reminder(text: str) -> dict:
+    try:
+        title, due = _extract_reminder(text)
+    except Exception as exc:
+        log.error("reminder extraction failed for %r: %s", text, exc)
+        return {
+            "command": "CREATE_REMINDER", "status": "error",
+            "reply": "唔明你想提咩，再講一次，例如提我聽日朝早九點買牛奶",
+        }
+    # A time is required: the Shortcut always sets an alert, which keeps it
+    # free of nested If blocks (reminder payload => due always present).
+    if due is None:
+        return {
+            "command": "CREATE_REMINDER", "status": "error",
+            "reply": f"要講埋幾點提你{title}，例如提我聽日朝早九點{title}",
+        }
+    # No alert on the phone at all: iOS 2026 Shortcuts "Add New Reminder"
+    # rejects every dynamic alert value (variable as date, formatted text,
+    # even time-only) with "alert time provided was invalid" — only static
+    # picker values work. The due time rides in the title instead, absolute
+    # (not 聽日) so it still reads correctly days later.
+    when = f"{due.month}月{due.day}號{_speak_time(f'{due.hour}:{due.minute:02d}')}"
+    reminder = {"title": f"{title}（{when}）"}
+    data = {"title": title, "due": due.strftime("%Y-%m-%d %H:%M")}
+    reply = f"好，{_speak_due(due)}提你{title}"
+    log.info("reminder: %r -> %s", text, reminder)
+    # "reminder" rides back to the Shortcut, which creates the iOS Reminder;
+    # "data" goes to history/Notion like any other command.
+    return {
+        "command": "CREATE_REMINDER", "status": "executed", "reply": reply,
+        "reminder": reminder, "data": data,
+    }
+
+
 def _briefing_bins() -> str:
     # Bin reminder only when collection is today or tomorrow — the full
     # schedule is BIN_DAY's job.
@@ -536,6 +637,13 @@ COMMANDS = {
         "pause_english": False,
         "run": _morning_briefing,
     },
+    "CREATE_REMINDER": {
+        # Matched by prefix in route(), not exact phrase — listed here so it
+        # appears in LIST_COMMANDS, the home page, and the Whisper prompt.
+        "phrases": ["提我", "提醒我", "remind me"],
+        "destructive": False,
+        "run": lambda: "講提我加埋內容同時間，例如提我聽日朝早九點買牛奶",
+    },
     "RESTART_ASR": {
         "phrases": [
             "重啟語音系統", "重启语音系统", "重新啟動語音系統", "重新启动语音系统",
@@ -657,6 +765,9 @@ def route(text: str) -> dict:
     if phrase in CANCEL_PHRASES:
         _pending["command"] = None
         return {"command": None, "status": "cancelled", "reply": "cancelled"}
+
+    if phrase.startswith(REMINDER_PREFIXES):
+        return _create_reminder(text)
 
     for command_id, spec in COMMANDS.items():
         if phrase in (_normalize(p) for p in spec["phrases"]):
