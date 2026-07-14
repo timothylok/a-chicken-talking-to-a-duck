@@ -227,6 +227,95 @@ def _bin_day() -> tuple[str, dict] | str:
     return reply, data
 
 
+# TheColab grocer-nz skill: public grocer.nz supermarket prices (DuckDB over
+# public parquet — needs duckdb+pytz in the venv). MILK_STORES/MILK_PRODUCTS
+# are grocer ids; re-derive with the skill CLI (stores --query <suburb>,
+# search "milk 3l"). Defaults: Woolworths Glenfield, PAK'nSAVE Albany,
+# New World Albany + Birkenhead; Pams/WW/Simply standard 3L with Anchor
+# Blue Top 3L as the fallback where a store stocks no house brand.
+GROCER_CLI = "D:/ai/thecolab-skills/skills/grocer-nz/scripts/cli.py"
+MILK_STORES = os.environ.get("MILK_STORES", "45,246,315,365")
+MILK_PRODUCTS = os.environ.get("MILK_PRODUCTS", "5449,4068,5506,5456")
+
+
+def _milk_rows() -> list[dict]:
+    # Cheapest listed 3L milk per store (min effective price across the
+    # product whitelist), cheapest store first.
+    products = ",".join(str(int(p)) for p in MILK_PRODUCTS.split(","))
+    sql = (
+        "with e as (select store_id, product_id, least("
+        "original_price_cent, coalesce(sale_price_cent, original_price_cent), "
+        "coalesce(club_price_cent, original_price_cent), "
+        "coalesce(online_price_cent, original_price_cent)) as cents "
+        f"from prices where product_id in ({products})) "
+        "select s.id as store_id, s.name as store, "
+        "arg_min(pr.name, e.cents) as product, "
+        "arg_min(pr.id, e.cents) as product_id, min(e.cents) as cents "
+        "from e join stores s on s.id = e.store_id "
+        "join products pr on pr.id = e.product_id "
+        "group by s.id, s.name order by cents"
+    )
+    store_args = [a for s in MILK_STORES.split(",") for a in ("--store-id", str(int(s)))]
+    # --refresh (global flag, before the subcommand): the CLI caches parquet
+    # forever otherwise, freezing prices at first download.
+    return _run_skill(
+        GROCER_CLI, "--refresh", "query", sql, *store_args, "--json", timeout=45,
+    )["rows"]
+
+
+def _milk_prices() -> tuple[str, dict] | str:
+    rows = _milk_rows()
+    if not rows:
+        return "攞唔到牛奶價錢資料"
+    parts, seen_vendors = [], set()
+    for row in rows:
+        vendor = row["store"].rsplit(" ", 1)[0]
+        if vendor in seen_vendors:
+            continue  # spoken reply keeps only the cheapest branch per chain
+        seen_vendors.add(vendor)
+        price = f"{row['cents'] / 100:.2f}蚊"
+        parts.append(row["store"] + ("最平" + price if not parts else " " + price))
+    reply = "3公升牛奶：" + "，".join(parts)
+    data = {"stores": [
+        {"store": r["store"], "product": r["product"], "cents": r["cents"]}
+        for r in rows
+    ]}
+    return reply, data
+
+
+def _speak_cents(cents: int) -> str:
+    if cents % 100 == 0:
+        return f"{cents // 100}蚊"
+    if cents < 100 and cents % 10 == 0:
+        return f"{cents // 10}毫"
+    return f"{cents / 100:.2f}蚊"
+
+
+def _milk_drop_line() -> "str | None":
+    # Briefing-only price-drop alert: speaks when the cheapest standard 3L
+    # is cheaper than its last pre-today grocer history row, else silent.
+    rows = _milk_rows()
+    if not rows:
+        return None
+    top = rows[0]
+    history = _run_skill(
+        GROCER_CLI, "--refresh", "query",
+        f"select price_cent, updated_at from history where store_id = {int(top['store_id'])} "
+        "order by updated_at desc",
+        "--product", str(top["product_id"]), "--limit", "10", "--json", timeout=45,
+    )["rows"]
+    today = dt.datetime.now(NZ_TZ).date()
+    prev = next(
+        (r["price_cent"] for r in history
+         if dt.datetime.fromisoformat(r["updated_at"]).date() < today),
+        None,
+    )
+    if prev is None or top["cents"] >= prev:
+        return None
+    return (f"牛奶減價：{top['store']}3公升標準奶而家{top['cents'] / 100:.2f}蚊，"
+            f"平咗{_speak_cents(prev - top['cents'])}")
+
+
 def _run_skill(cli: str, *args: str, timeout: int = 30) -> dict:
     # PYTHONIOENCODING forces the child's stdout to UTF-8: under the service
     # it defaults to cp1252, and JSON containing macrons (rūnanga, Whangārei)
@@ -535,7 +624,7 @@ def _morning_briefing() -> str:
     # Compose existing sections; a failed source drops out instead of
     # killing the whole briefing.
     sections = []
-    for fn in (_weather_today, _bus_times, _briefing_bins, _news_headlines):
+    for fn in (_weather_today, _bus_times, _briefing_bins, _milk_drop_line, _news_headlines):
         try:
             part = fn()
             if isinstance(part, tuple):  # runners that also return history data
@@ -638,6 +727,15 @@ COMMANDS = {
         ],
         "destructive": False,
         "run": _bin_day,
+    },
+    "MILK_PRICES": {
+        "phrases": [
+            "牛奶價錢", "牛奶价钱", "牛奶幾錢", "牛奶几钱", "邊度牛奶平",
+            "比較牛奶", "比较牛奶", "奶價", "奶价",
+            "milk price", "milk prices",
+        ],
+        "destructive": False,
+        "run": _milk_prices,
     },
     "EARTHQUAKES": {
         "phrases": [
