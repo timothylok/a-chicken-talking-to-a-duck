@@ -353,6 +353,44 @@ def _weather_today() -> tuple[str, dict]:
     return reply, data
 
 
+def _yesterday_weather_data() -> dict | None:
+    # Latest WEATHER_TODAY data recorded yesterday (NZ time) in the local
+    # history — comparisons never query Notion mid-request.
+    target = (dt.datetime.now(NZ_TZ) - dt.timedelta(days=1)).date().isoformat()
+    found = None
+    try:
+        with open(HISTORY_PATH, encoding="utf-8") as f:
+            for line in f:
+                try:
+                    entry = json.loads(line)
+                except ValueError:
+                    continue
+                if (entry.get("command") == "WEATHER_TODAY"
+                        and entry.get("data")
+                        and entry.get("ts", "").startswith(target)):
+                    found = entry["data"]
+    except FileNotFoundError:
+        return None
+    return found
+
+
+def _weather_compare() -> str:
+    yesterday = _yesterday_weather_data()
+    if not yesterday:
+        return "冇琴日嘅天氣紀錄，今日問咗天氣，聽日先比較得"
+    _, today = _weather_today()
+    parts = []
+    for key, label in (("high", "最高"), ("low", "最低")):
+        diff = today[key] - yesterday[key]
+        if diff > 0:
+            parts.append(f"{label}{today[key]}度，比琴日高{diff}度")
+        elif diff < 0:
+            parts.append(f"{label}{today[key]}度，比琴日低{-diff}度")
+        else:
+            parts.append(f"{label}{today[key]}度，同琴日一樣")
+    return "今日" + "，".join(parts)
+
+
 def _briefing_bins() -> str:
     # Bin reminder only when collection is today or tomorrow — the full
     # schedule is BIN_DAY's job.
@@ -421,6 +459,15 @@ COMMANDS = {
         ],
         "destructive": False,
         "run": _weather_today,
+    },
+    "WEATHER_COMPARE": {
+        "phrases": [
+            "同琴日比", "同尋日比", "今日同琴日比", "天氣比較", "比較天氣",
+            "今日凍啲定熱啲",
+            "compare weather", "compare with yesterday", "weather compare",
+        ],
+        "destructive": False,
+        "run": _weather_compare,
     },
     "FUEL_PRICES": {
         "phrases": [

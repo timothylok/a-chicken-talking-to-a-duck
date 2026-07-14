@@ -25,6 +25,7 @@ DESCRIPTIONS = {
     "SYSTEM_STATUS": "報告系統狀態：模型、設備、已運行幾耐",
     "LIST_COMMANDS": "讀出所有可用指令",
     "WEATHER_TODAY": "報告奧克蘭今日天氣：氣溫、天色、最高最低溫、落雨機會",
+    "WEATHER_COMPARE": "同琴日嘅紀錄比較今日天氣：最高最低差幾多度（要有琴日紀錄先得）",
     "FUEL_PRICES": "報告附近最平嘅95汽油油站同價錢，最平排最先",
     "BUS_TIMES": "報告Glenfield Mall嚟緊嘅三班巴士：路線同幾多分鐘後開",
     "TIDE_TIMES": "報告奧克蘭下次潮漲潮退嘅時間同水位",
