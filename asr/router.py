@@ -427,6 +427,8 @@ COMMANDS = {
             "油價", "油价", "油價幾多", "今日油價", "汽油價錢", "汽油价钱",
             "邊度入油平", "入油", "fuel price", "fuel prices", "petrol price",
             "gas price",
+            "有加",  # observed 2026-07-14: 油價 misheard on a short clip
+            "casaprice",  # observed 2026-07-14: "gas price" run together
         ],
         "destructive": False,
         "run": _fuel_prices,
