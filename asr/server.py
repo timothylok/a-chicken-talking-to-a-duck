@@ -18,7 +18,7 @@ from fastapi import FastAPI, HTTPException, Request
 from faster_whisper import WhisperModel
 from starlette.concurrency import run_in_threadpool
 
-from router import COMMANDS, route, status_info, warm_ollama
+from router import COMMANDS, record_history, route, status_info, warm_ollama
 
 MODEL_SIZE = os.environ.get("ASR_MODEL", "medium")
 REQUESTED_LANGUAGE = os.environ.get("ASR_LANGUAGE", "yue")
@@ -151,6 +151,8 @@ async def command(request: Request):
     data = await _read_audio(request)
     result = await run_in_threadpool(transcribe, data)
     outcome = await run_in_threadpool(route, result["text"])
+    record_history(result["text"], outcome)
+    outcome.pop("data", None)  # history-only; the phone just speaks the reply
     log.info("command: %r -> %s (%s)", result["text"], outcome["command"], outcome["status"])
     return {"text": result["text"], **outcome}
 

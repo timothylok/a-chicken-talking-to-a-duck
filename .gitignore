@@ -1,3 +1,6 @@
 logs/
+__pycache__/
+# Notion integration key + database id for ops/notion_sync.py — never commit
+ops/notion.json
 # third-party skills junctioned from D:\ai\thecolab-skills (not ours to vendor)
 .claude/skills/

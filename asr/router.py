@@ -291,10 +291,10 @@ def _translate_headline(title: str) -> str:
     return line.strip().strip('"「」').rstrip("。.．")
 
 
-def _news_headlines() -> str:
+def _news_headlines() -> tuple[str, dict]:
     items = _run_skill(NEWS_CLI, "headlines", "--limit", "3", "--json")["items"]
     if not items:
-        return "攞唔到新聞"
+        return "攞唔到新聞", {"headlines_en": []}
     spoken = []
     for item in items[:3]:
         try:
@@ -303,7 +303,9 @@ def _news_headlines() -> str:
             log.error("headline translation failed, using English: %s", exc)
             spoken.append(item["title"])
     parts = [f"{o}，{t}" for o, t in zip(("第一", "第二", "第三"), spoken)]
-    return "今日新聞：" + "。".join(parts)
+    # Original English headlines are the pre-translation source of truth.
+    data = {"headlines_en": [i["title"] for i in items[:3]], "headlines_yue": spoken}
+    return "今日新聞：" + "。".join(parts), data
 
 
 # Auckland, New Zealand. Open-Meteo is keyless; forecast_days=1 keeps it to today.
@@ -329,18 +331,26 @@ def _describe_weather(code: int) -> str:
     return ""
 
 
-def _weather_today() -> str:
+def _weather_today() -> tuple[str, dict]:
     with urllib.request.urlopen(OPEN_METEO_URL, timeout=10) as resp:
-        data = json.loads(resp.read())
-    current = data["current"]
-    daily = data["daily"]
-    return (
-        f"奧克蘭而家{round(current['temperature_2m'])}度，"
-        f"{_describe_weather(current['weather_code'])}。"
-        f"今日最高{round(daily['temperature_2m_max'][0])}度，"
-        f"最低{round(daily['temperature_2m_min'][0])}度，"
-        f"落雨機會百分之{daily['precipitation_probability_max'][0]}"
+        payload = json.loads(resp.read())
+    current = payload["current"]
+    daily = payload["daily"]
+    data = {
+        "temp": round(current["temperature_2m"]),
+        "high": round(daily["temperature_2m_max"][0]),
+        "low": round(daily["temperature_2m_min"][0]),
+        "rain_prob": daily["precipitation_probability_max"][0],
+        "code": current["weather_code"],
+    }
+    reply = (
+        f"奧克蘭而家{data['temp']}度，"
+        f"{_describe_weather(data['code'])}。"
+        f"今日最高{data['high']}度，"
+        f"最低{data['low']}度，"
+        f"落雨機會百分之{data['rain_prob']}"
     )
+    return reply, data
 
 
 def _briefing_bins() -> str:
@@ -366,6 +376,8 @@ def _morning_briefing() -> str:
     for fn in (_weather_today, _bus_times, _briefing_bins, _news_headlines):
         try:
             part = fn()
+            if isinstance(part, tuple):  # runners that also return history data
+                part = part[0]
             if part:
                 sections.append(part)
         except Exception as exc:
@@ -533,6 +545,30 @@ def _ollama_fallback(text: str) -> dict:
     return {"command": None, "status": "chat", "reply": reply}
 
 
+HISTORY_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", "history.jsonl")
+
+
+def record_history(text: str, outcome: dict) -> None:
+    # Local source of truth for conversation history (chat included);
+    # ops/notion_sync.py mirrors command entries to Notion. Best-effort:
+    # a history write failure must never break the spoken reply.
+    entry = {
+        "ts": dt.datetime.now(NZ_TZ).isoformat(timespec="seconds"),
+        "text": text,
+        "command": outcome.get("command"),
+        "status": outcome.get("status"),
+        "reply": outcome.get("reply"),
+    }
+    if outcome.get("data") is not None:
+        entry["data"] = outcome["data"]
+    try:
+        os.makedirs(os.path.dirname(HISTORY_PATH), exist_ok=True)
+        with open(HISTORY_PATH, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception as exc:
+        log.error("history write failed: %s", exc)
+
+
 def _pause_english(text: str) -> str:
     # iOS TTS reading a Chinese sentence runs adjacent English words together;
     # a Chinese comma between them forces a clear pause.
@@ -541,11 +577,17 @@ def _pause_english(text: str) -> str:
 
 def _execute(command_id: str) -> dict:
     try:
-        reply = COMMANDS[command_id]["run"]()
+        out = COMMANDS[command_id]["run"]()
+        # Runners may return (reply, data): data is structured history for
+        # later comparisons (e.g. today vs yesterday), never spoken.
+        reply, data = out if isinstance(out, tuple) else (out, None)
         if COMMANDS[command_id].get("pause_english", True):
             reply = _pause_english(reply)
         log.info("command %s reply: %r", command_id, reply)
-        return {"command": command_id, "status": "executed", "reply": reply}
+        result = {"command": command_id, "status": "executed", "reply": reply}
+        if data is not None:
+            result["data"] = data
+        return result
     except Exception as exc:
         log.error("command %s failed: %s", command_id, exc)
         return {"command": command_id, "status": "error", "reply": "command failed"}
