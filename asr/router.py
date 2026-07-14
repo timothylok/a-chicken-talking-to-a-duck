@@ -600,6 +600,7 @@ COMMANDS = {
             "gas price",
             "有加",  # observed 2026-07-14: 油價 misheard on a short clip
             "casaprice",  # observed 2026-07-14: "gas price" run together
+            "油家",  # observed 2026-07-15: cantonese fine-tune's near-miss
         ],
         "destructive": False,
         "run": _fuel_prices,
@@ -619,7 +620,7 @@ COMMANDS = {
             "潮漲潮退", "何時潮漲", "何時潮退",
             # observed 2026-07-15: Whisper mishearings of the 潮- phrases
             # (撤退 is a real word, but like 巴西 the command wins here)
-            "超值", "超值時間", "何時朝退", "幾時朝章", "撤退",
+            "超值", "超值時間", "何時朝退", "幾時朝章", "撤退", "潮推", "朝夕",
             "潮涨", "潮汐时间", "潮涨潮退",  # simplified as Whisper mixes scripts
             "tide", "tides", "tide times", "high tide", "next tide",
         ],
