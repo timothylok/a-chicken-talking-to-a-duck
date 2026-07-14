@@ -78,6 +78,27 @@ INITIAL_PROMPT = "以下係廣東話指令或者問題。" + "。".join(
     p for spec in COMMANDS.values() for p in spec["phrases"] if not p.isascii()
 ) + "。確認。取消。"
 
+# Opt-in benchmark capture (ops/asr_bench.py): when ASR_CAPTURE_DIR is set,
+# every request's audio + transcript is saved there for offline model
+# comparison. Audio never leaves this machine; unset the variable (and
+# restart) to stop capturing, delete the directory to discard.
+CAPTURE_DIR = os.environ.get("ASR_CAPTURE_DIR", "")
+if CAPTURE_DIR:
+    log.warning("capture mode ON: saving request audio to %s", CAPTURE_DIR)
+
+
+def _capture(data: bytes, text: str) -> None:
+    try:
+        os.makedirs(CAPTURE_DIR, exist_ok=True)
+        stem = time.strftime("%Y%m%d-%H%M%S") + f"-{time.time_ns() % 1000:03d}"
+        with open(os.path.join(CAPTURE_DIR, stem + ".m4a"), "wb") as f:
+            f.write(data)
+        with open(os.path.join(CAPTURE_DIR, stem + ".txt"), "w", encoding="utf-8") as f:
+            f.write(text)
+    except Exception as exc:
+        log.error("capture failed: %s", exc)
+
+
 # One request at a time: inference saturates the machine, and overlapping
 # transcriptions on a 4 GB GPU will OOM.
 inference_lock = threading.Lock()
@@ -109,11 +130,14 @@ def transcribe(data: bytes) -> dict:
             {"start": round(s.start, 2), "end": round(s.end, 2), "text": s.text}
             for s in segments
         ]
-    return {
+    result = {
         "text": "".join(s["text"] for s in out).strip(),
         "language": info.language,
         "segments": out,
     }
+    if CAPTURE_DIR:
+        _capture(data, result["text"])
+    return result
 
 
 async def _read_audio(request: Request) -> bytes:
