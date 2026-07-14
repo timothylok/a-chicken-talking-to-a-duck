@@ -64,11 +64,13 @@ Open Shortcuts → **+** (new shortcut), then add these actions in order:
   ```
 - Expand the action (tap the arrow) and configure:
   - **Method**: `POST`
-  - **Headers** — add one:
+  - **Headers** — add two:
     | Key | Value |
     |---|---|
     | `Authorization` | `Bearer <paste your VOICE_GATEWAY_KEY>` |
+    | `X-Timestamp` | the **Current Date** magic variable |
     (note the word `Bearer`, a space, then the key)
+  - For `X-Timestamp`: tap the value field, pick **Current Date** from the variable bar, then tap the inserted variable → **Date Format: ISO 8601** → turn **ISO 8601 Time** on. The gateway rejects requests without a timestamp within 5 minutes (replay protection), so this header is required.
   - **Request Body**: `Form`
   - Add a form field:
     - **Key**: `file`
@@ -136,6 +138,8 @@ Duplicate the shortcut, remove `?mode=command` from the URL, delete the reminder
 | Every run lands in the error branch even though the server is fine | Invisible trailing space in a dictionary key (iOS auto-inserts one after typed words) — delete the key text in "Get Dictionary Value" and retype it with the English keyboard: `reply`, `error`, `reminder`, `title` |
 | "錯誤 multipart body must include a 'file' field" | Step 2 form field misconfigured — Key must be exactly `file`, **Type must be `File`** (Shortcuts defaults to Text!), Value must be the Recorded Audio variable |
 | Spoken reply never comes, shortcut shows 401 | Wrong/missing Authorization header — check `Bearer ` prefix and key |
+| "錯誤 missing or stale X-Timestamp header…" | `X-Timestamp` header missing or not ISO 8601 with time (see step 2), or the phone's clock is more than 5 minutes off |
+| "錯誤 duplicate request ignored" | The same request arrived twice within a minute (network retry) — the first one already ran; just run the shortcut again if you wanted a new command |
 | 413 error | Recording too long — keep commands under ~2 minutes (16 MB cap) |
 | 502 error | Win11 box unreachable — check the `Cloudflared` and `VoiceASR` services are running |
 | Very slow first response after a reboot | Model loading into GPU on service start (~30 s), one-time per boot |
@@ -145,4 +149,4 @@ Duplicate the shortcut, remove `?mode=command` from the URL, delete the reminder
 ## Security notes
 
 - The bearer key lives inside this shortcut. **Never share the shortcut via iCloud link** — that ships the key with it.
-- If the phone is lost, rotate `VOICE_GATEWAY_KEY` on Vercel and in `gateway/.env`.
+- If the phone is lost, rotate `VOICE_GATEWAY_KEY` — full procedure in `CLAUDE.md` under "Rotating `VOICE_GATEWAY_KEY`".

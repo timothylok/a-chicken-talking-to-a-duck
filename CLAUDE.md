@@ -304,9 +304,19 @@ ASR service (AppEnvironmentExtra REG_MULTI_SZ under the service's Parameters key
 
 ### Security model
 
-- **Gateway key** — only clients with `VOICE_GATEWAY_KEY` can hit `/api/voice`.
+- **Gateway key** — only clients with `VOICE_GATEWAY_KEY` can hit `/api/voice` (timing-safe compare; requests also need a fresh `X-Timestamp` header, ISO 8601 within ±5 min, to bound replay).
 - **Tunnel** — only Cloudflare → the ASR service; no direct public access to the Win11 machine.
 - **Local ASR + agents** — never exposed directly; only reachable via the tunnel.
+
+#### Rotating `VOICE_GATEWAY_KEY`
+
+Rotate immediately if the phone is lost or the key may have leaked; otherwise yearly.
+
+1. Generate: `node -e "console.log(crypto.randomBytes(32).toString('base64url'))"`
+2. Update `VOICE_GATEWAY_KEY` in the Vercel project env (Production) and in `gateway/.env`.
+3. Redeploy the gateway (env changes don't apply until redeploy).
+4. Paste the new key into the iPhone Shortcut's `Authorization` header (`Bearer <key>`).
+5. Verify: run a voice command; a request with the old key must get 401.
 
 ### Hardening checklist
 
@@ -321,7 +331,7 @@ Findings from the 2026-07-11 design review, in priority order. Check items off a
 
 #### High — do before daily use
 
-- [ ] **Key hygiene.** Timing-safe comparison of `VOICE_GATEWAY_KEY`; request timestamps to bound replay; documented rotation procedure. Never share the iOS Shortcut containing the key via iCloud.
+- [x] **Key hygiene.** *(Done 2026-07-15: timing-safe compare was already in `gateway/api/voice.ts`; added required `X-Timestamp` header (ISO 8601, ±5 min) to bound replay; rotation procedure documented under Security model. Shortcut must send the new header — see `iphone-shortcut.md` step 2.)* Never share the iOS Shortcut containing the key via iCloud.
 - [ ] **Isolate ASR from agent credentials.** ASR service runs under a low-privilege account/container; agent credentials (Notion, Vercel hooks, quant jobs) live in a separate process the ASR service cannot read.
 - [ ] **File handling safety.** Never use client-supplied filenames in paths or shell commands (path traversal / command injection via ffmpeg); validate audio before decoding.
 - [ ] **Keep secrets and audio out of logs.** Authorization headers and audio bodies must not appear in Vercel, Cloudflare, or local logs; decide deliberately where transcripts are stored and for how long.
@@ -331,7 +341,7 @@ Findings from the 2026-07-11 design review, in priority order. Check items off a
 - [x] **Run cloudflared and the ASR server as auto-restarting Windows services**; disable sleep/hibernate on the Win11 box. *(Done 2026-07-11: services `Cloudflared` and `VoiceASR` (NSSM), both auto-start; AC sleep/hibernate disabled.)*
 - [x] **Health check + external uptime ping** so silent failure (sleep, Windows Update reboot, dead tunnel) gets noticed. *(Done 2026-07-12: `ops/heartbeat.ps1` via "VoiceOS Heartbeat" scheduled task every 10 min → healthchecks.io, 30-min period; /fail ping with reason on detected failure.)*
 - [x] **User feedback channel.** Push or spoken confirmation of success/failure — never silent execution. *(Done 2026-07-12: shortcut speaks the router's `reply`, with an error branch for failures.)*
-- [ ] **Idempotency keys at the gateway** so double-taps/retries don't run a command twice.
+- [x] **Idempotency keys at the gateway** so double-taps/retries don't run a command twice. *(Done 2026-07-15: SHA-256 body dedupe in `gateway/api/voice.ts` — identical bytes within 60 s get 409; per-instance best-effort like the rate limit. Catches network retries; two separate recordings are two commands by design.)*
 - [ ] **Benchmark latency on real hardware before locking model size.** Target <3 s end-to-end; `large` on CPU is unusable. Watch the gateway function timeout on long transcriptions.
 - [ ] **Validate Cantonese accuracy early.** Whisper `yue` is weak and Canto-English code-switching degrades it; evaluate SenseVoice against real command phrases. iOS Safari records `audio/mp4` (not webm) — plan server-side conversion to 16 kHz WAV.
 

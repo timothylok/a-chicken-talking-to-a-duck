@@ -30,9 +30,44 @@ function keyMatches(header: string | null): boolean {
   return timingSafeEqual(a, b);
 }
 
+// Replay bound: the Shortcut sends X-Timestamp (ISO 8601); a captured request
+// stops working once it is older than this window.
+const REPLAY_WINDOW_MS = 5 * 60_000;
+
+function timestampFresh(header: string | null): boolean {
+  if (!header) return false;
+  const ts = Date.parse(header);
+  if (Number.isNaN(ts)) return false;
+  return Math.abs(Date.now() - ts) <= REPLAY_WINDOW_MS;
+}
+
+// Idempotency: identical body bytes within the window = a network-level
+// retry or double-send, never a new recording (each recording differs).
+// Per-instance like the rate limit — best effort, no shared store.
+const IDEMPOTENCY_WINDOW_MS = 60_000;
+const seenBodies = new Map<string, number>();
+
+function duplicateBody(body: ArrayBuffer): boolean {
+  const now = Date.now();
+  for (const [hash, ts] of seenBodies) {
+    if (now - ts > IDEMPOTENCY_WINDOW_MS) seenBodies.delete(hash);
+  }
+  const hash = createHash("sha256").update(new Uint8Array(body)).digest("hex");
+  if (seenBodies.has(hash)) return true;
+  seenBodies.set(hash, now);
+  return false;
+}
+
 export async function POST(request: Request): Promise<Response> {
   if (!keyMatches(request.headers.get("authorization"))) {
     return Response.json({ error: "unauthorized" }, { status: 401 });
+  }
+
+  if (!timestampFresh(request.headers.get("x-timestamp"))) {
+    return Response.json(
+      { error: "missing or stale X-Timestamp header (ISO 8601, within 5 minutes)" },
+      { status: 401 },
+    );
   }
 
   // After auth so unauthenticated noise can't lock out the real user.
@@ -64,6 +99,9 @@ export async function POST(request: Request): Promise<Response> {
       { error: `body exceeds ${MAX_BODY_BYTES} bytes; send compressed audio (AAC/Opus)` },
       { status: 413 },
     );
+  }
+  if (duplicateBody(body)) {
+    return Response.json({ error: "duplicate request ignored" }, { status: 409 });
   }
 
   const headers: Record<string, string> = { "content-type": contentType };
