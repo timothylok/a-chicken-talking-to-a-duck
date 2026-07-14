@@ -623,6 +623,7 @@ COMMANDS = {
             # (撤退 is a real word, but like 巴西 the command wins here)
             "超值", "超值時間", "何時朝退", "幾時朝章", "撤退", "潮推", "朝夕",
             "潮漬",  # GPU int8_float16 flavour of 潮汐 (CPU said 超值)
+            "超積",  # observed 2026-07-15 post-switch: 潮汐 keeps mutating
             "潮涨", "潮汐时间", "潮涨潮退",  # simplified as Whisper mixes scripts
             "tide", "tides", "tide times", "high tide", "next tide",
         ],
