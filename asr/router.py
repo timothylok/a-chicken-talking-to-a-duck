@@ -9,6 +9,7 @@ import datetime as dt
 import json
 import logging
 import os
+import random
 import re
 import subprocess
 import sys
@@ -314,6 +315,16 @@ def _milk_drop_line() -> "str | None":
         return None
     return (f"牛奶減價：{top['store']}3公升標準奶而家{top['cents'] / 100:.2f}蚊，"
             f"平咗{_speak_cents(prev - top['cents'])}")
+
+
+# Stephen Chow movie quotes (asr/quotes.json, user-provided 2026-07-15).
+_QUOTES_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "quotes.json")
+with open(_QUOTES_PATH, encoding="utf-8") as _f:
+    QUOTES = json.load(_f)
+
+
+def _quote_of_day() -> str:
+    return random.choice(QUOTES)
 
 
 def _run_skill(cli: str, *args: str, timeout: int = 30) -> dict:
@@ -840,6 +851,14 @@ COMMANDS = {
         # Includes the news section's full English names.
         "pause_english": False,
         "run": _morning_briefing,
+    },
+    "QUOTE_OF_DAY": {
+        "phrases": [
+            "今日金句", "每日金句", "金句", "星爺金句", "講句金句",
+            "quote of the day", "quote",
+        ],
+        "destructive": False,
+        "run": _quote_of_day,
     },
     "CREATE_REMINDER": {
         # Matched by prefix in route(), not exact phrase — listed here so it

@@ -34,6 +34,7 @@ DESCRIPTIONS = {
     "EARTHQUAKES": "報告紐西蘭最近一次有感地震：幾耐之前、邊度、幾多級、幾深",
     "NEWS_HEADLINES": "用廣東話讀出紐西蘭今日三條頭條新聞（人名地名保留英文）",
     "MORNING_BRIEFING": "一次過講晒：今日天氣、嚟緊嘅巴士、收垃圾提醒（今日或聽日先講）同三條新聞",
+    "QUOTE_OF_DAY": "隨機講一句周星馳電影金句",
     "CREATE_REMINDER": "喺你部iPhone加提醒事項：講「提我」加內容同時間（例：提我聽日朝早九點買牛奶）",
     "RESTART_ASR": "重新啟動語音系統（約三十秒後恢復）",
     "TRIGGER_DEPLOY": "重新部署網站",
