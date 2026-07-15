@@ -906,7 +906,7 @@ def _ollama_fallback(text: str) -> dict:
     if not reply:
         return {"command": None, "status": "chat_error", "reply": "chat engine returned nothing"}
     log.info("chat reply (%s): %r", OLLAMA_MODEL, reply)
-    return {"command": None, "status": "chat", "reply": reply}
+    return {"command": None, "status": "chat", "reply": _localize_places(reply)}
 
 
 HISTORY_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", "history.jsonl")
@@ -933,6 +933,40 @@ def record_history(text: str, outcome: dict) -> None:
         log.error("history write failed: %s", exc)
 
 
+# Curated English/Māori -> Traditional Chinese names for NZ places
+# (asr/nz_places.json, user-provided 2026-07-15). Applied to every spoken
+# reply: well-known places sound natural in Cantonese, and the news
+# translation guard can keep unknown names safely English.
+_PLACES_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "nz_places.json")
+
+
+def _load_place_map() -> dict[str, str]:
+    with open(_PLACES_PATH, encoding="utf-8") as f:
+        groups = json.load(f)
+    mapping = {}
+    # Cities last: a bare duplicate name (Gisborne, Nelson) speaks the city.
+    for group in ("islands", "landmarks", "regions", "cities"):
+        for row in groups[group]:
+            for name in (row["english"], *row["maori"].split(" / ")):
+                mapping[name.strip()] = row["zh_tw"]
+    return mapping
+
+
+_PLACE_MAP = _load_place_map()
+# Longest name first so "Palmerston North" beats shorter overlaps; letter
+# guards (not \b — CJK counts as \w) so "Auckland潮汐" matches but the "New"
+# in "New World" can never become 紐西蘭.
+_PLACE_RE = re.compile(
+    "(?<![A-Za-z])(?:"
+    + "|".join(re.escape(n) for n in sorted(_PLACE_MAP, key=len, reverse=True))
+    + ")(?![A-Za-z])"
+)
+
+
+def _localize_places(text: str) -> str:
+    return _PLACE_RE.sub(lambda m: _PLACE_MAP[m.group()], text)
+
+
 def _pause_english(text: str) -> str:
     # iOS TTS reading a Chinese sentence runs adjacent English words together;
     # a Chinese comma between them forces a clear pause.
@@ -945,6 +979,7 @@ def _execute(command_id: str) -> dict:
         # Runners may return (reply, data): data is structured history for
         # later comparisons (e.g. today vs yesterday), never spoken.
         reply, data = out if isinstance(out, tuple) else (out, None)
+        reply = _localize_places(reply)
         if COMMANDS[command_id].get("pause_english", True):
             reply = _pause_english(reply)
         log.info("command %s reply: %r", command_id, reply)

@@ -1,0 +1,55 @@
+{
+  "cities": [
+    { "english": "Auckland", "maori": "Tāmaki Makaurau", "zh_tw": "奧克蘭" },
+    { "english": "Wellington", "maori": "Te Whanganui-a-Tara", "zh_tw": "威靈頓" },
+    { "english": "Christchurch", "maori": "Ōtautahi", "zh_tw": "基督城" },
+    { "english": "Hamilton", "maori": "Kirikiriroa", "zh_tw": "漢密爾頓" },
+    { "english": "Tauranga", "maori": "Tauranga", "zh_tw": "陶朗加" },
+    { "english": "Dunedin", "maori": "Ōtepoti", "zh_tw": "但尼丁" },
+    { "english": "Palmerston North", "maori": "Te Papaioea", "zh_tw": "北帕" },
+    { "english": "Napier", "maori": "Ahuriri", "zh_tw": "納皮爾" },
+    { "english": "Hastings", "maori": "Heretaunga", "zh_tw": "黑斯廷斯" },
+    { "english": "New Plymouth", "maori": "Ngāmotu", "zh_tw": "新普利茅斯" },
+    { "english": "Whanganui", "maori": "Whanganui", "zh_tw": "旺加努伊" },
+    { "english": "Nelson", "maori": "Whakatū", "zh_tw": "納爾遜" },
+    { "english": "Invercargill", "maori": "Waihōpai", "zh_tw": "因弗卡吉爾" },
+    { "english": "Rotorua", "maori": "Rotorua", "zh_tw": "羅托魯瓦" },
+    { "english": "Gisborne", "maori": "Tūranga-nui-a-Kiwa", "zh_tw": "吉斯本" },
+    { "english": "Timaru", "maori": "Te Tihi-o-Maru", "zh_tw": "提瑪魯" },
+    { "english": "Bluff", "maori": "Awarua", "zh_tw": "布拉夫" }
+  ],
+  "regions": [
+    { "english": "Northland", "maori": "Te Tai Tokerau", "zh_tw": "北地" },
+    { "english": "Auckland Region", "maori": "Tāmaki Makaurau", "zh_tw": "奧克蘭區" },
+    { "english": "Waikato", "maori": "Waikato", "zh_tw": "懷卡托" },
+    { "english": "Bay of Plenty", "maori": "Te Moana-a-Toi", "zh_tw": "普倫蒂灣" },
+    { "english": "Gisborne", "maori": "Tairāwhiti", "zh_tw": "吉斯本區" },
+    { "english": "Hawke's Bay", "maori": "Te Matau-a-Māui", "zh_tw": "霍克斯灣" },
+    { "english": "Taranaki", "maori": "Taranaki", "zh_tw": "塔拉納基" },
+    { "english": "Manawatū-Whanganui", "maori": "Manawatū / Whanganui", "zh_tw": "馬納瓦圖" },
+    { "english": "Wellington Region", "maori": "Te Whanganui-a-Tara", "zh_tw": "威靈頓區" },
+    { "english": "Tasman", "maori": "Te Tai o Aorere", "zh_tw": "塔斯曼" },
+    { "english": "Nelson", "maori": "Whakatū", "zh_tw": "納爾遜" },
+    { "english": "Marlborough", "maori": "Te Tauihu", "zh_tw": "馬爾堡" },
+    { "english": "West Coast", "maori": "Te Tai Poutini", "zh_tw": "西岸" },
+    { "english": "Canterbury", "maori": "Waitaha", "zh_tw": "坎特伯雷" },
+    { "english": "Otago", "maori": "Ōtākou", "zh_tw": "奧塔哥" },
+    { "english": "Southland", "maori": "Murihiku", "zh_tw": "南地" }
+  ],
+  "islands": [
+    { "english": "New Zealand", "maori": "Aotearoa", "zh_tw": "紐西蘭" },
+    { "english": "North Island", "maori": "Te Ika-a-Māui", "zh_tw": "北島" },
+    { "english": "South Island", "maori": "Te Waipounamu", "zh_tw": "南島" },
+    { "english": "Stewart Island", "maori": "Rakiura", "zh_tw": "斯圖爾特島" },
+    { "english": "Chatham Islands", "maori": "Rēkohu / Wharekauri", "zh_tw": "查塔姆群島" }
+  ],
+  "landmarks": [
+    { "english": "Mount Cook", "maori": "Aoraki", "zh_tw": "庫克山" },
+    { "english": "Lake Taupō", "maori": "Taupō-nui-a-Tia", "zh_tw": "陶波湖" },
+    { "english": "Waikato River", "maori": "Waikato", "zh_tw": "懷卡托河" },
+    { "english": "Hauraki Gulf", "maori": "Tīkapa Moana", "zh_tw": "豪拉基灣" },
+    { "english": "Fiordland", "maori": "Te Rua-o-Te-Moko", "zh_tw": "峽灣" },
+    { "english": "Kaikōura", "maori": "Kaikōura", "zh_tw": "凱庫拉" },
+    { "english": "Mount Taranaki", "maori": "Taranaki Maunga", "zh_tw": "塔拉納基山" }
+  ]
+}
