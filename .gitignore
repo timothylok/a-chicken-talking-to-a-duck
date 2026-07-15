@@ -2,5 +2,7 @@ logs/
 __pycache__/
 # Notion integration key + database id for ops/notion_sync.py — never commit
 ops/notion.json
+# ntfy topic for ops/notify.py — the topic IS the credential, never commit
+ops/ntfy.json
 # third-party skills junctioned from D:\ai\thecolab-skills (not ours to vendor)
 .claude/skills/
