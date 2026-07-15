@@ -172,8 +172,20 @@ async def inference(request: Request):
 
 @app.post("/command")
 async def command(request: Request):
-    data = await _read_audio(request)
-    result = await run_in_threadpool(transcribe, data)
+    if request.headers.get("content-type", "").startswith("application/json"):
+        # Text path (scheduled Shortcut automations, e.g. spoken morning
+        # briefing): skip ASR and route the text directly.
+        try:
+            body = await request.json()
+        except Exception:
+            raise HTTPException(status_code=400, detail="invalid json body")
+        text = body.get("text") if isinstance(body, dict) else None
+        if not isinstance(text, str) or not text.strip():
+            raise HTTPException(status_code=400, detail="json body must include a non-empty 'text'")
+        result = {"text": text.strip()[:500]}
+    else:
+        data = await _read_audio(request)
+        result = await run_in_threadpool(transcribe, data)
     outcome = await run_in_threadpool(route, result["text"])
     record_history(result["text"], outcome)
     outcome.pop("data", None)  # history-only; the phone just speaks the reply

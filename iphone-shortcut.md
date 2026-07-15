@@ -114,6 +114,46 @@ This is where **all** responses — commands, chat, confirmations, reminders —
   - **Action Button** (iPhone 15 Pro and later): Settings → Action Button → Shortcut → pick it
   - **Back Tap**: Settings → Accessibility → Touch → Back Tap → Double Tap → pick it
 
+## Morning briefing automation (spoken, no tap)
+
+A second, tiny shortcut plus a personal automation: every morning the phone fetches the briefing as **text** (no recording) and speaks it. The server treats `{"text": "早晨"}` exactly like hearing you say 早晨 — it logs to history and syncs to Notion like a spoken command.
+
+### The shortcut
+
+Create a new shortcut named e.g. `早晨簡報`, with these actions:
+
+```
+1. Get Contents of URL                        (POST, JSON body)
+2. Get Dictionary Value  reply                ← Contents of URL
+3. If [reply] has any value
+4.     Speak Text  reply
+5. Otherwise
+6.     Get Dictionary Value  error            ← Contents of URL
+7.     Speak Text  「錯誤」 + error
+8. End If
+```
+
+- **Get Contents of URL** — same URL and headers as the main shortcut (step 2 above): `?mode=command`, `Authorization`, `X-Timestamp` (Current Date, ISO 8601 with time). The only difference is the body:
+  - **Request Body**: `JSON`
+  - Add a field: **Key** `text`, **Type** `Text`, **Value** `早晨`
+- Steps 2–8 are identical to step 4 of the main shortcut (no reminder branch needed — 早晨 never returns one). Set **Speak Text** Language to Chinese (Hong Kong).
+- Test it by running the shortcut manually once — it should speak the full briefing.
+
+### The automation
+
+Shortcuts app → **Automation** tab → **+**:
+
+- **Trigger**: either
+  - **Time of Day** → pick e.g. 7:00, Daily (simplest, survives Focus schedule changes), or
+  - **When "Sleep" Focus turns off** — fires the moment your morning Focus/DND ends
+- **Run**: select the `早晨簡報` shortcut
+- Set **Run Immediately** (not "Ask Before Running") so it speaks without confirmation
+
+Notes:
+- Speak Text plays through the speaker even with the silent switch on (it's media audio); volume follows the media volume, not the ringer.
+- The briefing takes a few seconds to generate (weather + buses + news translation) — the pause before speech is normal.
+- Running it twice within a minute returns "duplicate request ignored" — identical text bodies inside 60 s are treated as a network retry.
+
 ## Transcribe-only variant
 
 Duplicate the shortcut, remove `?mode=command` from the URL, delete the reminder branch (step 3), and change step 4 to read the key **`text`** instead of `reply`. That one just types back what you said — useful for dictation into notes.

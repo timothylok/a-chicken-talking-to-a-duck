@@ -83,9 +83,18 @@ export async function POST(request: Request): Promise<Response> {
   const targetUrl = isCommand ? asrUrl.replace(/\/inference$/, "/command") : asrUrl;
 
   const contentType = request.headers.get("content-type") ?? "";
-  if (!contentType.startsWith("multipart/form-data") && !contentType.startsWith("audio/")) {
+  // Text path (Shortcut automations): JSON {"text": "早晨"} skips ASR on the
+  // command endpoint; the transcription endpoint is audio-only.
+  const isText = contentType.startsWith("application/json");
+  if (isText && !isCommand) {
     return Response.json(
-      { error: "expected multipart/form-data or audio/* body" },
+      { error: "json text body requires ?mode=command" },
+      { status: 415 },
+    );
+  }
+  if (!isText && !contentType.startsWith("multipart/form-data") && !contentType.startsWith("audio/")) {
+    return Response.json(
+      { error: "expected multipart/form-data, audio/*, or json text body" },
       { status: 415 },
     );
   }
