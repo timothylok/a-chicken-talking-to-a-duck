@@ -406,7 +406,7 @@ def _translate_headline(title: str) -> str:
 def _news_headlines() -> tuple[str, dict]:
     items = _run_skill(NEWS_CLI, "headlines", "--limit", "3", "--json")["items"]
     if not items:
-        return "攞唔到新聞", {"headlines_en": []}
+        return "攞唔到新聞", {"headlines": []}
     spoken = []
     for item in items[:3]:
         try:
@@ -415,8 +415,15 @@ def _news_headlines() -> tuple[str, dict]:
             log.error("headline translation failed, using English: %s", exc)
             spoken.append(item["title"])
     parts = [f"{o}，{t}" for o, t in zip(("第一", "第二", "第三"), spoken)]
-    # Original English headlines are the pre-translation source of truth.
-    data = {"headlines_en": [i["title"] for i in items[:3]], "headlines_yue": spoken}
+    # English titles are the pre-translation source of truth; url/source let
+    # the Notion Data column link back to the article.
+    data = {
+        "headlines": [
+            {"title": i["title"], "url": i["url"], "source": i["source"]}
+            for i in items[:3]
+        ],
+        "headlines_yue": spoken,
+    }
     return "今日新聞：" + "。".join(parts), data
 
 
