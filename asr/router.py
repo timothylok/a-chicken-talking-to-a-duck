@@ -327,6 +327,17 @@ def _quote_of_day() -> str:
     return random.choice(QUOTES)
 
 
+# HK movie quotes across films (asr/movie_quotes.json, user-provided 2026-07-15).
+_MOVIE_QUOTES_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "movie_quotes.json")
+with open(_MOVIE_QUOTES_PATH, encoding="utf-8") as _f:
+    MOVIE_QUOTES = json.load(_f)
+
+
+def _movie_quote() -> str:
+    pick = random.choice(MOVIE_QUOTES)
+    return f"《{pick['movie']}》，{pick['character']}話：{pick['quote']}"
+
+
 def _run_skill(cli: str, *args: str, timeout: int = 30) -> dict:
     # PYTHONIOENCODING forces the child's stdout to UTF-8: under the service
     # it defaults to cp1252, and JSON containing macrons (rūnanga, Whangārei)
@@ -859,6 +870,14 @@ COMMANDS = {
         ],
         "destructive": False,
         "run": _quote_of_day,
+    },
+    "MOVIE_QUOTE": {
+        "phrases": [
+            "電影金句", "戲入面嗰句", "電影對白", "港產片金句", "講句戲入面嘅嘢",
+            "movie quote", "film quote",
+        ],
+        "destructive": False,
+        "run": _movie_quote,
     },
     "CREATE_REMINDER": {
         # Matched by prefix in route(), not exact phrase — listed here so it
