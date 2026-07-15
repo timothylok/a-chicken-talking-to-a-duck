@@ -378,45 +378,71 @@ def _earthquakes() -> str:
 NEWS_CLI = "D:/ai/thecolab-skills/skills/nz-news/scripts/cli.py"
 
 
-# Names the local model translates correctly and idiomatically — these may be
-# rendered in Chinese. Everything else capitalized must survive in English
-# (observed hallucinations: Middlemore→沙田醫院, Bay of Plenty→灣仔埗).
-_NAME_ALLOWLIST = {"New", "Zealand", "NZ", "Auckland", "Wellington", "Christchurch"}
+# Words allowed inside a name run without being capitalized themselves.
+_NAME_CONNECTORS = {"of", "the", "and"}
 
 
-def _lost_names(title: str, translation: str) -> list[str]:
-    # Capitalized words in non-sentence-initial position are names in
-    # sentence-case NZ headlines; multi-word leading names are still caught
-    # via their later words (Bay of Plenty -> "Plenty").
-    lost = []
-    for m in re.finditer(r"[A-Za-z][a-zA-Z-]*", title):
-        word = m.group()
-        if not word[0].isupper() or word in _NAME_ALLOWLIST:
+def _mask_names(title: str) -> tuple[str, dict[str, str]]:
+    # Replace proper-name spans (runs of capitalized words, connectors
+    # allowed: "Bay of Plenty") with 【N】 placeholders so the translator
+    # never sees them — it can't hallucinate what it can't touch (observed:
+    # Middlemore→沙田醫院, Bay of Plenty→灣仔埗, Marianas→馬來亞). A lone
+    # capitalized sentence-opening word is left alone: that capital carries
+    # no name signal ("Military explosive found...").
+    tokens = list(re.finditer(r"[^\W\d_][\w'’-]*", title, re.UNICODE))
+    spans, run = [], []
+    for tok in tokens:
+        word = tok.group()
+        if word[0].isupper():
+            run.append(tok)
+        elif word.lower() in _NAME_CONNECTORS and run:
+            run.append(tok)  # keep only if a capitalized word follows
+        else:
+            spans.append(run)
+            run = []
+    spans.append(run)
+    eligible = []
+    for run in spans:
+        while run and run[-1].group().lower() in _NAME_CONNECTORS:
+            run.pop()  # trailing connector belongs to the sentence
+        if not run:
             continue
-        prefix = title[:m.start()].rstrip()
-        if not prefix or prefix[-1] in ":.!?–—‘'\"“「":
-            continue  # sentence-initial: capitalization says nothing
-        if word not in translation:
-            lost.append(word)
-    return lost
+        prefix = title[:run[0].start()].rstrip()
+        sentence_initial = not prefix or prefix[-1] in ":.!?–—‘'\"“「"
+        if sentence_initial and len(run) == 1:
+            continue
+        eligible.append(run)
+    masked, names = title, {}
+    # Number left-to-right (the model copies ordered 【1】…【2】 far more
+    # reliably); mask right-to-left so earlier offsets stay valid.
+    for number, run in reversed(list(enumerate(eligible, 1))):
+        placeholder = f"【{number}】"
+        names[placeholder] = title[run[0].start():run[-1].end()]
+        masked = masked[:run[0].start()] + placeholder + masked[run[-1].end():]
+    return masked, names
 
 
 def _translate_headline(title: str) -> str:
     # iOS TTS reads English headlines poorly mid-Cantonese, so translate them
     # locally; person and place names stay in English (translating them makes
-    # the TTS worse, not better). One call per headline: batch translation
-    # proved unparseable (the model adds preambles or splits lines).
-    # The model sometimes hallucinates Chinese names anyway — post-check that
-    # names survive, retry once with them pinned, else the caller falls back
-    # to the English title (accuracy beats fluency).
+    # the TTS worse — and gemma3:4b fabricates Chinese names). Names are
+    # masked out before translation and reinserted after; if the model drops
+    # a placeholder even on retry, the caller falls back to the English title.
+    # One call per headline: batch translation proved unparseable.
+    masked, names = _mask_names(title)
+    instruction = (
+        "將呢條新聞標題翻譯做香港口語廣東話。"
+        + ("標題入面嘅【1】呢啲符號係專有名詞代號，每一個代號都要原封不動咁"
+           "抄落譯文度，唔准刪走或者改寫。例：【1】 wins election in 【2】"
+           " → 【1】喺【2】贏咗選舉。"
+           if names else "")
+        + "只准輸出譯文嗰一句，唔好加編號、引號、解釋：\n"
+    )
+
     def ask(extra: str) -> str:
-        prompt = (
-            "將呢條新聞標題翻譯做香港口語廣東話，人名、地名同機構名保留英文原文。"
-            "只准輸出譯文嗰一句，唔好加編號、引號、解釋：\n" + title + extra
-        )
         payload = json.dumps({
             "model": OLLAMA_MODEL,
-            "messages": [{"role": "user", "content": prompt}],
+            "messages": [{"role": "user", "content": instruction + masked + extra}],
             "stream": False,
         }).encode()
         req = urllib.request.Request(
@@ -427,17 +453,20 @@ def _translate_headline(title: str) -> str:
         with urllib.request.urlopen(req, timeout=30) as resp:
             reply = json.loads(resp.read())["message"]["content"]
         line = next(ln for ln in reply.strip().splitlines() if ln.strip())
-        return line.strip().strip('"「」').rstrip("。.．")
+        line = line.strip().strip('"「」').rstrip("。.．")
+        # The model drifts to half-width/spaced brackets — normalize back.
+        return re.sub(r"[\[【（(]\s*(\d)\s*[\]】）)]", r"【\1】", line)
 
     line = ask("")
-    lost = _lost_names(title, line)
-    if lost:
-        log.warning("translation lost names %s in %r; retrying", lost, line)
-        line = ask(f"\n注意：譯文必須原封不動保留呢啲英文字：{', '.join(lost)}")
-        lost = _lost_names(title, line)
-        if lost:
-            raise ValueError(f"names lost after retry: {lost}")
-    return line
+    if any(ph not in line for ph in names):
+        log.warning("translation dropped placeholders in %r; retrying", line)
+        line = ask("\n記住：" + "、".join(names) + "呢啲代號一定要出現喺譯文入面")
+        if any(ph not in line for ph in names):
+            raise ValueError(f"placeholders lost: {line!r}")
+    for placeholder, name in names.items():
+        line = line.replace(placeholder, name)
+    # The model occasionally invents an extra 【N】 — drop any left over.
+    return re.sub(r"【\d】", "", line)
 
 
 def _news_headlines() -> tuple[str, dict]:
