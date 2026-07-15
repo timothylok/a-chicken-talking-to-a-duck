@@ -378,29 +378,66 @@ def _earthquakes() -> str:
 NEWS_CLI = "D:/ai/thecolab-skills/skills/nz-news/scripts/cli.py"
 
 
+# Names the local model translates correctly and idiomatically — these may be
+# rendered in Chinese. Everything else capitalized must survive in English
+# (observed hallucinations: Middlemore→沙田醫院, Bay of Plenty→灣仔埗).
+_NAME_ALLOWLIST = {"New", "Zealand", "NZ", "Auckland", "Wellington", "Christchurch"}
+
+
+def _lost_names(title: str, translation: str) -> list[str]:
+    # Capitalized words in non-sentence-initial position are names in
+    # sentence-case NZ headlines; multi-word leading names are still caught
+    # via their later words (Bay of Plenty -> "Plenty").
+    lost = []
+    for m in re.finditer(r"[A-Za-z][a-zA-Z-]*", title):
+        word = m.group()
+        if not word[0].isupper() or word in _NAME_ALLOWLIST:
+            continue
+        prefix = title[:m.start()].rstrip()
+        if not prefix or prefix[-1] in ":.!?–—‘'\"“「":
+            continue  # sentence-initial: capitalization says nothing
+        if word not in translation:
+            lost.append(word)
+    return lost
+
+
 def _translate_headline(title: str) -> str:
     # iOS TTS reads English headlines poorly mid-Cantonese, so translate them
     # locally; person and place names stay in English (translating them makes
     # the TTS worse, not better). One call per headline: batch translation
     # proved unparseable (the model adds preambles or splits lines).
-    prompt = (
-        "將呢條新聞標題翻譯做香港口語廣東話，人名、地名同機構名保留英文原文。"
-        "只准輸出譯文嗰一句，唔好加編號、引號、解釋：\n" + title
-    )
-    payload = json.dumps({
-        "model": OLLAMA_MODEL,
-        "messages": [{"role": "user", "content": prompt}],
-        "stream": False,
-    }).encode()
-    req = urllib.request.Request(
-        f"{OLLAMA_URL}/api/chat",
-        data=payload,
-        headers={"Content-Type": "application/json"},
-    )
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        reply = json.loads(resp.read())["message"]["content"]
-    line = next(ln for ln in reply.strip().splitlines() if ln.strip())
-    return line.strip().strip('"「」').rstrip("。.．")
+    # The model sometimes hallucinates Chinese names anyway — post-check that
+    # names survive, retry once with them pinned, else the caller falls back
+    # to the English title (accuracy beats fluency).
+    def ask(extra: str) -> str:
+        prompt = (
+            "將呢條新聞標題翻譯做香港口語廣東話，人名、地名同機構名保留英文原文。"
+            "只准輸出譯文嗰一句，唔好加編號、引號、解釋：\n" + title + extra
+        )
+        payload = json.dumps({
+            "model": OLLAMA_MODEL,
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": False,
+        }).encode()
+        req = urllib.request.Request(
+            f"{OLLAMA_URL}/api/chat",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            reply = json.loads(resp.read())["message"]["content"]
+        line = next(ln for ln in reply.strip().splitlines() if ln.strip())
+        return line.strip().strip('"「」').rstrip("。.．")
+
+    line = ask("")
+    lost = _lost_names(title, line)
+    if lost:
+        log.warning("translation lost names %s in %r; retrying", lost, line)
+        line = ask(f"\n注意：譯文必須原封不動保留呢啲英文字：{', '.join(lost)}")
+        lost = _lost_names(title, line)
+        if lost:
+            raise ValueError(f"names lost after retry: {lost}")
+    return line
 
 
 def _news_headlines() -> tuple[str, dict]:
