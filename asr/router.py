@@ -945,10 +945,11 @@ def _load_place_map() -> dict[str, str]:
         groups = json.load(f)
     mapping = {}
     # Cities last: a bare duplicate name (Gisborne, Nelson) speaks the city.
-    for group in ("islands", "landmarks", "regions", "cities"):
+    for group in ("local", "islands", "landmarks", "regions", "cities"):
         for row in groups[group]:
-            for name in (row["english"], *row["maori"].split(" / ")):
-                mapping[name.strip()] = row["zh_tw"]
+            for name in (row["english"], *row.get("maori", "").split(" / ")):
+                if name.strip():
+                    mapping[name.strip()] = row["zh_tw"]
     return mapping
 
 
@@ -964,7 +965,9 @@ _PLACE_RE = re.compile(
 
 
 def _localize_places(text: str) -> str:
-    return _PLACE_RE.sub(lambda m: _PLACE_MAP[m.group()], text)
+    text = _PLACE_RE.sub(lambda m: _PLACE_MAP[m.group()], text)
+    # Adjacent replacements leave the English word gap behind ("奧克蘭 市中心").
+    return re.sub(r"(?<=[一-鿿])\s+(?=[一-鿿])", "", text)
 
 
 def _pause_english(text: str) -> str:

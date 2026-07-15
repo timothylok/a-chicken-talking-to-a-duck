@@ -43,6 +43,20 @@
     { "english": "Stewart Island", "maori": "Rakiura", "zh_tw": "斯圖爾特島" },
     { "english": "Chatham Islands", "maori": "Rēkohu / Wharekauri", "zh_tw": "查塔姆群島" }
   ],
+  "local": [
+    { "english": "Aucklander", "zh_tw": "奧克蘭人" },
+    { "english": "Māori", "zh_tw": "毛利" },
+    { "english": "Pākehā", "zh_tw": "帕克哈" },
+    { "english": "Auckland Transport", "zh_tw": "奧克蘭交通" },
+    { "english": "Auckland Airport", "zh_tw": "奧克蘭機場" },
+    { "english": "University of Auckland", "zh_tw": "奧克蘭大學" },
+    { "english": "AUT", "zh_tw": "奧克蘭理工" },
+    { "english": "The Warehouse", "zh_tw": "紅倉庫" },
+    { "english": "Chemist Warehouse", "zh_tw": "藥妝倉庫" },
+    { "english": "North Shore", "zh_tw": "北岸" },
+    { "english": "South Auckland", "zh_tw": "南奧克蘭" },
+    { "english": "CBD", "zh_tw": "市中心" }
+  ],
   "landmarks": [
     { "english": "Mount Cook", "maori": "Aoraki", "zh_tw": "庫克山" },
     { "english": "Lake Taupō", "maori": "Taupō-nui-a-Tia", "zh_tw": "陶波湖" },
