@@ -945,7 +945,7 @@ def _load_place_map() -> dict[str, str]:
         groups = json.load(f)
     mapping = {}
     # Cities last: a bare duplicate name (Gisborne, Nelson) speaks the city.
-    for group in ("local", "islands", "landmarks", "regions", "cities"):
+    for group in ("supermarkets", "local", "islands", "landmarks", "regions", "cities"):
         for row in groups[group]:
             for name in (row["english"], *row.get("maori", "").split(" / ")):
                 if name.strip():

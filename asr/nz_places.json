@@ -43,6 +43,12 @@
     { "english": "Stewart Island", "maori": "Rakiura", "zh_tw": "斯圖爾特島" },
     { "english": "Chatham Islands", "maori": "Rēkohu / Wharekauri", "zh_tw": "查塔姆群島" }
   ],
+  "supermarkets": [
+    { "english": "New World", "zh_tw": "新世界" },
+    { "english": "Woolworths", "zh_tw": "沃爾沃斯" },
+    { "english": "Pak'nSave", "zh_tw": "百佳" },
+    { "english": "PAK'nSAVE", "zh_tw": "百佳" }
+  ],
   "local": [
     { "english": "Aucklander", "zh_tw": "奧克蘭人" },
     { "english": "Māori", "zh_tw": "毛利" },
