@@ -87,6 +87,23 @@ buys a service that never holds a secret.
 - Ollama listens on localhost with no auth; a compromised service account
   can use it (reply-only — it cannot trigger commands).
 
+## File handling (audited 2026-07-16)
+
+The request path never turns client input into a path or command:
+
+- Client filenames are never read — the ASR server takes `upload.read()`
+  bytes; the gateway forwards the raw body without parsing the multipart.
+- Audio decodes in-memory (`io.BytesIO` → faster-whisper's embedded PyAV);
+  there is no ffmpeg command line and no shell anywhere in the request path.
+- The only subprocesses (`_run_skill` skill CLIs) use argument lists (never
+  `shell=True`) built from owner-set env vars or `int()`-validated IDs.
+- Validation at both hops: content-type allowlist, 4 MB gateway / 16 MB local
+  size caps before decode, 120 s duration cap before GPU inference,
+  undecodable audio → 400. Residual risk is a decoder-library parsing bug,
+  contained by the service-account isolation above.
+- The only file written from request data is `history.jsonl` (JSON-encoded,
+  fixed path).
+
 ## Transcript retention
 
 Decided 2026-07-16, enforced by `ops/prune_logs.py` via the daily
