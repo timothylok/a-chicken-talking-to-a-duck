@@ -2,6 +2,9 @@
   "functions": {
     "api/voice.ts": {
       "maxDuration": 60
+    },
+    "api/slack.ts": {
+      "maxDuration": 60
     }
   }
 }
