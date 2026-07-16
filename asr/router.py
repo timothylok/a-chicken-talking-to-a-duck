@@ -317,6 +317,40 @@ def _milk_drop_line() -> "str | None":
             f"平咗{_speak_cents(prev - top['cents'])}")
 
 
+# TheColab interest-co-nz skill: interest.co.nz public mortgage-rate tables,
+# keyless. Institution strings carry marketing text ("ASB - creating
+# futures.", "click to contact BNZ") — match big-bank names by substring.
+RATES_CLI = "D:/ai/thecolab-skills/skills/interest-co-nz/scripts/cli.py"
+_BIG_BANKS = ["ANZ", "ASB", "BNZ", "Westpac", "Kiwibank"]
+
+
+def _mortgage_rates() -> tuple[str, dict] | str:
+    # --limit: CLI defaults to 30 rows, which cuts the table before Westpac.
+    rows = _run_skill(RATES_CLI, "mortgage-rates", "--limit", "200", "--json")["rates"]
+    best: dict[str, dict] = {}
+    for row in rows:
+        bank = next((b for b in _BIG_BANKS if b.lower() in row["institution"].lower()), None)
+        rate = row["rates"].get("1_year")
+        if bank is None or rate is None:
+            continue
+        # Cheapest 1-year row per bank — the special beats standard where listed.
+        if bank not in best or rate < best[bank]["rates"]["1_year"]:
+            best[bank] = row
+    if not best:
+        return "攞唔到按揭利率資料"
+    ranked = sorted(best.items(), key=lambda kv: kv[1]["rates"]["1_year"])
+    parts = [
+        bank + ("最平" if not parts_i else " ") + f"{row['rates']['1_year']}厘"
+        for parts_i, (bank, row) in enumerate(ranked)
+    ]
+    reply = "一年定息按揭：" + "，".join(parts)
+    data = {"banks": [
+        {"bank": bank, "product": row["product"], "rates": row["rates"]}
+        for bank, row in ranked
+    ]}
+    return reply, data
+
+
 # Stephen Chow movie quotes (asr/quotes.json, user-provided 2026-07-15).
 _QUOTES_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "quotes.json")
 with open(_QUOTES_PATH, encoding="utf-8") as _f:
@@ -826,11 +860,23 @@ COMMANDS = {
     "MILK_PRICES": {
         "phrases": [
             "牛奶價錢", "牛奶价钱", "牛奶幾錢", "牛奶几钱", "邊度牛奶平",
-            "比較牛奶", "比较牛奶", "奶價", "奶价",
-            "milk price", "milk prices",
+            "比較牛奶", "比较牛奶", "奶價", "奶价", "牛奶",
+            # ASR mishearing of 牛奶價錢 (service.log 2026-07-16)
+            "牛奶加錢", "牛奶加钱",
+            "milk price", "milk prices", "milk",
         ],
         "destructive": False,
         "run": _milk_prices,
+    },
+    "MORTGAGE_RATES": {
+        "phrases": [
+            "按揭利率", "按揭息率", "利率", "息率", "按揭", "供樓利率", "供楼利率",
+            "房貸利率", "房贷利率", "利率幾多", "利率几多",
+            "mortgage rates", "mortgage rate", "interest rates", "interest rate",
+            "home loan rates",
+        ],
+        "destructive": False,
+        "run": _mortgage_rates,
     },
     "EARTHQUAKES": {
         "phrases": [

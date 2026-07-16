@@ -106,3 +106,11 @@
 - First bounded agent live (cfb668b): ops/milk_watch.py — reuses the briefing's _milk_drop_line() (today's cheapest standard 3L vs last pre-today grocer history price), pushes 牛奶減價 via notify(), logs to asr/logs/milk_watch.log. "VoiceOS Milk Watch" scheduled task daily 9:00 as the user (venv python, notion_sync pattern); scheduler-triggered run verified ("no drop"). Drop days double up with the 10:00 spoken briefing — accepted.
 - Homepage gains a static 自動功能 (non-voice) section listing the four automations: 10:00 spoken briefing, 9:00 milk watch, 10-min heartbeat→phone, 5-min Notion sync.
 - Next: confirm the 10:00 automation fired unattended (Run Immediately is the usual failure point); DeMark agent via the milk_watch pattern when ready; then capture cleanup + hardening items (credential isolation, file handling, log hygiene); DEPLOY_HOOK_URL still unconfigured.
+
+## 2026-07-16
+- 10:00 spoken morning briefing fired unattended and spoke on the iPhone (user-confirmed; history.jsonl 10:00:24 MORNING_BRIEFING) — prior session's open item closed.
+- MILK_PRICES phrase gaps fixed from service.log: user tried 牛奶 (twice) and 牛奶價錢→misheard 牛奶加錢 before 比較牛奶 matched; all three fell to chat. Added 牛奶 / 牛奶加錢(加钱) / milk variants (asr/router.py), per the mine-real-mishearings approach.
+- MORTGAGE_RATES (18th command): 利率/按揭利率/供樓利率/mortgage rates → interest-co-nz TheColab skill (interest.co.nz table), cheapest 1-year rate per big-five bank (special beats standard), ranked reply e.g. 一年定息按揭：ANZ最平4.65厘…. Institution strings carry marketing junk — substring-matched to ANZ/ASB/BNZ/Westpac/Kiwibank; CLI default --limit 30 truncated before Westpac, runner passes --limit 200. Full rate table stored in history data. DESCRIPTIONS entry added (ops/generate_homepage.py).
+- Restarted VoiceASR via its own RESTART_ASR text-path command (SCM restart needs elevation); live-verified 牛奶加錢→MILK_PRICES and 利率→MORTGAGE_RATES through /command.
+- Changes uncommitted — pre-commit hook regenerates homepage + CLAUDE.md command list on commit.
+- Next: capture cleanup, credential isolation / file handling / log hygiene, DEPLOY_HOOK_URL.
