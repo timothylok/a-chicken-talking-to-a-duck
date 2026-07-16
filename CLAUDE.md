@@ -293,7 +293,7 @@ Gateway (Vercel env; local copy in `gateway/.env`, gitignored):
 - `ASR_URL` — `https://voice.fittertrack.com/inference`
 - `CF_ACCESS_CLIENT_ID` / `CF_ACCESS_CLIENT_SECRET` — Cloudflare Access service token (`voice-gateway`, expires ~2027-07)
 
-ASR service (AppEnvironmentExtra REG_MULTI_SZ under the service's Parameters key — write it with elevated `Set-ItemProperty`, not `nssm set`, whose quoting mangles values with spaces; currently set: HF_HOME, FUEL_LOCATION, BIN_ADDRESS, ASR_MODEL, and temporarily ASR_CAPTURE_DIR for benchmark capture — remove after the model-switch trial):
+ASR service (AppEnvironmentExtra REG_MULTI_SZ under the service's Parameters key — write it with elevated `Set-ItemProperty`, not `nssm set`, whose quoting mangles values with spaces; currently set: HF_HOME, FUEL_LOCATION, BIN_ADDRESS, ASR_MODEL):
 - `HF_HOME` — model cache (`C:\Users\timlo\.cache\huggingface`)
 - `FUEL_LOCATION` — fuel search center, `glenfield auckland` (must include "auckland": the API covers AU and bare "glenfield" resolves to Sydney)
 - `BIN_ADDRESS` — Auckland Council property ID (numeric — keeps the street address out of git and the spoken reply)

@@ -114,3 +114,5 @@
 - Restarted VoiceASR via its own RESTART_ASR text-path command (SCM restart needs elevation); live-verified 牛奶加錢→MILK_PRICES and 利率→MORTGAGE_RATES through /command.
 - Changes uncommitted — pre-commit hook regenerates homepage + CLAUDE.md command list on commit.
 - Next: capture cleanup, credential isolation / file handling / log hygiene, DEPLOY_HOOK_URL.
+- Capture cleanup done (afternoon): ASR_CAPTURE_DIR removed from VoiceASR AppEnvironmentExtra (user ran the elevated one-liner), service restarted via RESTART_ASR text path, no "capture mode ON" at startup, asr/logs/capture (141 files, 6.2 MB) deleted. Partially closes the log-hygiene checklist item.
+- Homepage dashboard shipped (a394d30): auto-counted 語音指令/自動功能 stat tiles; automations moved into an AUTOMATIONS list in ops/generate_homepage.py; pre-commit hook now also fires on generate_homepage.py changes. Live-verified by user.
