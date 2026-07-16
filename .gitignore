@@ -1,5 +1,7 @@
 logs/
 __pycache__/
+# service-account-writable cache (grocer parquet, temp) — see SECURITY.md
+asr/cache/
 # Notion integration key + database id for ops/notion_sync.py — never commit
 ops/notion.json
 # ntfy topic for ops/notify.py — the topic IS the credential, never commit

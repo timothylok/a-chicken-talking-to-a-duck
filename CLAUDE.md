@@ -332,7 +332,7 @@ Findings from the 2026-07-11 design review, in priority order. Check items off a
 #### High — do before daily use
 
 - [x] **Key hygiene.** *(Done 2026-07-15: timing-safe compare was already in `gateway/api/voice.ts`; added required `X-Timestamp` header (ISO 8601, ±5 min) to bound replay; rotation procedure documented under Security model. Shortcut must send the new header — see `iphone-shortcut.md` step 2.)* Never share the iOS Shortcut containing the key via iCloud.
-- [ ] **Isolate ASR from agent credentials.** ASR service runs under a low-privilege account/container; agent credentials (Notion, Vercel hooks, quant jobs) live in a separate process the ASR service cannot read.
+- [x] **Isolate ASR from agent credentials.** *(Done 2026-07-16: VoiceASR runs as virtual account `NT SERVICE\VoiceASR` via `ops/harden_voiceasr.ps1`; deny ACEs on `ops/notion.json`, `ops/ntfy.json`, `gateway/.env`; grocer cache + TMP redirected to `asr/cache`. See SECURITY.md — incl. the Authenticated Users residual risk.)* ASR service runs under a low-privilege account/container; agent credentials (Notion, Vercel hooks, quant jobs) live in a separate process the ASR service cannot read.
 - [ ] **File handling safety.** Never use client-supplied filenames in paths or shell commands (path traversal / command injection via ffmpeg); validate audio before decoding.
 - [ ] **Keep secrets and audio out of logs.** Authorization headers and audio bodies must not appear in Vercel, Cloudflare, or local logs; decide deliberately where transcripts are stored and for how long.
 
