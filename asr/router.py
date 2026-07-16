@@ -653,11 +653,18 @@ def _extract_reminder(text: str) -> tuple[str, "dt.datetime | None"]:
         f"係{now + dt.timedelta(days=i):%Y-%m-%d}"
         for i in range(1, 8)
     )
+    # 24h-clock rules + few-shot examples: without them gemma3:4b reads 今晚
+    # 六點 as 21:00 and returns null for 六點半 (observed 2026-07-17 in
+    # service.log; prompt validated 12/12 on those utterances).
     prompt = (
         f"而家係{now:%Y-%m-%d %H:%M}，紐西蘭時間。{calendar}。"
         "從下面呢句廣東話抽取提醒事項，只輸出JSON，格式："
         '{"title": "要做嘅嘢", "due": "YYYY-MM-DD HH:MM"}。'
-        '如果冇講時間，due用null。title要簡短，唔好包時間字眼。\n'
+        "時間用24小時制：朝早／上晝係AM，下晝／夜晚／今晚係PM（夜晚六點=18:00）。"
+        "「半」係30分，「正」係00分（六點半=6:30，六點正=6:00）。"
+        '如果冇講時間，due用null。title要簡短，唔好包任何時間字眼。例子：\n'
+        f'「提我今晚六點半去銀行交錢」→{{"title": "去銀行交錢", "due": "{now:%Y-%m-%d} 18:30"}}\n'
+        f'「提我聽日朝早九點買牛奶」→{{"title": "買牛奶", "due": "{now + dt.timedelta(days=1):%Y-%m-%d} 09:00"}}\n'
         "說話：" + text
     )
     payload = json.dumps({
