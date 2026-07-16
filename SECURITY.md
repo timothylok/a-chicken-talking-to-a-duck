@@ -77,15 +77,12 @@ buys a service that never holds a secret.
 
 ## Residual risks / open items
 
-- **`Authenticated Users` has Modify on the `D:\ai` tree** (inherited drive
-  ACL), and service-account tokens include Authenticated Users — so the
-  grants table above understates what the service can touch: it can write to
-  most of `D:\ai`, including repo code and the ops scripts the user runs
-  elevated (a persistence/escalation path if the service is compromised).
-  The deny ACEs still hold (deny beats allow), so the three secret files stay
-  protected. Tightening = break inheritance on `D:\ai\voice-ecosystem` and
-  `D:\ai\thecolab-skills`, replace Authenticated Users Modify with the
-  explicit grants above.
+- ~~`Authenticated Users` Modify on the `D:\ai` tree~~ **Closed 2026-07-16**
+  via `ops/tighten_acls.ps1`: inheritance broken on `D:\ai\voice-ecosystem`
+  and `D:\ai\thecolab-skills`, blanket Modify removed, `timlo` granted
+  explicit Full Control. The service account is now read-only on code
+  (write only to `asr\logs` and `asr\cache`). Side effect: the service can
+  no longer write `__pycache__`, so Python skips bytecode caching at startup.
 - Cloudflared on `LocalSystem` (lower risk, see above).
 - Transcripts: `service.log` and `history.jsonl` retain spoken text
   indefinitely; retention policy is an open hardening item.
