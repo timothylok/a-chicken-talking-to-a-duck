@@ -84,7 +84,22 @@ buys a service that never holds a secret.
   (write only to `asr\logs` and `asr\cache`). Side effect: the service can
   no longer write `__pycache__`, so Python skips bytecode caching at startup.
 - Cloudflared on `LocalSystem` (lower risk, see above).
-- Transcripts: `service.log` and `history.jsonl` retain spoken text
-  indefinitely; retention policy is an open hardening item.
 - Ollama listens on localhost with no auth; a compromised service account
   can use it (reply-only — it cannot trigger commands).
+
+## Transcript retention
+
+Decided 2026-07-16, enforced by `ops/prune_logs.py` via the daily
+"VoiceOS Log Prune" scheduled task (03:32, runs as the user):
+
+| Data | Where | Retention |
+|---|---|---|
+| Chat transcripts (`command == null`) | `asr/logs/history.jsonl` | **30 days** |
+| Command entries | `asr/logs/history.jsonl` | forever (mirrored to Notion) |
+| Rotated service logs (all transcripts) | `asr/logs/service-*.log` | **90 days** (phrase-mining window) |
+| Notion 語音歷史 DB | Notion cloud | forever — commands only, chat never leaves the machine |
+
+The pruner rewrites `history.jsonl` atomically and only within the region the
+Notion sync's byte-offset cursor has already passed, shifting the cursor by
+the bytes removed — nothing is double-synced or lost. If the service appends
+mid-prune, the run aborts and retries the next day.
