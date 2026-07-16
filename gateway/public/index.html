@@ -27,6 +27,11 @@
   .phrase { font-weight: 600; white-space: nowrap; }
   .alt { color: var(--muted); font-size: 0.85rem; }
   .confirm { color: var(--accent); font-size: 0.85rem; white-space: nowrap; }
+  .stats { display: flex; gap: 1rem; margin-top: 1.5rem; }
+  .stat { flex: 1; border: 1px solid var(--line); border-radius: 8px;
+          padding: 0.75rem 1rem; text-align: center; }
+  .stat .num { font-size: 2rem; font-weight: 700; color: var(--accent); line-height: 1.2; }
+  .stat .label { color: var(--muted); font-size: 0.85rem; }
   footer { margin-top: 3rem; color: var(--muted); font-size: 0.8rem;
            border-top: 1px solid var(--line); padding-top: 1rem; }
 </style>
@@ -35,6 +40,11 @@
 <h1>雞同鴨講</h1>
 <p class="tagline">私人廣東話語音OS</p>
 <p class="translate"><a href="https://translate.google.com/translate?sl=auto&amp;tl=en&amp;u=https://a-chicken-talking-to-a-duck.vercel.app/" rel="nofollow">Translate to English (Google Translate)</a></p>
+
+<div class="stats">
+  <div class="stat"><div class="num">18</div><div class="label">語音指令</div></div>
+  <div class="stat"><div class="num">4</div><div class="label">自動功能</div></div>
+</div>
 
 <h2>呢個係乜嘢嚟？</h2>
 <p>一個自己屋企自己搞掂嘅語音助手。喺iPhone對住個捷徑講廣東話，

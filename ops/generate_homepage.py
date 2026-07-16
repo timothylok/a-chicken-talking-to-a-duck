@@ -42,6 +42,15 @@ DESCRIPTIONS = {
     "TRIGGER_DEPLOY": "重新部署網站",
 }
 
+# Non-voice automations shown on the home page; the dashboard count derives
+# from this list, so adding an automation = one entry here.
+AUTOMATIONS = [
+    ("朝早十點", "iPhone自動攞當日簡報然後讀出嚟：天氣、巴士、收垃圾提醒、新聞"),
+    ("朝早九點", "檢查牛奶價錢，如果今日最平嘅3公升奶平過琴日，推送通知去手機"),
+    ("每十分鐘", "系統心跳檢查 — 條通道或者語音服務死咗，手機即刻收到高優先通知"),
+    ("每五分鐘", "指令紀錄自動同步去Notion（傾偈內容唔會離開屋企部機）"),
+]
+
 PAGE = """<!DOCTYPE html>
 <html lang="zh-HK">
 <head>
@@ -71,6 +80,11 @@ PAGE = """<!DOCTYPE html>
   .phrase {{ font-weight: 600; white-space: nowrap; }}
   .alt {{ color: var(--muted); font-size: 0.85rem; }}
   .confirm {{ color: var(--accent); font-size: 0.85rem; white-space: nowrap; }}
+  .stats {{ display: flex; gap: 1rem; margin-top: 1.5rem; }}
+  .stat {{ flex: 1; border: 1px solid var(--line); border-radius: 8px;
+          padding: 0.75rem 1rem; text-align: center; }}
+  .stat .num {{ font-size: 2rem; font-weight: 700; color: var(--accent); line-height: 1.2; }}
+  .stat .label {{ color: var(--muted); font-size: 0.85rem; }}
   footer {{ margin-top: 3rem; color: var(--muted); font-size: 0.8rem;
            border-top: 1px solid var(--line); padding-top: 1rem; }}
 </style>
@@ -79,6 +93,11 @@ PAGE = """<!DOCTYPE html>
 <h1>雞同鴨講</h1>
 <p class="tagline">私人廣東話語音OS</p>
 <p class="translate"><a href="https://translate.google.com/translate?sl=auto&amp;tl=en&amp;u=https://a-chicken-talking-to-a-duck.vercel.app/" rel="nofollow">Translate to English (Google Translate)</a></p>
+
+<div class="stats">
+  <div class="stat"><div class="num">{command_count}</div><div class="label">語音指令</div></div>
+  <div class="stat"><div class="num">{automation_count}</div><div class="label">自動功能</div></div>
+</div>
 
 <h2>呢個係乜嘢嚟？</h2>
 <p>一個自己屋企自己搞掂嘅語音助手。喺iPhone對住個捷徑講廣東話，
@@ -99,10 +118,7 @@ PAGE = """<!DOCTYPE html>
 <h2>自動功能（唔使出聲）</h2>
 <table>
 <tr><th>幾時</th><th>做乜嘢</th></tr>
-<tr><td class="phrase">朝早十點</td><td>iPhone自動攞當日簡報然後讀出嚟：天氣、巴士、收垃圾提醒、新聞</td></tr>
-<tr><td class="phrase">朝早九點</td><td>檢查牛奶價錢，如果今日最平嘅3公升奶平過琴日，推送通知去手機</td></tr>
-<tr><td class="phrase">每十分鐘</td><td>系統心跳檢查 — 條通道或者語音服務死咗，手機即刻收到高優先通知</td></tr>
-<tr><td class="phrase">每五分鐘</td><td>指令紀錄自動同步去Notion（傾偈內容唔會離開屋企部機）</td></tr>
+{automation_rows}
 </table>
 
 <footer>私人系統：所有指令都要有授權金鑰先用得。呢頁由 asr/router.py 嘅指令表自動生成。</footer>
@@ -125,7 +141,16 @@ def render() -> str:
             f'<td class="alt">{html.escape("、".join(alts))}</td>'
             "</tr>"
         )
-    return PAGE.format(rows="\n".join(rows))
+    automation_rows = [
+        f'<tr><td class="phrase">{html.escape(when)}</td><td>{html.escape(what)}</td></tr>'
+        for when, what in AUTOMATIONS
+    ]
+    return PAGE.format(
+        rows="\n".join(rows),
+        automation_rows="\n".join(automation_rows),
+        command_count=len(COMMANDS),
+        automation_count=len(AUTOMATIONS),
+    )
 
 
 CLAUDE_MD = os.path.join(ROOT, "CLAUDE.md")

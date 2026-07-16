@@ -2,7 +2,7 @@
 # Regenerate the public home page and CLAUDE.md's command list whenever the
 # command table changes, so both always match COMMANDS in asr/router.py.
 # Enabled via:  git config core.hooksPath ops/githooks
-if git diff --cached --name-only | grep -q "^asr/router\.py$"; then
+if git diff --cached --name-only | grep -qE "^(asr/router\.py|ops/generate_homepage\.py)$"; then
     python ops/generate_homepage.py || exit 1
     git add gateway/public/index.html CLAUDE.md
 fi
