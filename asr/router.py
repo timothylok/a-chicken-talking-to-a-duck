@@ -638,7 +638,7 @@ def _weather_compare() -> str:
 # extracts {title, due} as data, validated below — it never picks a command.
 # The router returns the payload; the iPhone Shortcut does the actual write
 # (Apple exposes no server-side Reminders API).
-REMINDER_PREFIXES = ("提醒我", "提我", "remindme")
+REMINDER_PREFIXES = ("提醒我", "提我", "remindme", "reminderme")
 
 
 def _extract_reminder(text: str) -> tuple[str, "dt.datetime | None"]:
