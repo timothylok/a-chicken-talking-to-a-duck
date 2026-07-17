@@ -1,0 +1,24 @@
+{
+  "rules": [
+    {
+      "id": "umbrella-alert",
+      "enabled": true,
+      "trigger": {"schedule": {"at": "07:30"}},
+      "if": {"command": "今日天氣", "data_gte": ["rain_prob", 70]},
+      "then": [{"ntfy": {"title": "帶遮", "message": "{reply}", "priority": 3}}]
+    },
+    {
+      "id": "bin-night",
+      "enabled": true,
+      "trigger": {"schedule": {"at": "20:00"}},
+      "if": {"command": "幾時收垃圾", "data_contains": ["rubbish", "{tomorrow}"]},
+      "then": [{"ntfy": {"title": "聽日收垃圾", "message": "今晚記住擺垃圾出去。{reply}", "priority": 4}}]
+    },
+    {
+      "id": "command-error-alert",
+      "enabled": true,
+      "trigger": {"history": {"status": "error"}},
+      "then": [{"ntfy": {"title": "指令出錯", "message": "「{text}」→ {command}：{reply}", "priority": 3}}]
+    }
+  ]
+}

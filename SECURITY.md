@@ -109,6 +109,15 @@ Rules for every integration, no exceptions:
 - No LLM ever selects or parameterizes an integration call — commands are
   exact-phrase allowlist entries like everything else.
 
+**Workflow rules** (`ops/workflows.json` + "VoiceOS Workflows" task) follow
+the same discipline: the config is owner-edited only (the service account is
+read-only on the code tree), actions are limited to ntfy pushes, allowlisted
+**non-destructive** commands (destructive IDs are refused so a workflow can
+never arm the spoken-確認 window), and plain webhooks; every firing is
+logged to `asr\logs\workflows.log`, and workflow-run commands are tagged
+`source: "workflow"` in history. Workflow-triggered history entries are
+ignored as triggers (no feedback loops).
+
 ## Slack bridge surface (added 2026-07-17)
 
 `gateway/api/slack.ts` is a second inbound path, but it terminates at Vercel —

@@ -707,6 +707,14 @@ def _speak_due(due: "dt.datetime") -> str:
 
 
 def _create_reminder(text: str) -> dict:
+    # Bare prefix ("提我" and nothing else): don't ask the LLM — gemma3
+    # parrots the prompt's few-shot example back as a real reminder
+    # (observed 2026-07-17: bare 提我 → 去銀行交錢 18:30).
+    if _normalize(text) in REMINDER_PREFIXES:
+        return {
+            "command": "CREATE_REMINDER", "status": "error",
+            "reply": "唔明你想提咩，再講一次，例如提我聽日朝早九點買牛奶",
+        }
     try:
         title, due = _extract_reminder(text)
     except Exception as exc:
