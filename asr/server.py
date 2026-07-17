@@ -183,13 +183,17 @@ async def command(request: Request):
         if not isinstance(text, str) or not text.strip():
             raise HTTPException(status_code=400, detail="json body must include a non-empty 'text'")
         result = {"text": text.strip()[:500]}
+        # Channel tag: the Slack bridge marks its requests; other JSON text
+        # callers (Shortcut automations) are "text". Audio is always "voice".
+        source = "slack" if body.get("source") == "slack" else "text"
     else:
         data = await _read_audio(request)
         result = await run_in_threadpool(transcribe, data)
+        source = "voice"
     outcome = await run_in_threadpool(route, result["text"])
-    record_history(result["text"], outcome)
+    record_history(result["text"], outcome, source)
     outcome.pop("data", None)  # history-only; the phone just speaks the reply
-    log.info("command: %r -> %s (%s)", result["text"], outcome["command"], outcome["status"])
+    log.info("command [%s]: %r -> %s (%s)", source, result["text"], outcome["command"], outcome["status"])
     return {"text": result["text"], **outcome}
 
 

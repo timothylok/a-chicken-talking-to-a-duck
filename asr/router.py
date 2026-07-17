@@ -1003,13 +1003,14 @@ def _ollama_fallback(text: str) -> dict:
 HISTORY_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", "history.jsonl")
 
 
-def record_history(text: str, outcome: dict) -> None:
+def record_history(text: str, outcome: dict, source: str = "voice") -> None:
     # Local source of truth for conversation history (chat included);
     # ops/notion_sync.py mirrors command entries to Notion. Best-effort:
     # a history write failure must never break the spoken reply.
     entry = {
         "ts": dt.datetime.now(NZ_TZ).isoformat(timespec="seconds"),
         "text": text,
+        "source": source,
         "command": outcome.get("command"),
         "status": outcome.get("status"),
         "reply": outcome.get("reply"),

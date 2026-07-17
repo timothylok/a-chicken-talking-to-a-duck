@@ -47,7 +47,12 @@ async function postToSlack(channel: string, text: string): Promise<void> {
 
 // Forward through our own /api/voice text path so Slack traffic gets the same
 // auth, rate limit, idempotency, and Cloudflare Access handling as the phone.
-async function runCommand(text: string, channel: string, origin: string): Promise<void> {
+async function runCommand(
+  text: string,
+  channel: string,
+  origin: string,
+  eventTs: string,
+): Promise<void> {
   let reply: string;
   try {
     const resp = await fetch(`${origin}/api/voice?mode=command`, {
@@ -57,7 +62,11 @@ async function runCommand(text: string, channel: string, origin: string): Promis
         "x-timestamp": new Date().toISOString(),
         "content-type": "application/json",
       },
-      body: JSON.stringify({ text }),
+      // slack_event_ts (ignored by the ASR server) makes re-asking the same
+      // phrase a distinct body — otherwise the gateway's byte-dedupe 409s a
+      // repeat within 60 s. A true Slack retry reuses the event ts, so
+      // network-level duplicates still dedupe.
+      body: JSON.stringify({ text, source: "slack", slack_event_ts: eventTs }),
       signal: AbortSignal.timeout(COMMAND_TIMEOUT_MS),
     });
     const result = await resp.json().catch(() => null);
@@ -112,6 +121,8 @@ export async function POST(request: Request): Promise<Response> {
     return new Response("ok");
   }
 
-  waitUntil(runCommand(text, channel, new URL(request.url).origin));
+  waitUntil(
+    runCommand(text, channel, new URL(request.url).origin, String(event.event_ts ?? Date.now())),
+  );
   return new Response("ok");
 }
