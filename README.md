@@ -22,6 +22,7 @@ Say something in Cantonese to an iOS Shortcut and it speaks the answer back:
 - **新聞** — top NZ headlines, translated into spoken Cantonese on the fly by a local LLM
 - **牛奶價錢 / 按揭利率 / 地震** — cheapest 3L milk across nearby supermarkets, best 1-year mortgage rate per big-five bank, recent felt earthquakes
 - **提我聽日朝早九點買牛奶** — creates an iOS Reminder *and* pushes a phone notification at the due time (the one command where an LLM extracts data — as data only, validated in code, never as an action)
+- **帶唔帶遮** — should you grab a jacket right now? Raining or rain likely within two hours gets a warning; a leave-home iPhone automation asks it automatically at the door
 - **早晨** — a composed morning briefing: weather + buses + bin reminder + news
 - **今日金句 / 電影金句** — Stephen Chow and HK movie quotes, because a voice assistant should have some personality
 - **系統狀態 / 重啟語音系統 / 重新部署** — system health, voice-triggered service restart, and a deploy hook (destructive commands demand a spoken 確認 within 60 seconds)
@@ -44,6 +45,7 @@ The same commands also work from a keyboard: @mention the bot in Slack and the a
 - **Local LLM** — Ollama running `gemma3:4b`, chosen after a bake-off for producing the most natural spoken Cantonese; it powers the chat fallback, live headline translation, and reminder extraction, warmed at service startup.
 - **Slack bridge** — a second front door (`gateway/api/slack.ts`): @mention the bot and the signature-verified event forwards the text through the same authenticated gateway path, with the Cantonese reply posted back to the channel. Mentions only, and Slack's delivery retries are acked and ignored so a slow command never runs twice.
 - **Ops** — everything runs as auto-restarting Windows services, with a scheduled heartbeat pinging healthchecks.io every 10 minutes so silent failure gets noticed. A fleet of small scheduled tasks does the rest: mirroring command history to Notion (chat never leaves the machine), pushing reminder notifications at their due time, watching milk prices, and pruning transcripts on a retention schedule.
+- **Workflows** — a declarative IF→THEN rule file replaces IFTTT for free: schedule or history triggers, conditions tested against live command data, and ntfy/command/webhook actions (destructive commands refused by design). Rain ≥ 70% at 07:30 → umbrella push; collection day tomorrow → bins-out push at 20:00; any command errors → instant alert.
 
 ## Challenges we ran into
 
