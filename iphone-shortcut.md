@@ -154,6 +154,40 @@ Notes:
 - The briefing takes a few seconds to generate (weather + buses + news translation) — the pause before speech is normal.
 - Running it twice within a minute returns "duplicate request ignored" — identical text bodies inside 60 s are treated as a network retry.
 
+## Leaving-home jacket check automation (location trigger)
+
+"IF I leave home and rain starts THEN grab my jacket": a geofence automation asks the server 帶唔帶遮 the moment you step out; if rain is falling (current conditions) or likely within two hours (probability ≥ 60%), the phone tells you to grab the jacket — otherwise it stays silent.
+
+### The shortcut
+
+Create a new shortcut named e.g. `出門檢查`, with these actions:
+
+```
+1. Get Contents of URL                        (POST, JSON body)
+2. Get Dictionary Value  reply                ← Contents of URL
+3. If [reply] contains 帶
+4.     Show Notification  「☔️ 帶褸」 reply
+5.     Speak Text  reply
+6. End If
+```
+
+- **Get Contents of URL** — identical to the briefing shortcut (URL with `?mode=command`, `Authorization`, `X-Timestamp`), body field: **Key** `text`, **Value** `帶唔帶遮`.
+- The `contains 帶` branch works because the no-rain reply (「而家冇雨，放心出門」) deliberately avoids the word 帶 — only rain replies (帶褸帶遮 / 帶定遮) trigger the notification.
+- Test by running it manually: you get either silence-with-no-notification (dry) or the spoken warning (wet).
+
+### The automation
+
+Shortcuts app → **Automation** tab → **+**:
+
+- **Trigger**: **When I Leave** → choose your Home address (add it in Contacts → My Card if it's not offered)
+- **Run**: select the `出門檢查` shortcut
+- Set **Run Immediately** (iOS 17+ allows this for location triggers) — a confirmation prompt would defeat the point
+
+Notes:
+- The check takes ~2–3 s after crossing the geofence; you'll still be within jacket-grabbing range of the door.
+- Leaving twice within a minute: the second identical request gets "duplicate request ignored" and stays silent — harmless here.
+- Geofence radius is iOS-controlled (~100 m minimum); it fires as you leave the area, not the front door itself.
+
 ## Transcribe-only variant
 
 Duplicate the shortcut, remove `?mode=command` from the URL, delete the reminder branch (step 3), and change step 4 to read the key **`text`** instead of `reply`. That one just types back what you said — useful for dictation into notes.

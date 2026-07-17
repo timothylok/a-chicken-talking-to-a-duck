@@ -594,6 +594,36 @@ def _weather_today() -> tuple[str, dict]:
     return reply, data
 
 
+# Leaving-home rain check (JACKET_CHECK): current code says "raining now";
+# the next two hours of precipitation probability say "about to". The
+# no-rain reply deliberately avoids the word 帶 — the iPhone leave-home
+# automation branches on it (reply contains 帶 => notify + speak).
+JACKET_URL = (
+    "https://api.open-meteo.com/v1/forecast"
+    "?latitude=-36.85&longitude=174.76"
+    "&current=weather_code"
+    "&hourly=precipitation_probability&forecast_hours=2"
+    "&timezone=Pacific%2FAuckland"
+)
+JACKET_IMMINENT_PROB = 60
+
+
+def _jacket_check() -> tuple[str, dict]:
+    with urllib.request.urlopen(JACKET_URL, timeout=10) as resp:
+        payload = json.loads(resp.read())
+    code = payload["current"]["weather_code"]
+    probs = payload["hourly"]["precipitation_probability"] or [0]
+    imminent = max(p for p in probs if p is not None) if any(p is not None for p in probs) else 0
+    raining = code >= 51  # WMO: drizzle/rain/snow/showers/thunder all mean "wet"
+    if raining:
+        reply = f"{_describe_weather(code)}！帶褸帶遮先好出門"
+    elif imminent >= JACKET_IMMINENT_PROB:
+        reply = f"就嚟落雨，兩個鐘內機會百分之{imminent}，帶定遮啦"
+    else:
+        reply = "而家冇雨，放心出門"
+    return reply, {"raining": raining, "imminent_prob": imminent, "code": code}
+
+
 def _yesterday_weather_data() -> dict | None:
     # Latest WEATHER_TODAY data recorded yesterday (NZ time) in the local
     # history — comparisons never query Notion mid-request.
@@ -965,6 +995,15 @@ COMMANDS = {
         # Full English headlines: word-by-word pauses would mangle them.
         "pause_english": False,
         "run": _news_headlines,
+    },
+    "JACKET_CHECK": {
+        "phrases": [
+            "帶唔帶遮", "使唔使帶遮", "使唔使带遮", "需唔需要帶遮", "帶遮", "帶褸",
+            "出門檢查", "出门检查",
+            "jacket check", "need a jacket", "need an umbrella", "umbrella check",
+        ],
+        "destructive": False,
+        "run": _jacket_check,
     },
     "TODAY_AGENDA": {
         "phrases": [
