@@ -20,10 +20,15 @@ Say something in Cantonese to an iOS Shortcut and it speaks the answer back:
 - **潮汐** — next tides, spoken with natural Cantonese time phrasing (朝早7點05分)
 - **幾時收垃圾** — Auckland Council rubbish / recycling / food-scraps days for our address
 - **新聞** — top NZ headlines, translated into spoken Cantonese on the fly by a local LLM
+- **牛奶價錢 / 按揭利率 / 地震** — cheapest 3L milk across nearby supermarkets, best 1-year mortgage rate per big-five bank, recent felt earthquakes
+- **提我聽日朝早九點買牛奶** — creates an iOS Reminder *and* pushes a phone notification at the due time (the one command where an LLM extracts data — as data only, validated in code, never as an action)
 - **早晨** — a composed morning briefing: weather + buses + bin reminder + news
+- **今日金句 / 電影金句** — Stephen Chow and HK movie quotes, because a voice assistant should have some personality
 - **系統狀態 / 重啟語音系統 / 重新部署** — system health, voice-triggered service restart, and a deploy hook (destructive commands demand a spoken 確認 within 60 seconds)
 
 Anything that isn't a command falls through to a local LLM that replies in genuine Hong Kong 口語 — and by design its output can *never* trigger a command.
+
+The same commands also work from a keyboard: @mention the bot in Slack and the answer comes back in the channel — same allowlist, same security model, and every command is tagged with the channel it came from (voice / automation / Slack).
 
 ## How we built it
 
@@ -36,8 +41,9 @@ Anything that isn't a command falls through to a local LLM that replies in genui
 - **Tunnel** — Cloudflare Tunnel to the home PC, locked with Cloudflare Access so only the gateway can get through; the Windows box is never directly exposed.
 - **ASR** — FastAPI + faster-whisper on a 4 GB GTX 1650, running as a Windows service. A Whisper `initial_prompt` built from the command vocabulary biases decoding toward the exact allowlisted phrases. Started on stock `medium`; now a Cantonese+English fine-tune of `small`, chosen by benchmarking candidates on real captured phone recordings.
 - **Command router** — an exact normalized-phrase allowlist (`asr/router.py`). Adding a command is one dict entry; the recognition prompt rebuilds itself from it. NZ data commands shell out to vetted open-source NZ data connectors (Auckland Transport, LINZ tides, Gaspy fuel, Auckland Council bins, NZ news RSS).
-- **Local LLM** — Ollama running `gemma3:4b`, chosen after a bake-off for producing the most natural spoken Cantonese; it powers both the chat fallback and live headline translation, warmed at service startup.
-- **Ops** — everything runs as auto-restarting Windows services, with a scheduled heartbeat pinging healthchecks.io every 10 minutes so silent failure gets noticed.
+- **Local LLM** — Ollama running `gemma3:4b`, chosen after a bake-off for producing the most natural spoken Cantonese; it powers the chat fallback, live headline translation, and reminder extraction, warmed at service startup.
+- **Slack bridge** — a second front door (`gateway/api/slack.ts`): @mention the bot and the signature-verified event forwards the text through the same authenticated gateway path, with the Cantonese reply posted back to the channel. Mentions only, and Slack's delivery retries are acked and ignored so a slow command never runs twice.
+- **Ops** — everything runs as auto-restarting Windows services, with a scheduled heartbeat pinging healthchecks.io every 10 minutes so silent failure gets noticed. A fleet of small scheduled tasks does the rest: mirroring command history to Notion (chat never leaves the machine), pushing reminder notifications at their due time, watching milk prices, and pruning transcripts on a retention schedule.
 
 ## Challenges we ran into
 
@@ -47,6 +53,8 @@ Anything that isn't a command falls through to a local LLM that replies in genui
 - **Fuzzy geocoding across the Tasman**: the fuel API happily resolved bare "glenfield" to Sydney, and the bins API matched our suburb to a street in Papakura. Every location value now has to be disambiguated.
 - **iOS TTS quirks**: reading English words embedded in a Chinese sentence, iOS runs them together — we inject Chinese commas between adjacent English words to force pauses. English headlines mid-Cantonese were unlistenable, which is why headlines are LLM-translated.
 - **LLM discipline**: qwen2.5 mixed English and emoji into "Cantonese" replies; batch headline translation produced unparseable preambles. One call per headline, strict system prompt, and a hard rule that LLM output is reply-only.
+- **iOS Shortcuts rejects every dynamic alert time** on "Add New Reminder" — only static picker values work — so voice-created reminders could never actually ring. The fix moved the alarm off the phone entirely: the due time rides in the reminder title, and a minute-cadence task on the PC pushes an ntfy notification the moment it falls due.
+- **Slack wants an ack in 3 seconds; a morning briefing takes 20.** The bridge acks instantly and runs the command after the response, treating Slack's impatient redeliveries as "already on it". And unlike audio, typed commands repeat byte-for-byte — the gateway's replay dedupe silently ate the second "milk" of the day until each forwarded command carried its Slack event timestamp.
 
 ## Accomplishments that we're proud of
 

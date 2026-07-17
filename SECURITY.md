@@ -60,8 +60,9 @@ Current inventory:
 | Credential | Where it lives | Who reads it |
 |---|---|---|
 | Notion API key | `ops/notion.json` (gitignored, deny-ACLed) | "VoiceOS Notion Sync" task, runs as user |
-| ntfy topic | `ops/ntfy.json` (gitignored, deny-ACLed) | heartbeat / milk-watch tasks, run as user |
+| ntfy topic | `ops/ntfy.json` (gitignored, deny-ACLed) | heartbeat / milk-watch / reminder-alerts tasks, run as user |
 | Gateway key + CF Access token | `gateway/.env` (gitignored, deny-ACLed) + Vercel env | Vercel only; local copy for reference |
+| Slack signing secret + bot token | `gateway/.env` (same file as above) + Vercel env | Vercel only; never on the Win11 box |
 | VoiceASR service env | registry `AppEnvironmentExtra` | model path, fuel location, property ID — nothing sensitive |
 
 The deny ACEs make the separation enforcement, not convention: even with
@@ -74,6 +75,27 @@ credential in the service env: the router writes a "requested" marker file
 under `asr\logs`, and a scheduled task running as the user watches for the
 marker and performs the privileged action. Costs up to a minute of latency;
 buys a service that never holds a secret.
+
+## Slack bridge surface (added 2026-07-17)
+
+`gateway/api/slack.ts` is a second inbound path, but it terminates at Vercel —
+nothing new reaches the Win11 box directly:
+
+- Every request must carry a valid Slack HMAC-SHA256 signature
+  (timing-safe compare, ±5 min replay bound); unsigned/forged traffic gets 401.
+- Only `app_mention` events are processed (the app is deliberately not
+  subscribed to channel messages); other bots' messages are ignored.
+- The extracted text is forwarded through the **existing** `/api/voice`
+  path with the gateway key, so auth, rate limiting, idempotency, and
+  Cloudflare Access all apply unchanged — the router's exact-match allowlist
+  and confirmation flow are the same as for voice.
+- Slack delivery retries are acked and ignored (no double execution);
+  each forwarded command carries the Slack event timestamp so distinct
+  requests are never falsely deduplicated.
+- The bot token's only scope is `chat:write` (+ `app_mentions:read`);
+  a leaked token can post messages, not read history or join channels.
+- Command history entries record their channel (`source`: voice/text/slack)
+  for auditability in `history.jsonl`, `service.log`, and the Notion mirror.
 
 ## Residual risks / open items
 
