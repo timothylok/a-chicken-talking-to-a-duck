@@ -65,6 +65,7 @@ icacls "D:\ai\thecolab-skills" /grant "${acct}:(OI)(CI)RX" | Out-Null
 icacls "C:\Users\timlo\.cache\huggingface" /grant "${acct}:(OI)(CI)M" | Out-Null
 icacls "$repo\ops\notion.json" /deny "${acct}:R" | Out-Null
 icacls "$repo\ops\ntfy.json"   /deny "${acct}:R" | Out-Null
+icacls "$repo\ops\google.json" /deny "${acct}:R" | Out-Null
 icacls "$repo\gateway\.env"    /deny "${acct}:R" | Out-Null
 
 # 6. Orphaned grocer cache from the LocalSystem era

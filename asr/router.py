@@ -756,11 +756,63 @@ def _briefing_bins() -> str:
     return ""
 
 
+# Google Calendar: the ASR service never holds the OAuth tokens — the
+# "VoiceOS Calendar Sync" task (ops/google_calendar.py, runs as the user)
+# refreshes this sanitized cache every 10 min and we only read the file.
+CALENDAR_CACHE = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "cache", "calendar.json")
+
+
+def _agenda_items() -> "tuple[list[str], bool] | None":
+    """Today's spoken agenda items and a staleness flag; None = not set up."""
+    try:
+        with open(CALENDAR_CACHE, encoding="utf-8") as f:
+            cache = json.load(f)
+    except (OSError, ValueError):
+        return None
+    now = dt.datetime.now(NZ_TZ)
+    stale = now - dt.datetime.fromisoformat(cache["fetched_at"]) > dt.timedelta(minutes=30)
+    today = now.date().isoformat()
+    items = []
+    for ev in cache.get("events", []):
+        if ev.get("all_day"):
+            # ISO dates compare lexicographically; end date is exclusive.
+            if ev["start"] <= today < ev["end"]:
+                items.append(f"全日{ev['title']}")
+        else:
+            start = dt.datetime.fromisoformat(ev["start"]).astimezone(NZ_TZ)
+            if start.date() == now.date():
+                items.append(f"{_speak_time(f'{start.hour}:{start.minute:02d}')}{ev['title']}")
+    return items, stale
+
+
+def _today_agenda() -> "str | tuple[str, dict]":
+    loaded = _agenda_items()
+    if loaded is None:
+        return "行程功能未接通Google日曆"
+    items, stale = loaded
+    reply = f"今日有{len(items)}個安排：" + "，".join(items) if items else "今日冇行程安排"
+    if stale:
+        reply = "行程資料可能唔係最新。" + reply
+    return reply, {"count": len(items), "items": items}
+
+
+def _briefing_agenda() -> str:
+    # Agenda line only when the sync is set up, fresh, and non-empty.
+    loaded = _agenda_items()
+    if not loaded:
+        return ""
+    items, stale = loaded
+    if stale or not items:
+        return ""
+    return f"今日有{len(items)}個安排：" + "，".join(items)
+
+
 def _morning_briefing() -> str:
     # Compose existing sections; a failed source drops out instead of
     # killing the whole briefing.
     sections = []
-    for fn in (_weather_today, _bus_times, _briefing_bins, _milk_drop_line, _news_headlines):
+    for fn in (_weather_today, _bus_times, _briefing_agenda, _briefing_bins, _milk_drop_line, _news_headlines):
         try:
             part = fn()
             if isinstance(part, tuple):  # runners that also return history data
@@ -905,6 +957,15 @@ COMMANDS = {
         # Full English headlines: word-by-word pauses would mangle them.
         "pause_english": False,
         "run": _news_headlines,
+    },
+    "TODAY_AGENDA": {
+        "phrases": [
+            "今日行程", "行程", "今日有咩安排", "有咩安排", "今日有什麼安排",
+            "今日有什么安排", "日程", "今日日程",
+            "schedule", "today's schedule", "agenda", "calendar", "my calendar",
+        ],
+        "destructive": False,
+        "run": _today_agenda,
     },
     "MORNING_BRIEFING": {
         "phrases": [

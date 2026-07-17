@@ -62,6 +62,7 @@ Current inventory:
 | Notion API key | `ops/notion.json` (gitignored, deny-ACLed) | "VoiceOS Notion Sync" task, runs as user |
 | ntfy topic | `ops/ntfy.json` (gitignored, deny-ACLed) | heartbeat / milk-watch / reminder-alerts tasks, run as user |
 | Gateway key + CF Access token | `gateway/.env` (gitignored, deny-ACLed) + Vercel env | Vercel only; local copy for reference |
+| Google OAuth client + refresh token (`calendar.events.readonly` only) | `ops/google.json` (gitignored, deny-ACLed) | "VoiceOS Calendar Sync" task, runs as user |
 | Slack signing secret + bot token | `gateway/.env` (same file as above) + Vercel env | Vercel only; never on the Win11 box |
 | VoiceASR service env | registry `AppEnvironmentExtra` | model path, fuel location, property ID — nothing sensitive |
 
@@ -75,6 +76,38 @@ credential in the service env: the router writes a "requested" marker file
 under `asr\logs`, and a scheduled task running as the user watches for the
 marker and performs the privileged action. Costs up to a minute of latency;
 buys a service that never holds a secret.
+
+## External integrations (the "plugin" pattern, added 2026-07-17)
+
+Every integration with an authenticated external service follows one of two
+shapes. Google Calendar (`ops/google_calendar.py` + `TODAY_AGENDA`) is the
+reference implementation for reads.
+
+**Reads — synced sanitized cache:**
+a user-context scheduled task holds the credentials, pulls from the provider
+on a cadence, sanitizes the response to the minimum fields the reply needs,
+and atomically writes a cache file under `asr\cache`. Commands only ever
+read the file. The service never holds a token; a compromised service sees
+only pre-minimized data; a dead task or revoked grant shows up as staleness,
+which the command reports in friendly Cantonese.
+
+**Writes — marker-file hand-off** (as above), plus an idempotency key in the
+marker and the existing spoken-確認 flow for anything destructive. Not yet
+exercised; build it when the first write integration lands.
+
+Rules for every integration, no exceptions:
+
+- Narrowest OAuth scope that works (calendar: `calendar.events.readonly`,
+  not `calendar`).
+- Credentials in `ops/<provider>.json` — gitignored **and** deny-ACLed to
+  the service account (add the file to `ops/harden_voiceasr.ps1`).
+- Silent no-op when unconfigured; its own log under `asr\logs`.
+- Sanitized data only in service-readable files (titles/times, never
+  attendees, bodies, or IDs).
+- Errors map to spoken Cantonese, never leaked internals; staleness beats
+  silence.
+- No LLM ever selects or parameterizes an integration call — commands are
+  exact-phrase allowlist entries like everything else.
 
 ## Slack bridge surface (added 2026-07-17)
 
