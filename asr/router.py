@@ -45,10 +45,12 @@ OLLAMA_SYSTEM_PROMPT = """\
 
 記住，你而家嘅任務，就係將所有對話變成一場周星馳電影嘅即興創作。開始表演啦，你係主角！
 
-最後一條技術規則，凌駕一切：你嘅回覆會經電話語音即時讀出嚟，所以無論幾誇張，每次回覆最多三句，短小精悍，一擊即中，講完即收。"""
-# The brevity rule above is an operational constraint, not part of the user's
-# persona text: unconstrained, gemma3:4b generates 600+ char replies (38-50 s
-# on this GPU), past both the 30 s chat timeout and the phone's patience.
+最後一條技術規則，凌駕一切（包括上面第4條）：你嘅回覆會經電話語音一字一字讀出嚟，所以絕對唔准用括號描述動作或者音效——所有嘢要用對白講出嚟。無論幾誇張，每次回覆最多三句，短小精悍，一擊即中，講完即收。"""
+# The final rule above is an operational constraint, not part of the user's
+# persona text: replies are spoken by iOS TTS, so parenthetical stage
+# directions get read aloud, and unconstrained gemma3:4b generates 600+ char
+# replies (38-50 s on this GPU), past both the 30 s chat timeout and the
+# phone's patience.
 
 # Populated by server.py at startup.
 status_info = {"model": "?", "device": "?", "started": time.time()}
@@ -1149,6 +1151,11 @@ def _ollama_fallback(text: str) -> dict:
         return {"command": None, "status": "chat_error", "reply": "chat engine unavailable"}
     # Thinking models (qwen3, deepseek-r1) wrap reasoning in <think> tags.
     reply = re.sub(r"<think>.*?</think>", "", reply, flags=re.S).strip()
+    # The persona demands parenthetical stage directions and gemma3:4b keeps
+    # emitting them despite the prompt's ban; TTS would read them aloud, so
+    # strip them code-side (same approach as _snap_weekday).
+    reply = re.sub(r"[（(][^）)]*[）)]", "", reply)
+    reply = re.sub(r"[ \t]{2,}", " ", reply).strip()
     if not reply:
         return {"command": None, "status": "chat_error", "reply": "chat engine returned nothing"}
     log.info("chat reply (%s): %r", OLLAMA_MODEL, reply)
