@@ -1126,6 +1126,38 @@ def _normalize(text: str) -> str:
     return re.sub(r"[^\w一-鿿]+", "", text.lower())
 
 
+def _recent_chat_turns(max_turns: int = 5, max_age_s: int = 1800) -> list:
+    # Short-term conversation memory: replay the last few chat exchanges so
+    # follow-ups make sense. All channels share one thread (single-user
+    # system); command entries are excluded — chat stays reply-only either
+    # way. Capped at 5 turns / 30 min to bound prompt-eval latency.
+    # Best-effort: any read failure just means a memoryless reply.
+    turns = []
+    try:
+        with open(HISTORY_PATH, "rb") as f:
+            f.seek(0, os.SEEK_END)
+            f.seek(max(0, f.tell() - 65536))
+            tail = f.read().decode("utf-8", "replace").splitlines()
+        cutoff = dt.datetime.now(NZ_TZ) - dt.timedelta(seconds=max_age_s)
+        for line in tail:  # a partial first line after the seek fails json.loads and is skipped
+            try:
+                entry = json.loads(line)
+                if entry.get("status") != "chat" or not entry.get("reply"):
+                    continue
+                if dt.datetime.fromisoformat(entry["ts"]) < cutoff:
+                    continue
+            except (ValueError, KeyError, TypeError):
+                continue
+            turns.append((entry["text"], entry["reply"]))
+    except OSError:
+        return []
+    messages = []
+    for user_text, reply in turns[-max_turns:]:
+        messages.append({"role": "user", "content": user_text})
+        messages.append({"role": "assistant", "content": reply})
+    return messages
+
+
 def _ollama_fallback(text: str) -> dict:
     # Chat mode for phrases that match no command. Reply-only: the LLM's
     # output is spoken back, never routed into COMMANDS.
@@ -1133,6 +1165,7 @@ def _ollama_fallback(text: str) -> dict:
         "model": OLLAMA_MODEL,
         "messages": [
             {"role": "system", "content": OLLAMA_SYSTEM_PROMPT},
+            *_recent_chat_turns(),
             {"role": "user", "content": text},
         ],
         "stream": False,
