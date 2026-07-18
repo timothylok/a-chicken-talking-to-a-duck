@@ -1158,14 +1158,33 @@ def _recent_chat_turns(max_turns: int = 5, max_age_s: int = 1800) -> list:
     return messages
 
 
+def _persona_prompt() -> str:
+    # Blend rotating real quotes (asr/quotes.json) into the persona so replies
+    # draw on more than the few examples baked into the prompt — without them
+    # gemma3:4b recycles the same four lines. Seeded by the hour, not per call:
+    # a per-call shuffle would break Ollama's KV prefix cache and force a full
+    # persona+history re-eval on every reply.
+    return (
+        OLLAMA_SYSTEM_PROMPT
+        + "\n\n呢個鐘頭你腦入面浮起咗呢幾句你自己嘅經典對白。如果啱題，最多揀一句嚟改詞發揮；"
+        + "唔啱題就一句都唔好用。絕對唔准原句照抄，更加唔准將幾句對白堆喺回覆結尾：\n"
+        + "\n".join("· " + q for q in _hour_quotes())
+    )
+
+
+def _hour_quotes() -> list:
+    return random.Random(dt.datetime.now(NZ_TZ).strftime("%Y%m%d%H")).sample(QUOTES, 5)
+
+
 def _ollama_fallback(text: str) -> dict:
     # Chat mode for phrases that match no command. Reply-only: the LLM's
     # output is spoken back, never routed into COMMANDS.
+    history = _recent_chat_turns()
     payload = json.dumps({
         "model": OLLAMA_MODEL,
         "messages": [
-            {"role": "system", "content": OLLAMA_SYSTEM_PROMPT},
-            *_recent_chat_turns(),
+            {"role": "system", "content": _persona_prompt()},
+            *history,
             {"role": "user", "content": text},
         ],
         "stream": False,
@@ -1189,6 +1208,35 @@ def _ollama_fallback(text: str) -> dict:
     # strip them code-side (same approach as _snap_weekday).
     reply = re.sub(r"[（(][^）)]*[）)]", "", reply)
     reply = re.sub(r"[ \t]{2,}", " ", reply).strip()
+    # gemma3:4b also ignores the "never dump quotes at the end" rule: chop
+    # trailing sentences that are verbatim (normalized) copies of this hour's
+    # injected quotes. Mid-reply use stays — that's the blending we want.
+    quote_norms = {_normalize(q) for q in _hour_quotes()}
+    while True:
+        m = re.search(r"([^。！？!?…]+[。！？!?…]*)\s*$", reply)
+        if not m or _normalize(m.group(1)) not in quote_norms:
+            break
+        trimmed = reply[: m.start()].rstrip()
+        if not trimmed:
+            break  # never strip the reply down to nothing
+        reply = trimmed
+    # With conversation memory the model parrots whole riffs from its own
+    # past replies verbatim every turn (the 阿華田 bit hit 100% of replies).
+    # Drop sentences that verbatim-repeat a long sentence from an injected
+    # past reply; short catchphrases (咩呀、搞錯呀) stay — they're the persona.
+    seen = set()
+    for msg in history:
+        if msg["role"] == "assistant":
+            for s in re.split(r"(?<=[。！？!?…])", msg["content"]):
+                if len(_normalize(s)) >= 15:
+                    seen.add(_normalize(s))
+    if seen:
+        kept = [
+            s for s in re.split(r"(?<=[。！？!?…])", reply)
+            if len(_normalize(s)) < 15 or _normalize(s) not in seen
+        ]
+        if any(_normalize(s) for s in kept):
+            reply = "".join(kept).strip()
     if not reply:
         return {"command": None, "status": "chat_error", "reply": "chat engine returned nothing"}
     log.info("chat reply (%s): %r", OLLAMA_MODEL, reply)
