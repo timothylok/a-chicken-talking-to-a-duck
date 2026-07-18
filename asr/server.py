@@ -84,7 +84,7 @@ threading.Thread(target=warm_ollama, daemon=True).start()
 INITIAL_PROMPT = "以下係廣東話指令或者問題。" + "。".join(
     next(p for p in spec["phrases"] if not p.isascii())
     for spec in COMMANDS.values()
-) + "。確認。取消。人最緊要係尊嚴。做人如果冇夢想，同條鹹魚有咩分別呀。"
+) + "。確認。取消。人最緊要係尊嚴。做人如果冇夢想，同條鹹魚有咩分別呀。老豆即係爸爸。"
 
 # Opt-in benchmark capture (ops/asr_bench.py): when ASR_CAPTURE_DIR is set,
 # every request's audio + transcript is saved there for offline model
