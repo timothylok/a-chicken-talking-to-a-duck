@@ -38,7 +38,9 @@ def warm_ollama() -> None:
     # Preload the chat model (an empty messages array makes Ollama load the
     # model and return) so the first chat or headline translation after a
     # reboot doesn't burn its 30 s timeout on weight loading.
-    payload = json.dumps({"model": OLLAMA_MODEL, "messages": [], "stream": False}).encode()
+    payload = json.dumps(
+        {"model": OLLAMA_MODEL, "messages": [], "stream": False, "keep_alive": "24h"}
+    ).encode()
     req = urllib.request.Request(
         f"{OLLAMA_URL}/api/chat",
         data=payload,
@@ -500,6 +502,7 @@ def _translate_headline(title: str) -> str:
             "model": OLLAMA_MODEL,
             "messages": [{"role": "user", "content": instruction + masked + extra}],
             "stream": False,
+            "keep_alive": "24h",
         }).encode()
         req = urllib.request.Request(
             f"{OLLAMA_URL}/api/chat",
@@ -671,6 +674,27 @@ def _weather_compare() -> str:
 REMINDER_PREFIXES = ("提醒我", "提我", "remindme", "reminderme")
 
 
+def _snap_weekday(text: str, due: "dt.datetime", now: "dt.datetime") -> "dt.datetime":
+    # gemma3:4b resolves weekday names off-by-one even with the prompt
+    # calendar (2026-07-18 benchmark: 禮拜五 → Saturday's date, 6/6 runs), so
+    # the date comes from code: snap to the next occurrence of the spoken
+    # weekday (1–7 days out, same semantics as the prompt calendar) and keep
+    # the model's time. 下個禮拜X (next week) is left to the model.
+    match = re.search(r"(?:禮拜|星期|周|週)([一二三四五六日天])", text)
+    if not match or re.search(r"下個?(?:禮拜|星期|周|週)", text):
+        return due
+    char = match.group(1)
+    target = 6 if char in "日天" else "一二三四五六".index(char)
+    for i in range(1, 8):
+        day = now + dt.timedelta(days=i)
+        if day.weekday() == target:
+            snapped = due.replace(year=day.year, month=day.month, day=day.day)
+            if snapped != due:
+                log.info("weekday snap: %s -> %s", due.date(), snapped.date())
+            return snapped
+    return due
+
+
 def _extract_reminder(text: str) -> tuple[str, "dt.datetime | None"]:
     now = dt.datetime.now(NZ_TZ)
     # Spell out the dates — gemma3:4b copies reliably but computes "tomorrow"
@@ -702,6 +726,7 @@ def _extract_reminder(text: str) -> tuple[str, "dt.datetime | None"]:
         "messages": [{"role": "user", "content": prompt}],
         "format": "json",
         "stream": False,
+        "keep_alive": "24h",
     }).encode()
     req = urllib.request.Request(
         f"{OLLAMA_URL}/api/chat",
@@ -716,6 +741,7 @@ def _extract_reminder(text: str) -> tuple[str, "dt.datetime | None"]:
     due = None
     if parsed.get("due"):
         due = dt.datetime.strptime(str(parsed["due"]), "%Y-%m-%d %H:%M").replace(tzinfo=NZ_TZ)
+        due = _snap_weekday(text, due, now)
         if not (now - dt.timedelta(minutes=5) <= due <= now + dt.timedelta(days=366)):
             raise ValueError(f"due out of range: {due}")
     return title, due
@@ -1088,6 +1114,7 @@ def _ollama_fallback(text: str) -> dict:
             {"role": "user", "content": text},
         ],
         "stream": False,
+        "keep_alive": "24h",
     }).encode()
     req = urllib.request.Request(
         f"{OLLAMA_URL}/api/chat",
