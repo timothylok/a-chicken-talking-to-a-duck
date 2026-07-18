@@ -74,9 +74,17 @@ threading.Thread(target=warm_ollama, daemon=True).start()
 
 # Bias decoding toward the command vocabulary so allowlisted phrases are
 # transcribed exactly (e.g. 系統狀態, not the synonym 系統狀況).
+# Whisper keeps only the LAST ~223 prompt tokens. Joining every variant
+# phrase had grown the prompt to 880 tokens, silently dropping the first
+# three-quarters of the command vocabulary out of the window (found
+# 2026-07-18). Bias only needs the canonical form Whisper should emit — the
+# router still matches every variant — so take the first CJK phrase per
+# command. The freed budget adds chat vocabulary the persona invites users
+# to speak: 尊嚴 was transcribed as its near-homophone 專業.
 INITIAL_PROMPT = "以下係廣東話指令或者問題。" + "。".join(
-    p for spec in COMMANDS.values() for p in spec["phrases"] if not p.isascii()
-) + "。確認。取消。"
+    next(p for p in spec["phrases"] if not p.isascii())
+    for spec in COMMANDS.values()
+) + "。確認。取消。人最緊要係尊嚴。做人如果冇夢想，同條鹹魚有咩分別呀。"
 
 # Opt-in benchmark capture (ops/asr_bench.py): when ASR_CAPTURE_DIR is set,
 # every request's audio + transcript is saved there for offline model
