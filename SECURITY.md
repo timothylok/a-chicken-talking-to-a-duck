@@ -134,6 +134,11 @@ nothing new reaches the Win11 box directly:
 - Slack delivery retries are acked and ignored (no double execution);
   each forwarded command carries the Slack event timestamp so distinct
   requests are never falsely deduplicated.
+- Per-channel throttle (2026-07-18): max 3 command executions per channel
+  per minute, so a mention burst can't queue slow commands into silent
+  reply drops or tie up the ASR box; over-limit mentions get an immediate
+  "too fast" reply. Reply posting retries once (429 `Retry-After`
+  honoured) — feedback is never dropped silently.
 - The bot token's only scope is `chat:write` (+ `app_mentions:read`);
   a leaked token can post messages, not read history or join channels.
 - Command history entries record their channel (`source`: voice/text/slack)
