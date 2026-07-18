@@ -29,20 +29,48 @@ async function postToSlack(channel: string, text: string): Promise<void> {
     console.error("SLACK_BOT_TOKEN not set; dropping reply");
     return;
   }
-  try {
-    const resp = await fetch("https://slack.com/api/chat.postMessage", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json; charset=utf-8",
-        authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ channel, text }),
-    });
-    const result = await resp.json().catch(() => null);
-    if (!result?.ok) console.error("chat.postMessage failed:", result?.error);
-  } catch (err) {
-    console.error("chat.postMessage unreachable:", err);
+  // One retry (honoring 429 Retry-After) — a burst of replies can trip
+  // Slack's per-channel posting limit, and a dropped reply is silent failure.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const resp = await fetch("https://slack.com/api/chat.postMessage", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json; charset=utf-8",
+          authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ channel, text }),
+      });
+      const result = await resp.json().catch(() => null);
+      if (result?.ok) return;
+      console.error("chat.postMessage failed:", result?.error ?? resp.status);
+      if (attempt === 0) {
+        const waitS = resp.status === 429 ? Number(resp.headers.get("retry-after")) || 1 : 1;
+        await new Promise((r) => setTimeout(r, Math.min(waitS, 10) * 1000));
+      }
+    } catch (err) {
+      console.error("chat.postMessage unreachable:", err);
+      if (attempt === 0) await new Promise((r) => setTimeout(r, 1000));
+    }
   }
+}
+
+// Slow commands serialize behind Ollama on the ASR box (~20 s each), so a
+// burst of mentions queues later ones past every timeout and their replies
+// drop (observed 2026-07-18: 6 briefings in a minute, 3 replies lost). Cap
+// executions per channel and say so, instead of failing silently. Per
+// instance and best-effort, same tradeoff as the /api/voice rate limit.
+const CHANNEL_LIMIT = 3;
+const CHANNEL_WINDOW_MS = 60_000;
+const channelHits = new Map<string, number[]>();
+
+function channelLimited(channel: string): boolean {
+  const now = Date.now();
+  const hits = (channelHits.get(channel) ?? []).filter((t) => now - t < CHANNEL_WINDOW_MS);
+  const limited = hits.length >= CHANNEL_LIMIT;
+  if (!limited) hits.push(now);
+  channelHits.set(channel, hits);
+  return limited;
 }
 
 // Forward through our own /api/voice text path so Slack traffic gets the same
@@ -118,6 +146,10 @@ export async function POST(request: Request): Promise<Response> {
   }
   if (!text) {
     waitUntil(postToSlack(channel, "講個指令俾我，例如：系統狀態、今日天氣、早晨"));
+    return new Response("ok");
+  }
+  if (channelLimited(channel)) {
+    waitUntil(postToSlack(channel, "指令太密，一分鐘最多三個，唞一唞再試"));
     return new Response("ok");
   }
 
