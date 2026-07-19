@@ -45,6 +45,17 @@ DESCRIPTIONS = {
     "TRIGGER_DEPLOY": "重新部署網站",
 }
 
+# Home-page grouping (presentation only — the router knows no categories).
+# New commands: add the ID to a group here as well as DESCRIPTIONS; anything
+# unlisted falls into an automatic 其他 group so the hook never breaks.
+CATEGORIES = [
+    ("天氣出行", ["WEATHER_TODAY", "WEATHER_COMPARE", "JACKET_CHECK", "BUS_TIMES", "TIDE_TIMES"]),
+    ("生活資訊", ["FUEL_PRICES", "BIN_DAY", "MILK_PRICES", "MORTGAGE_RATES", "EARTHQUAKES", "NEWS_HEADLINES"]),
+    ("日程提醒", ["MORNING_BRIEFING", "TODAY_AGENDA", "CREATE_REMINDER"]),
+    ("玩吓", ["QUOTE_OF_DAY", "MOVIE_QUOTE", "GENERATE_IMAGE"]),
+    ("系統", ["SYSTEM_STATUS", "LIST_COMMANDS", "RESTART_ASR", "TRIGGER_DEPLOY"]),
+]
+
 # Non-voice automations shown on the home page; the dashboard count derives
 # from this list, so adding an automation = one entry here.
 AUTOMATIONS = [
@@ -87,6 +98,13 @@ PAGE = """<!DOCTYPE html>
   .phrase {{ font-weight: 600; white-space: nowrap; }}
   .alt {{ color: var(--muted); font-size: 0.85rem; }}
   .confirm {{ color: var(--accent); font-size: 0.85rem; white-space: nowrap; }}
+  .filters {{ display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem; }}
+  .chip {{ border: 1px solid var(--line); border-radius: 999px; background: none;
+          color: var(--fg); font: inherit; font-size: 0.9rem; padding: 0.2rem 0.85rem;
+          cursor: pointer; }}
+  .chip.active {{ border-color: var(--accent); color: var(--accent); font-weight: 600; }}
+  .cmd-group h3 {{ font-size: 1rem; margin: 1.75rem 0 0; color: var(--muted); }}
+  .cmd-group table {{ margin-top: 0.5rem; }}
   .stats {{ display: flex; gap: 1rem; margin-top: 1.5rem; }}
   .stat {{ flex: 1; border: 1px solid var(--line); border-radius: 8px;
           padding: 0.75rem 1rem; text-align: center; }}
@@ -115,10 +133,10 @@ PAGE = """<!DOCTYPE html>
 <p class="flow">iPhone 🎤 → Vercel → Cloudflare Tunnel → 屋企Win11（語音辨識）→ 指令／AI傾偈 → 講返畀你聽</p>
 
 <h2>指令一覽</h2>
-<table>
-<tr><th>噉樣講</th><th>做乜嘢</th><th>其他講法</th></tr>
-{rows}
-</table>
+<div class="filters">
+{filter_chips}
+</div>
+{command_groups}
 <p>危險指令會先讀返你嘅指令出嚟，六十秒之內講「<strong>確認</strong>」先會執行，講「<strong>取消</strong>」就唔做。</p>
 <p>講其他嘢？唔使指令，直接問 — 本地AI會用廣東話答你。</p>
 
@@ -129,31 +147,64 @@ PAGE = """<!DOCTYPE html>
 </table>
 
 <footer>私人系統：所有指令都要有授權金鑰先用得。呢頁由 asr/router.py 嘅指令表自動生成。</footer>
+<script>
+const chips = document.querySelectorAll(".chip");
+chips.forEach((chip) => chip.addEventListener("click", () => {{
+  chips.forEach((c) => c.classList.toggle("active", c === chip));
+  const cat = chip.dataset.cat;
+  document.querySelectorAll(".cmd-group").forEach((g) => {{
+    g.style.display = cat === "all" || g.dataset.cat === cat ? "" : "none";
+  }});
+}}));
+</script>
 </body>
 </html>
 """
 
 
+def _command_row(command_id: str) -> str:
+    spec = COMMANDS[command_id]
+    primary, *alts = spec["phrases"]
+    desc = DESCRIPTIONS.get(command_id, "（未有說明）")
+    if spec["destructive"]:
+        desc += '<div class="confirm">⚠ 要講「確認」先執行</div>'
+    return (
+        "<tr>"
+        f'<td class="phrase">{html.escape(primary)}</td>'
+        f"<td>{desc}</td>"
+        f'<td class="alt">{html.escape("、".join(alts))}</td>'
+        "</tr>"
+    )
+
+
 def render() -> str:
-    rows = []
-    for command_id, spec in COMMANDS.items():
-        primary, *alts = spec["phrases"]
-        desc = DESCRIPTIONS.get(command_id, "（未有說明）")
-        if spec["destructive"]:
-            desc += '<div class="confirm">⚠ 要講「確認」先執行</div>'
-        rows.append(
-            "<tr>"
-            f'<td class="phrase">{html.escape(primary)}</td>'
-            f"<td>{desc}</td>"
-            f'<td class="alt">{html.escape("、".join(alts))}</td>'
-            "</tr>"
+    categorized = {cid for _, ids in CATEGORIES for cid in ids}
+    leftover = [cid for cid in COMMANDS if cid not in categorized]
+    groups_spec = [(name, [cid for cid in ids if cid in COMMANDS]) for name, ids in CATEGORIES]
+    if leftover:
+        groups_spec.append(("其他", leftover))
+
+    chips = ['<button class="chip active" data-cat="all">全部</button>']
+    groups = []
+    for name, ids in groups_spec:
+        if not ids:
+            continue
+        chips.append(f'<button class="chip" data-cat="{html.escape(name)}">{html.escape(name)}</button>')
+        rows = "\n".join(_command_row(cid) for cid in ids)
+        groups.append(
+            f'<section class="cmd-group" data-cat="{html.escape(name)}">\n'
+            f"<h3>{html.escape(name)}</h3>\n"
+            "<table>\n<tr><th>噉樣講</th><th>做乜嘢</th><th>其他講法</th></tr>\n"
+            f"{rows}\n</table>\n</section>"
         )
+
     automation_rows = [
         f'<tr><td class="phrase">{html.escape(when)}</td><td>{html.escape(what)}</td></tr>'
         for when, what in AUTOMATIONS
     ]
     return PAGE.format(
-        rows="\n".join(rows),
+        filter_chips="\n".join(chips),
+        command_groups="\n".join(groups),
         automation_rows="\n".join(automation_rows),
         command_count=len(COMMANDS),
         automation_count=len(AUTOMATIONS),

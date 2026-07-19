@@ -27,6 +27,13 @@
   .phrase { font-weight: 600; white-space: nowrap; }
   .alt { color: var(--muted); font-size: 0.85rem; }
   .confirm { color: var(--accent); font-size: 0.85rem; white-space: nowrap; }
+  .filters { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem; }
+  .chip { border: 1px solid var(--line); border-radius: 999px; background: none;
+          color: var(--fg); font: inherit; font-size: 0.9rem; padding: 0.2rem 0.85rem;
+          cursor: pointer; }
+  .chip.active { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  .cmd-group h3 { font-size: 1rem; margin: 1.75rem 0 0; color: var(--muted); }
+  .cmd-group table { margin-top: 0.5rem; }
   .stats { display: flex; gap: 1rem; margin-top: 1.5rem; }
   .stat { flex: 1; border: 1px solid var(--line); border-radius: 8px;
           padding: 0.75rem 1rem; text-align: center; }
@@ -55,30 +62,65 @@
 <p class="flow">iPhone 🎤 → Vercel → Cloudflare Tunnel → 屋企Win11（語音辨識）→ 指令／AI傾偈 → 講返畀你聽</p>
 
 <h2>指令一覽</h2>
+<div class="filters">
+<button class="chip active" data-cat="all">全部</button>
+<button class="chip" data-cat="天氣出行">天氣出行</button>
+<button class="chip" data-cat="生活資訊">生活資訊</button>
+<button class="chip" data-cat="日程提醒">日程提醒</button>
+<button class="chip" data-cat="玩吓">玩吓</button>
+<button class="chip" data-cat="系統">系統</button>
+</div>
+<section class="cmd-group" data-cat="天氣出行">
+<h3>天氣出行</h3>
 <table>
 <tr><th>噉樣講</th><th>做乜嘢</th><th>其他講法</th></tr>
-<tr><td class="phrase">系統狀態</td><td>報告系統狀態：模型、設備、已運行幾耐</td><td class="alt">系统状态、系統狀況、系统状况、檢查系統狀態、检查系统状态、健康檢查、健康检查、system status、system health、status、health check</td></tr>
-<tr><td class="phrase">有咩指令</td><td>讀出所有可用指令</td><td class="alt">有什麼指令、有什么指令、指令列表、list commands、what commands</td></tr>
 <tr><td class="phrase">今日天氣</td><td>報告奧克蘭今日天氣：氣溫、天色、最高最低溫、落雨機會</td><td class="alt">今日天气、今天天氣、今天天气、今日天氣如何、今日天气如何、今日天氣點樣、天氣報告、天气报告、weather today、today&#x27;s weather、weather report、weather</td></tr>
 <tr><td class="phrase">同琴日比</td><td>同琴日嘅紀錄比較今日天氣：最高最低差幾多度（要有琴日紀錄先得）</td><td class="alt">同尋日比、今日同琴日比、天氣比較、比較天氣、今日凍啲定熱啲、compare weather、compare with yesterday、weather compare</td></tr>
-<tr><td class="phrase">油價</td><td>報告附近最平嘅95汽油油站同價錢，最平排最先</td><td class="alt">油价、油價幾多、今日油價、汽油價錢、汽油价钱、邊度入油平、入油、fuel price、fuel prices、petrol price、gas price、有加、casaprice、油家、油㗎</td></tr>
+<tr><td class="phrase">帶唔帶遮</td><td>出門前檢查：而家有冇落雨、兩個鐘內會唔會落雨，話你知使唔使帶遮帶褸</td><td class="alt">使唔使帶遮、使唔使带遮、需唔需要帶遮、帶遮、帶褸、出門檢查、出门检查、jacket check、need a jacket、need an umbrella、umbrella check</td></tr>
 <tr><td class="phrase">巴士</td><td>報告Glenfield Mall嚟緊嘅三班巴士：路線同幾多分鐘後開</td><td class="alt">巴士幾時、幾時有巴士、巴士時間、巴士时间、巴士班次、巴西、bus、bus times、bus time、when is the bus、next bus</td></tr>
 <tr><td class="phrase">潮汐</td><td>報告奧克蘭下次潮漲潮退嘅時間同水位</td><td class="alt">潮漲、潮退、幾時潮漲、幾時潮退、潮水、潮汐時間、潮漲潮退、何時潮漲、何時潮退、超值、超值時間、何時朝退、幾時朝章、撤退、潮推、朝夕、潮漬、超積、潮涨、潮汐时间、潮涨潮退、tide、tides、tide times、high tide、next tide</td></tr>
+</table>
+</section>
+<section class="cmd-group" data-cat="生活資訊">
+<h3>生活資訊</h3>
+<table>
+<tr><th>噉樣講</th><th>做乜嘢</th><th>其他講法</th></tr>
+<tr><td class="phrase">油價</td><td>報告附近最平嘅95汽油油站同價錢，最平排最先</td><td class="alt">油价、油價幾多、今日油價、汽油價錢、汽油价钱、邊度入油平、入油、fuel price、fuel prices、petrol price、gas price、有加、casaprice、油家、油㗎</td></tr>
 <tr><td class="phrase">幾時收垃圾</td><td>報告屋企下次收垃圾、廚餘同回收嘅日子</td><td class="alt">邊日收垃圾、收垃圾、倒垃圾、垃圾日、垃圾、幾時倒垃圾、rubbish day、bin day、rubbish collection、when is rubbish day</td></tr>
 <tr><td class="phrase">牛奶價錢</td><td>比較附近超市3公升標準牛奶價錢，最平排最先</td><td class="alt">牛奶价钱、牛奶幾錢、牛奶几钱、邊度牛奶平、比較牛奶、比较牛奶、奶價、奶价、牛奶、牛奶加錢、牛奶加钱、milk price、milk prices、milk</td></tr>
 <tr><td class="phrase">按揭利率</td><td>比較五大銀行一年定息按揭利率，最平排最先</td><td class="alt">按揭息率、利率、息率、按揭、供樓利率、供楼利率、房貸利率、房贷利率、利率幾多、利率几多、mortgage rates、mortgage rate、interest rates、interest rate、home loan rates</td></tr>
 <tr><td class="phrase">地震</td><td>報告紐西蘭最近一次有感地震：幾耐之前、邊度、幾多級、幾深</td><td class="alt">有冇地震、最近地震、最近有冇地震、地震消息、earthquake、earthquakes、recent earthquakes、any earthquakes</td></tr>
 <tr><td class="phrase">新聞</td><td>用廣東話讀出紐西蘭今日三條頭條新聞（人名地名保留英文）</td><td class="alt">新闻、今日新聞、今日新闻、有咩新聞、新聞頭條、news、news headlines、headlines、what&#x27;s the news</td></tr>
-<tr><td class="phrase">帶唔帶遮</td><td>出門前檢查：而家有冇落雨、兩個鐘內會唔會落雨，話你知使唔使帶遮帶褸</td><td class="alt">使唔使帶遮、使唔使带遮、需唔需要帶遮、帶遮、帶褸、出門檢查、出门检查、jacket check、need a jacket、need an umbrella、umbrella check</td></tr>
-<tr><td class="phrase">今日行程</td><td>讀出今日Google日曆剩低嘅行程：時間同標題</td><td class="alt">行程、今日有咩安排、有咩安排、今日有什麼安排、今日有什么安排、日程、今日日程、schedule、today&#x27;s schedule、agenda、calendar、my calendar</td></tr>
+</table>
+</section>
+<section class="cmd-group" data-cat="日程提醒">
+<h3>日程提醒</h3>
+<table>
+<tr><th>噉樣講</th><th>做乜嘢</th><th>其他講法</th></tr>
 <tr><td class="phrase">早晨</td><td>一次過講晒：今日天氣、嚟緊嘅巴士、今日行程、收垃圾提醒（今日或聽日先講）同三條新聞</td><td class="alt">早晨簡報、今日簡報、簡報、早安、good morning、morning briefing、briefing、daily briefing</td></tr>
+<tr><td class="phrase">今日行程</td><td>讀出今日Google日曆剩低嘅行程：時間同標題</td><td class="alt">行程、今日有咩安排、有咩安排、今日有什麼安排、今日有什么安排、日程、今日日程、schedule、today&#x27;s schedule、agenda、calendar、my calendar</td></tr>
+<tr><td class="phrase">提我</td><td>喺你部iPhone加提醒事項：講「提我」加內容同時間（例：提我聽日朝早九點買牛奶）</td><td class="alt">提醒我、remind me</td></tr>
+</table>
+</section>
+<section class="cmd-group" data-cat="玩吓">
+<h3>玩吓</h3>
+<table>
+<tr><th>噉樣講</th><th>做乜嘢</th><th>其他講法</th></tr>
 <tr><td class="phrase">今日金句</td><td>隨機講一句周星馳電影金句</td><td class="alt">每日金句、金句、星爺金句、講句金句、quote of the day、quote</td></tr>
 <tr><td class="phrase">電影金句</td><td>隨機講一句港產片對白，會講埋戲名同角色</td><td class="alt">戲入面嗰句、電影對白、港產片金句、講句戲入面嘅嘢、movie quote、film quote</td></tr>
-<tr><td class="phrase">提我</td><td>喺你部iPhone加提醒事項：講「提我」加內容同時間（例：提我聽日朝早九點買牛奶）</td><td class="alt">提醒我、remind me</td></tr>
 <tr><td class="phrase">畫</td><td>本機AI畫圖（淨係Slack用得）：講「畫」加內容（例：畫 一隻太空貓），約一分鐘後張圖出現喺Slack</td><td class="alt">draw、image</td></tr>
+</table>
+</section>
+<section class="cmd-group" data-cat="系統">
+<h3>系統</h3>
+<table>
+<tr><th>噉樣講</th><th>做乜嘢</th><th>其他講法</th></tr>
+<tr><td class="phrase">系統狀態</td><td>報告系統狀態：模型、設備、已運行幾耐</td><td class="alt">系统状态、系統狀況、系统状况、檢查系統狀態、检查系统状态、健康檢查、健康检查、system status、system health、status、health check</td></tr>
+<tr><td class="phrase">有咩指令</td><td>讀出所有可用指令</td><td class="alt">有什麼指令、有什么指令、指令列表、list commands、what commands</td></tr>
 <tr><td class="phrase">重啟語音系統</td><td>重新啟動語音系統（約三十秒後恢復）</td><td class="alt">重启语音系统、重新啟動語音系統、重新启动语音系统、重啟语音系统、重置語音系統、重置语音系统、系統重置、系统重置、重啟系統、重启系统、重启系統、restart voice system</td></tr>
 <tr><td class="phrase">重新部署</td><td>重新部署網站<div class="confirm">⚠ 要講「確認」先執行</div></td><td class="alt">重新部署網站、redeploy、deploy</td></tr>
 </table>
+</section>
 <p>危險指令會先讀返你嘅指令出嚟，六十秒之內講「<strong>確認</strong>」先會執行，講「<strong>取消</strong>」就唔做。</p>
 <p>講其他嘢？唔使指令，直接問 — 本地AI會用廣東話答你。</p>
 
@@ -96,5 +138,15 @@
 </table>
 
 <footer>私人系統：所有指令都要有授權金鑰先用得。呢頁由 asr/router.py 嘅指令表自動生成。</footer>
+<script>
+const chips = document.querySelectorAll(".chip");
+chips.forEach((chip) => chip.addEventListener("click", () => {
+  chips.forEach((c) => c.classList.toggle("active", c === chip));
+  const cat = chip.dataset.cat;
+  document.querySelectorAll(".cmd-group").forEach((g) => {
+    g.style.display = cat === "all" || g.dataset.cat === cat ? "" : "none";
+  });
+}));
+</script>
 </body>
 </html>
