@@ -139,8 +139,15 @@ nothing new reaches the Win11 box directly:
   reply drops or tie up the ASR box; over-limit mentions get an immediate
   "too fast" reply. Reply posting retries once (429 `Retry-After`
   honoured) — feedback is never dropped silently.
-- The bot token's only scope is `chat:write` (+ `app_mentions:read`);
-  a leaked token can post messages, not read history or join channels.
+- The bot token's scopes are `chat:write` + `app_mentions:read` +
+  `files:write` (image uploads for GENERATE_IMAGE); a leaked token can post
+  messages and files, not read history or join channels.
+- GENERATE_IMAGE (2026-07-19) keeps credential isolation: the image is
+  generated locally (CPU, offline HF model) and returned as base64 in the
+  command response; the bridge does the Slack upload — the local box still
+  never holds a Slack token. The prompt is free text but only ever a
+  subprocess argument (arg list, no shell) and file content, never a
+  command. Slack-source only, enforced in the router.
 - Command history entries record their channel (`source`: voice/text/slack)
   for auditability in `history.jsonl`, `service.log`, and the Notion mirror.
 

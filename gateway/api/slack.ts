@@ -2,9 +2,10 @@ import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { waitUntil } from "@vercel/functions";
 
 // Slack retries an event unless it gets a 200 within 3 s, but commands can
-// take ~20 s (morning briefing) — so the handler acks immediately and the
-// command runs post-response via waitUntil.
-const COMMAND_TIMEOUT_MS = 58_000;
+// take ~20 s (morning briefing) or ~60-100 s (GENERATE_IMAGE, CPU diffusion)
+// — so the handler acks immediately and the command runs post-response via
+// waitUntil, inside the 300 s maxDuration.
+const COMMAND_TIMEOUT_MS = 250_000;
 
 // Same replay bound as /api/voice; Slack sends its timestamp in unix seconds.
 const REPLAY_WINDOW_MS = 5 * 60_000;
@@ -55,6 +56,55 @@ async function postToSlack(channel: string, text: string): Promise<void> {
   }
 }
 
+// GENERATE_IMAGE returns its PNG as base64 in the command response — the
+// local box holds no Slack token by design (credential isolation), so the
+// bridge does the upload. Two-step external flow: files.upload is sunset.
+// Needs the files:write bot scope.
+async function uploadToSlack(channel: string, png: Uint8Array<ArrayBuffer>, title: string): Promise<boolean> {
+  const token = process.env.SLACK_BOT_TOKEN;
+  if (!token) {
+    console.error("SLACK_BOT_TOKEN not set; dropping image");
+    return false;
+  }
+  try {
+    const urlResp = await fetch("https://slack.com/api/files.getUploadURLExternal", {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        authorization: `Bearer ${token}`,
+      },
+      body: new URLSearchParams({ filename: "generated.png", length: String(png.byteLength) }),
+    });
+    const urlResult = await urlResp.json().catch(() => null);
+    if (!urlResult?.ok) {
+      console.error("files.getUploadURLExternal failed:", urlResult?.error ?? urlResp.status);
+      return false;
+    }
+    const putResp = await fetch(urlResult.upload_url, { method: "POST", body: png });
+    if (!putResp.ok) {
+      console.error("image bytes upload failed:", putResp.status);
+      return false;
+    }
+    const doneResp = await fetch("https://slack.com/api/files.completeUploadExternal", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json; charset=utf-8",
+        authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ files: [{ id: urlResult.file_id, title }], channel_id: channel }),
+    });
+    const doneResult = await doneResp.json().catch(() => null);
+    if (!doneResult?.ok) {
+      console.error("files.completeUploadExternal failed:", doneResult?.error ?? doneResp.status);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error("image upload unreachable:", err);
+    return false;
+  }
+}
+
 // Slow commands serialize behind Ollama on the ASR box (~20 s each), so a
 // burst of mentions queues later ones past every timeout and their replies
 // drop (observed 2026-07-18: 6 briefings in a minute, 3 replies lost). Cap
@@ -82,6 +132,8 @@ async function runCommand(
   eventTs: string,
 ): Promise<void> {
   let reply: string;
+  let imageB64: string | null = null;
+  let imageTitle = "image";
   try {
     const resp = await fetch(`${origin}/api/voice?mode=command`, {
       method: "POST",
@@ -102,10 +154,21 @@ async function runCommand(
       typeof result?.reply === "string" && result.reply
         ? result.reply
         : `指令出錯：${typeof result?.error === "string" ? result.error : "無回應"}`;
+    if (typeof result?.data?.image_b64 === "string") {
+      imageB64 = result.data.image_b64;
+      if (typeof result.data.prompt === "string") imageTitle = result.data.prompt;
+    }
   } catch {
     reply = "指令出錯：語音系統無回應";
   }
   await postToSlack(channel, reply);
+  if (imageB64) {
+    // new Uint8Array(...) re-views the bytes over a plain ArrayBuffer — the
+    // DOM fetch BodyInit type rejects Node's Buffer directly.
+    const uploaded = await uploadToSlack(channel, new Uint8Array(Buffer.from(imageB64, "base64")), imageTitle);
+    // Never fail silently: the reply already said the image was drawn.
+    if (!uploaded) await postToSlack(channel, "張圖整好咗但上載唔到Slack，遲啲再試");
+  }
 }
 
 export async function POST(request: Request): Promise<Response> {

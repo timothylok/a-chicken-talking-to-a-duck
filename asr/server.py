@@ -199,9 +199,11 @@ async def command(request: Request):
         data = await _read_audio(request)
         result = await run_in_threadpool(transcribe, data)
         source = "voice"
-    outcome = await run_in_threadpool(route, result["text"])
+    outcome = await run_in_threadpool(route, result["text"], source)
     record_history(result["text"], outcome, source)
-    if source != "workflow":  # phones just speak the reply; workflows need data for conditions
+    # Phones just speak the reply; workflows need data for conditions, and
+    # the Slack bridge needs it for image uploads.
+    if source not in ("workflow", "slack"):
         outcome.pop("data", None)
     log.info("command [%s]: %r -> %s (%s)", source, result["text"], outcome["command"], outcome["status"])
     return {"text": result["text"], **outcome}

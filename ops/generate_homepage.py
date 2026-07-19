@@ -40,6 +40,7 @@ DESCRIPTIONS = {
     "QUOTE_OF_DAY": "隨機講一句周星馳電影金句",
     "MOVIE_QUOTE": "隨機講一句港產片對白，會講埋戲名同角色",
     "CREATE_REMINDER": "喺你部iPhone加提醒事項：講「提我」加內容同時間（例：提我聽日朝早九點買牛奶）",
+    "GENERATE_IMAGE": "本機AI畫圖（淨係Slack用得）：講「畫」加內容（例：畫 一隻太空貓），約一分鐘後張圖出現喺Slack",
     "RESTART_ASR": "重新啟動語音系統（約三十秒後恢復）",
     "TRIGGER_DEPLOY": "重新部署網站",
 }

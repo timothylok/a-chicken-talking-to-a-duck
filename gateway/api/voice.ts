@@ -3,6 +3,9 @@ import { createHash, timingSafeEqual } from "node:crypto";
 // Vercel's own body limit is ~4.5 MB; reject earlier with a clear error.
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
 const UPSTREAM_TIMEOUT_MS = 55_000;
+// JSON text commands can run long on the box (GENERATE_IMAGE: CPU diffusion,
+// ~60-100 s); audio keeps the short timeout — a phone caller is waiting.
+const TEXT_COMMAND_TIMEOUT_MS = 240_000;
 
 // Best-effort per-instance rate limit (no shared store on Vercel functions).
 // Protects the Win11 box from a leaked key or a looping Shortcut: ASR
@@ -127,7 +130,7 @@ export async function POST(request: Request): Promise<Response> {
       method: "POST",
       headers,
       body,
-      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+      signal: AbortSignal.timeout(isText ? TEXT_COMMAND_TIMEOUT_MS : UPSTREAM_TIMEOUT_MS),
     });
   } catch {
     return Response.json({ error: "asr service unreachable" }, { status: 502 });

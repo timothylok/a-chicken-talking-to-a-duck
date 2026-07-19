@@ -5,6 +5,7 @@ allowlisted phrases after normalization, and require a confirmation phrase
 within CONFIRM_TTL_SECONDS before executing.
 """
 
+import base64
 import datetime as dt
 import json
 import logging
@@ -394,6 +395,105 @@ with open(_MOVIE_QUOTES_PATH, encoding="utf-8") as _f:
 def _movie_quote() -> str:
     pick = random.choice(MOVIE_QUOTES)
     return f"《{pick['movie']}》，{pick['character']}話：{pick['quote']}"
+
+
+# Slack-only image generation (asr/image_gen.py subprocess, LCM on CPU).
+# Like CREATE_REMINDER, matched by prefix in route(): the prompt is free
+# text, but it is only ever a subprocess argument and file content — never
+# a command. Slack-only because the reply channel must be able to show an
+# image (this also keeps blobs out of workflow evaluation).
+IMAGE_GEN_CLI = os.path.join(os.path.dirname(os.path.abspath(__file__)), "image_gen.py")
+IMAGE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache", "images")
+IMAGE_KEEP = 20
+# Single-flight: /command handlers run in a threadpool, and two parallel
+# fp32 pipelines (~5 GB each) would thrash the 6-core CPU past the timeout.
+# Slack's 3/min channel throttle caps volume; this caps concurrency.
+_image_lock = threading.Lock()
+# Raw-text match (not _normalize: the prompt needs its spacing); \b keeps
+# "imagine…" out of the English prefixes. CJK has no \b, so 畫-prefixed
+# chat (畫面…) is knowingly captured — Slack-only and typed, so rare.
+_IMAGE_RE = re.compile(r"^\s*(?:畫|(?:draw|image)\b)[:：,，、\s]*(.*)$", re.IGNORECASE | re.DOTALL)
+
+
+_CJK_RE = re.compile(r"[一-鿿]")
+
+
+def _translate_image_prompt(prompt: str) -> str:
+    # SD1.5's CLIP text encoder only understands English — a Cantonese
+    # prompt renders as a random pretty picture (observed: 一隻太空貓 drew a
+    # girl's portrait). gemma translates as data only, same guard as the
+    # headline translation; any failure falls back to the raw prompt.
+    if not _CJK_RE.search(prompt):
+        return prompt
+    payload = json.dumps({
+        "model": OLLAMA_MODEL,
+        "messages": [{"role": "user", "content":
+            "將呢句嘢翻譯做簡短英文，用嚟做AI畫圖提示，"
+            "只准輸出英文譯文嗰一句，唔好加引號、唔好解釋：\n" + prompt}],
+        "stream": False,
+        "keep_alive": "24h",
+    }).encode()
+    req = urllib.request.Request(
+        f"{OLLAMA_URL}/api/chat", data=payload,
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            reply = json.loads(resp.read())["message"]["content"]
+        line = next(ln for ln in reply.strip().splitlines() if ln.strip())
+        return line.strip().strip('"「」') or prompt
+    except Exception as exc:
+        log.warning("image prompt translation failed for %r: %s", prompt, exc)
+        return prompt
+
+
+def _generate_image(prompt: str, source: str) -> dict:
+    if source != "slack":
+        return {
+            "command": "GENERATE_IMAGE", "status": "error",
+            "reply": "呢個指令淨係Slack度用得，喺Slack嗌我畫先有得睇",
+        }
+    if not prompt:
+        return {
+            "command": "GENERATE_IMAGE", "status": "error",
+            "reply": "畫咩呀？講埋內容，例如：畫 一隻太空貓",
+        }
+    if not _image_lock.acquire(blocking=False):
+        return {"command": "GENERATE_IMAGE", "status": "error",
+                "reply": "畫緊上一張，等佢畫完先再嗌"}
+    try:
+        prompt_en = _translate_image_prompt(prompt)
+        os.makedirs(IMAGE_DIR, exist_ok=True)
+        name = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ") + ".png"
+        out_path = os.path.join(IMAGE_DIR, name)
+        try:
+            proc = subprocess.run(
+                [sys.executable, IMAGE_GEN_CLI, "--prompt", prompt_en, "--out", out_path],
+                capture_output=True, text=True, encoding="utf-8", timeout=210,
+                env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+            )
+        except subprocess.TimeoutExpired:
+            return {"command": "GENERATE_IMAGE", "status": "error",
+                    "reply": "畫得太耐，收筆算數，遲啲再試"}
+    finally:
+        _image_lock.release()
+    if proc.returncode != 0 or not os.path.exists(out_path):
+        log.error("image_gen failed (rc=%s): %s", proc.returncode, (proc.stderr or "")[-2000:])
+        return {"command": "GENERATE_IMAGE", "status": "error",
+                "reply": "枝筆斷咗，畫唔到，遲啲再試"}
+    with open(out_path, "rb") as f:
+        image_b64 = base64.b64encode(f.read()).decode("ascii")
+    # UTC-timestamp names sort chronologically; keep only the newest few.
+    for old in sorted(os.listdir(IMAGE_DIR))[:-IMAGE_KEEP]:
+        try:
+            os.remove(os.path.join(IMAGE_DIR, old))
+        except OSError:
+            pass
+    return {
+        "command": "GENERATE_IMAGE", "status": "executed",
+        "reply": f"畫好喇：{prompt}",
+        "data": {"prompt": prompt, "prompt_en": prompt_en, "file": name, "image_b64": image_b64},
+    }
 
 
 def _run_skill(cli: str, *args: str, timeout: int = 30) -> dict:
@@ -1095,6 +1195,14 @@ COMMANDS = {
         "destructive": False,
         "run": lambda: "講提我加埋內容同時間，例如提我聽日朝早九點買牛奶",
     },
+    "GENERATE_IMAGE": {
+        # Matched by prefix in route(), not exact phrase — listed here so it
+        # appears in LIST_COMMANDS, the home page, and the Whisper prompt.
+        # Slack-only: the reply channel must be able to show an image.
+        "phrases": ["畫", "draw", "image"],
+        "destructive": False,
+        "run": lambda: "喺Slack度講畫加埋內容，例如：畫 一隻太空貓",
+    },
     "RESTART_ASR": {
         "phrases": [
             "重啟語音系統", "重启语音系统", "重新啟動語音系統", "重新启动语音系统",
@@ -1259,7 +1367,12 @@ def record_history(text: str, outcome: dict, source: str = "voice") -> None:
         "reply": outcome.get("reply"),
     }
     if outcome.get("data") is not None:
-        entry["data"] = outcome["data"]
+        data = outcome["data"]
+        if "image_b64" in data:
+            # History (and its Notion mirror) records that an image was made,
+            # never the blob itself.
+            data = {**data, "image_b64": f"<{len(data['image_b64'])} base64 chars>"}
+        entry["data"] = data
     try:
         os.makedirs(os.path.dirname(HISTORY_PATH), exist_ok=True)
         with open(HISTORY_PATH, "a", encoding="utf-8") as f:
@@ -1330,7 +1443,7 @@ def _execute(command_id: str) -> dict:
         return {"command": command_id, "status": "error", "reply": "command failed"}
 
 
-def route(text: str) -> dict:
+def route(text: str, source: str = "voice") -> dict:
     phrase = _normalize(text)
     if not phrase:
         return {"command": None, "status": "no_match", "reply": "nothing heard"}
@@ -1348,6 +1461,10 @@ def route(text: str) -> dict:
 
     if phrase.startswith(REMINDER_PREFIXES):
         return _create_reminder(text)
+
+    image_match = _IMAGE_RE.match(text)
+    if image_match:
+        return _generate_image(image_match.group(1).strip(), source)
 
     for command_id, spec in COMMANDS.items():
         if phrase in (_normalize(p) for p in spec["phrases"]):
