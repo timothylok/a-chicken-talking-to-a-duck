@@ -3,7 +3,7 @@
     {
       "id": "umbrella-alert",
       "enabled": true,
-      "trigger": {"schedule": {"at": "07:30"}},
+      "trigger": {"schedule": {"at": "06:20"}},
       "if": {"command": "今日天氣", "data_gte": ["rain_prob", 70]},
       "then": [{"ntfy": {"title": "帶遮", "message": "{reply}", "priority": 3}}]
     },
