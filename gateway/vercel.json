@@ -5,6 +5,9 @@
     },
     "api/slack.ts": {
       "maxDuration": 300
+    },
+    "api/webchat.ts": {
+      "maxDuration": 300
     }
   }
 }

@@ -85,7 +85,16 @@ def _system_status() -> str:
     )
 
 
-def _list_commands() -> str:
+def _list_commands(lang: str | None = None) -> str:
+    # lang is only ever passed by the web-chat path (see _execute): that
+    # listing is filtered to WEB_COMMANDS and bilingual. Voice/Slack/text
+    # keep the original unfiltered, all-command Cantonese listing.
+    if lang is not None:
+        ids = [cid for cid in COMMANDS if cid in WEB_COMMANDS]
+        labels = [WEB_LABELS[cid][lang] for cid in ids]
+        if lang == "en":
+            return "Available commands: " + ", ".join(labels)
+        return "可用指令：" + "、".join(labels)
     return "可用指令：" + "、".join(spec["phrases"][0] for spec in COMMANDS.values())
 
 
@@ -108,15 +117,19 @@ FUEL_CLI = "D:/ai/thecolab-skills/skills/petrolmate-nz-au/scripts/cli.py"
 FUEL_LOCATION = os.environ.get("FUEL_LOCATION", "auckland")
 
 
-def _fuel_prices() -> tuple[str, dict] | str:
+def _fuel_prices(lang: str = "yue") -> tuple[str, dict] | str:
     stations = _run_skill(
         FUEL_CLI, "search", "--location", FUEL_LOCATION,
         "--fuel", "PULP95", "--limit", "3", "--json", timeout=20,
     )["stations"]
     if not stations:
-        return "攞唔到油價資料"
-    parts = [f"{s['name']}每公升{float(s['price']) / 100:.2f}蚊" for s in stations]
-    reply = f"{FUEL_LOCATION.split()[0].title()}附近最平95汽油：" + "，".join(parts)
+        return "攞唔到油價資料" if lang != "en" else "Couldn't fetch fuel price data."
+    if lang == "en":
+        parts = [f"{s['name']} ${float(s['price']) / 100:.2f}/L" for s in stations]
+        reply = f"Cheapest 95 petrol near {FUEL_LOCATION.split()[0].title()}: " + ", ".join(parts)
+    else:
+        parts = [f"{s['name']}每公升{float(s['price']) / 100:.2f}蚊" for s in stations]
+        reply = f"{FUEL_LOCATION.split()[0].title()}附近最平95汽油：" + "，".join(parts)
     data = {
         "fuel": "PULP95",
         "stations": [
@@ -180,16 +193,11 @@ def _speak_time(hhmm: str) -> str:
     return f"{period}{h12}點{m:02d}分" if m else f"{period}{h12}點"
 
 
-def _tide_times() -> tuple[str, dict] | str:
+def _tide_times(lang: str = "yue") -> tuple[str, dict] | str:
     data = _run_skill(TIDES_CLI, "next-tide", TIDE_PORT, "--json", timeout=20)
     events = data["events"][:2]
     if not events:
-        return "攞唔到潮汐資料"
-    names = {"high": "潮漲", "low": "潮退"}
-    parts = [
-        f"{names.get(e['type'], e['type'])}{_speak_time(e['time_local'])}，{e['height_m']}米"
-        for e in events
-    ]
+        return "攞唔到潮汐資料" if lang != "en" else "Couldn't fetch tide data."
     structured = {
         "port": data["resolved_port"],
         "events": [
@@ -197,6 +205,18 @@ def _tide_times() -> tuple[str, dict] | str:
             for e in events
         ],
     }
+    if lang == "en":
+        names_en = {"high": "high tide", "low": "low tide"}
+        parts = [
+            f"{names_en.get(e['type'], e['type'])} {e['time_local']}, {e['height_m']}m"
+            for e in events
+        ]
+        return f"{data['resolved_port']} tides: " + ", ".join(parts), structured
+    names = {"high": "潮漲", "low": "潮退"}
+    parts = [
+        f"{names.get(e['type'], e['type'])}{_speak_time(e['time_local'])}，{e['height_m']}米"
+        for e in events
+    ]
     return f"{data['resolved_port']}潮汐：" + "，".join(parts), structured
 
 
@@ -237,18 +257,32 @@ def _bin_next_dates() -> dict:
     return _run_skill(BINS_CLI, "--json", *args)["household"]["next_dates"]
 
 
-def _bin_day() -> tuple[str, dict] | str:
+_BIN_LABELS_EN = {"rubbish": "rubbish", "food_scraps": "food scraps", "recycling": "recycling"}
+
+
+def _bin_day(lang: str = "yue") -> tuple[str, dict] | str:
     if not BIN_ADDRESS:
-        return "未設定屋企地址，要喺服務環境變數加BIN_ADDRESS"
+        return ("未設定屋企地址，要喺服務環境變數加BIN_ADDRESS" if lang != "en"
+                 else "No address configured for bin day.")
     dates = _bin_next_dates()
-    by_date = {}
-    for key, label in _BIN_STREAMS:
-        if dates.get(key) and dates[key] != "—":
-            by_date.setdefault(dates[key], []).append(label)
-    if not by_date:
-        return "攞唔到收垃圾日資料"
-    parts = [f"{'同'.join(ls)}{_speak_date(d)}收" for d, ls in by_date.items()]
-    reply = "，".join(parts) + "。記住前一晚或者朝早七點前擺出嚟"
+    if lang == "en":
+        by_date = {}
+        for key, _ in _BIN_STREAMS:
+            if dates.get(key) and dates[key] != "—":
+                by_date.setdefault(dates[key], []).append(_BIN_LABELS_EN[key])
+        if not by_date:
+            return "Couldn't fetch bin day data."
+        parts = [f"{' and '.join(ls)} on {d}" for d, ls in by_date.items()]
+        reply = "; ".join(parts) + ". Put bins out the night before or by 7am."
+    else:
+        by_date = {}
+        for key, label in _BIN_STREAMS:
+            if dates.get(key) and dates[key] != "—":
+                by_date.setdefault(dates[key], []).append(label)
+        if not by_date:
+            return "攞唔到收垃圾日資料"
+        parts = [f"{'同'.join(ls)}{_speak_date(d)}收" for d, ls in by_date.items()]
+        reply = "，".join(parts) + "。記住前一晚或者朝早七點前擺出嚟"
     data = {key: dates[key] for key, _ in _BIN_STREAMS if dates.get(key) and dates[key] != "—"}
     return reply, data
 
@@ -289,19 +323,26 @@ def _milk_rows() -> list[dict]:
     )["rows"]
 
 
-def _milk_prices() -> tuple[str, dict] | str:
+def _milk_prices(lang: str = "yue") -> tuple[str, dict] | str:
     rows = _milk_rows()
     if not rows:
-        return "攞唔到牛奶價錢資料"
+        return "攞唔到牛奶價錢資料" if lang != "en" else "Couldn't fetch milk price data."
     parts, seen_vendors = [], set()
     for row in rows:
         vendor = row["store"].rsplit(" ", 1)[0]
         if vendor in seen_vendors:
             continue  # spoken reply keeps only the cheapest branch per chain
         seen_vendors.add(vendor)
-        price = f"{row['cents'] / 100:.2f}蚊"
-        parts.append(row["store"] + ("最平" + price if not parts else " " + price))
-    reply = "3公升牛奶：" + "，".join(parts)
+        if lang == "en":
+            price = f"${row['cents'] / 100:.2f}"
+            parts.append(row["store"] + (" cheapest " + price if not parts else " " + price))
+        else:
+            price = f"{row['cents'] / 100:.2f}蚊"
+            parts.append(row["store"] + ("最平" + price if not parts else " " + price))
+    if lang == "en":
+        reply = "3L milk: " + ", ".join(parts)
+    else:
+        reply = "3公升牛奶：" + "，".join(parts)
     data = {"stores": [
         {"store": r["store"], "product": r["product"], "cents": r["cents"]}
         for r in rows
@@ -349,7 +390,7 @@ RATES_CLI = "D:/ai/thecolab-skills/skills/interest-co-nz/scripts/cli.py"
 _BIG_BANKS = ["ANZ", "ASB", "BNZ", "Westpac", "Kiwibank"]
 
 
-def _mortgage_rates() -> tuple[str, dict] | str:
+def _mortgage_rates(lang: str = "yue") -> tuple[str, dict] | str:
     # --limit: CLI defaults to 30 rows, which cuts the table before Westpac.
     rows = _run_skill(RATES_CLI, "mortgage-rates", "--limit", "200", "--json")["rates"]
     best: dict[str, dict] = {}
@@ -362,13 +403,20 @@ def _mortgage_rates() -> tuple[str, dict] | str:
         if bank not in best or rate < best[bank]["rates"]["1_year"]:
             best[bank] = row
     if not best:
-        return "攞唔到按揭利率資料"
+        return "攞唔到按揭利率資料" if lang != "en" else "Couldn't fetch mortgage rate data."
     ranked = sorted(best.items(), key=lambda kv: kv[1]["rates"]["1_year"])
-    parts = [
-        bank + ("最平" if not parts_i else " ") + f"{row['rates']['1_year']}厘"
-        for parts_i, (bank, row) in enumerate(ranked)
-    ]
-    reply = "一年定息按揭：" + "，".join(parts)
+    if lang == "en":
+        parts = [
+            bank + (" cheapest " if parts_i == 0 else " ") + f"{row['rates']['1_year']}%"
+            for parts_i, (bank, row) in enumerate(ranked)
+        ]
+        reply = "1-year fixed mortgage rates: " + ", ".join(parts)
+    else:
+        parts = [
+            bank + ("最平" if not parts_i else " ") + f"{row['rates']['1_year']}厘"
+            for parts_i, (bank, row) in enumerate(ranked)
+        ]
+        reply = "一年定息按揭：" + "，".join(parts)
     data = {"banks": [
         {"bank": bank, "product": row["product"], "rates": row["rates"]}
         for bank, row in ranked
@@ -382,8 +430,12 @@ with open(_QUOTES_PATH, encoding="utf-8") as _f:
     QUOTES = json.load(_f)
 
 
-def _quote_of_day() -> str:
-    return random.choice(QUOTES)
+def _quote_of_day(lang: str = "yue") -> str:
+    # Curated canonical Cantonese quotes — translating them fabricates a
+    # "canonical" line that doesn't exist, so an English session still gets
+    # the real Cantonese quote with a short English note instead.
+    quote = random.choice(QUOTES)
+    return f"(Cantonese) {quote}" if lang == "en" else quote
 
 
 # HK movie quotes across films (asr/movie_quotes.json, user-provided 2026-07-15).
@@ -392,9 +444,12 @@ with open(_MOVIE_QUOTES_PATH, encoding="utf-8") as _f:
     MOVIE_QUOTES = json.load(_f)
 
 
-def _movie_quote() -> str:
+def _movie_quote(lang: str = "yue") -> str:
     pick = random.choice(MOVIE_QUOTES)
-    return f"《{pick['movie']}》，{pick['character']}話：{pick['quote']}"
+    reply = f"《{pick['movie']}》，{pick['character']}話：{pick['quote']}"
+    # Same canonical-content reasoning as _quote_of_day: no fabricated
+    # translation of the real line.
+    return f"(Cantonese) {reply}" if lang == "en" else reply
 
 
 # Slack-only image generation (asr/image_gen.py subprocess, LCM on CPU).
@@ -540,13 +595,31 @@ def _speak_ago(iso: str) -> str:
     return f"{minutes // (24 * 60)}日前"
 
 
-def _earthquakes() -> str:
+def _speak_ago_en(iso: str) -> str:
+    when = dt.datetime.fromisoformat(iso.replace("Z", "+00:00"))
+    minutes = round((dt.datetime.now(dt.timezone.utc) - when).total_seconds() / 60)
+    if minutes < 60:
+        return f"{max(minutes, 1)} min ago"
+    if minutes < 24 * 60:
+        return f"{minutes // 60}h ago"
+    return f"{minutes // (24 * 60)}d ago"
+
+
+def _earthquakes(lang: str = "yue") -> str:
     quakes = _run_skill(
         QUAKE_CLI, "quakes", "--mmi", "3", "--limit", "5", "--json", timeout=20,
     )["quakes"]
     if not quakes:
-        return "最近冇有感地震"
+        return "最近冇有感地震" if lang != "en" else "No recent felt earthquakes."
     latest = quakes[0]
+    if lang == "en":
+        # GeoNet's own locality string ("5 km south-east of ...") is already
+        # natural English — no need for _speak_locality's Cantonese reshaping.
+        return (
+            f"Most recent felt earthquake was {_speak_ago_en(latest['time'])}, "
+            f"{latest['locality']}, magnitude {latest['magnitude']:.1f}, "
+            f"depth {round(latest['depth_km'])}km"
+        )
     return (
         f"最近一次有感地震喺{_speak_ago(latest['time'])}，"
         f"{_speak_locality(latest['locality'])}，"
@@ -650,10 +723,24 @@ def _translate_headline(title: str) -> str:
     return re.sub(r"【\d】", "", line)
 
 
-def _news_headlines() -> tuple[str, dict]:
+def _news_headlines(lang: str = "yue") -> tuple[str, dict]:
     items = _run_skill(NEWS_CLI, "headlines", "--limit", "3", "--json")["items"]
     if not items:
-        return "攞唔到新聞", {"headlines": []}
+        empty_reply = "攞唔到新聞" if lang != "en" else "Couldn't fetch news."
+        return empty_reply, {"headlines": []}
+    data = {
+        "headlines": [
+            {"title": i["title"], "url": i["url"], "source": i["source"]}
+            for i in items[:3]
+        ],
+    }
+    if lang == "en":
+        # Raw English titles are already available — no translation needed.
+        parts = [
+            f"{o}: {i['title']}"
+            for o, i in zip(("First", "Second", "Third"), items[:3])
+        ]
+        return "Today's news: " + ". ".join(parts), data
     spoken = []
     for item in items[:3]:
         try:
@@ -662,15 +749,7 @@ def _news_headlines() -> tuple[str, dict]:
             log.error("headline translation failed, using English: %s", exc)
             spoken.append(item["title"])
     parts = [f"{o}，{t}" for o, t in zip(("第一", "第二", "第三"), spoken)]
-    # English titles are the pre-translation source of truth; url/source let
-    # the Notion Data column link back to the article.
-    data = {
-        "headlines": [
-            {"title": i["title"], "url": i["url"], "source": i["source"]}
-            for i in items[:3]
-        ],
-        "headlines_yue": spoken,
-    }
+    data["headlines_yue"] = spoken
     return "今日新聞：" + "。".join(parts), data
 
 
@@ -688,16 +767,22 @@ _WEATHER_DESCRIPTIONS = [
     (0, "天晴"), (2, "少雲"), (3, "多雲"), (48, "有霧"), (57, "毛毛雨"),
     (67, "落緊雨"), (77, "落緊雪"), (82, "有驟雨"), (86, "有驟雪"), (99, "有雷暴"),
 ]
+_WEATHER_DESCRIPTIONS_EN = [
+    (0, "clear"), (2, "partly cloudy"), (3, "cloudy"), (48, "foggy"),
+    (57, "drizzling"), (67, "raining"), (77, "snowing"), (82, "showers"),
+    (86, "snow showers"), (99, "thunderstorms"),
+]
 
 
-def _describe_weather(code: int) -> str:
-    for upper, desc in _WEATHER_DESCRIPTIONS:
+def _describe_weather(code: int, lang: str = "yue") -> str:
+    table = _WEATHER_DESCRIPTIONS_EN if lang == "en" else _WEATHER_DESCRIPTIONS
+    for upper, desc in table:
         if code <= upper:
             return desc
     return ""
 
 
-def _weather_today() -> tuple[str, dict]:
+def _weather_today(lang: str = "yue") -> tuple[str, dict]:
     with urllib.request.urlopen(OPEN_METEO_URL, timeout=10) as resp:
         payload = json.loads(resp.read())
     current = payload["current"]
@@ -709,13 +794,21 @@ def _weather_today() -> tuple[str, dict]:
         "rain_prob": daily["precipitation_probability_max"][0],
         "code": current["weather_code"],
     }
-    reply = (
-        f"奧克蘭而家{data['temp']}度，"
-        f"{_describe_weather(data['code'])}。"
-        f"今日最高{data['high']}度，"
-        f"最低{data['low']}度，"
-        f"落雨機會百分之{data['rain_prob']}"
-    )
+    if lang == "en":
+        reply = (
+            f"Auckland is currently {data['temp']}°C, "
+            f"{_describe_weather(data['code'], lang)}. "
+            f"Today's high {data['high']}°C, low {data['low']}°C, "
+            f"{data['rain_prob']}% chance of rain."
+        )
+    else:
+        reply = (
+            f"奧克蘭而家{data['temp']}度，"
+            f"{_describe_weather(data['code'])}。"
+            f"今日最高{data['high']}度，"
+            f"最低{data['low']}度，"
+            f"落雨機會百分之{data['rain_prob']}"
+        )
     return reply, data
 
 
@@ -733,19 +826,29 @@ JACKET_URL = (
 JACKET_IMMINENT_PROB = 60
 
 
-def _jacket_check() -> tuple[str, dict]:
+def _jacket_check(lang: str = "yue") -> tuple[str, dict]:
     with urllib.request.urlopen(JACKET_URL, timeout=10) as resp:
         payload = json.loads(resp.read())
     code = payload["current"]["weather_code"]
     probs = payload["hourly"]["precipitation_probability"] or [0]
     imminent = max(p for p in probs if p is not None) if any(p is not None for p in probs) else 0
     raining = code >= 51  # WMO: drizzle/rain/snow/showers/thunder all mean "wet"
-    if raining:
-        reply = f"{_describe_weather(code)}！帶褸帶遮先好出門"
-    elif imminent >= JACKET_IMMINENT_PROB:
-        reply = f"就嚟落雨，兩個鐘內機會百分之{imminent}，帶定遮啦"
+    if lang == "en":
+        # The 帶-avoidance rule below only matters for the iPhone leave-home
+        # automation, which never calls this via source == "web".
+        if raining:
+            reply = f"{_describe_weather(code, lang)}! Bring a jacket and umbrella before heading out."
+        elif imminent >= JACKET_IMMINENT_PROB:
+            reply = f"Rain is coming, {imminent}% chance in the next 2 hours — bring an umbrella."
+        else:
+            reply = "No rain right now, safe to head out."
     else:
-        reply = "而家冇雨，放心出門"
+        if raining:
+            reply = f"{_describe_weather(code)}！帶褸帶遮先好出門"
+        elif imminent >= JACKET_IMMINENT_PROB:
+            reply = f"就嚟落雨，兩個鐘內機會百分之{imminent}，帶定遮啦"
+        else:
+            reply = "而家冇雨，放心出門"
     return reply, {"raining": raining, "imminent_prob": imminent, "code": code}
 
 
@@ -770,11 +873,23 @@ def _yesterday_weather_data() -> dict | None:
     return found
 
 
-def _weather_compare() -> str:
+def _weather_compare(lang: str = "yue") -> str:
     yesterday = _yesterday_weather_data()
     if not yesterday:
-        return "冇琴日嘅天氣紀錄，今日問咗天氣，聽日先比較得"
-    _, today = _weather_today()
+        return ("冇琴日嘅天氣紀錄，今日問咗天氣，聽日先比較得" if lang != "en"
+                 else "No weather record from yesterday yet — ask today's weather first, then compare tomorrow.")
+    _, today = _weather_today(lang)
+    if lang == "en":
+        parts = []
+        for key, label in (("high", "high"), ("low", "low")):
+            diff = today[key] - yesterday[key]
+            if diff > 0:
+                parts.append(f"{label} {today[key]}°C, {diff}°C higher than yesterday")
+            elif diff < 0:
+                parts.append(f"{label} {today[key]}°C, {-diff}°C lower than yesterday")
+            else:
+                parts.append(f"{label} {today[key]}°C, same as yesterday")
+        return "Today's " + ", ".join(parts)
     parts = []
     for key, label in (("high", "最高"), ("low", "最低")):
         diff = today[key] - yesterday[key]
@@ -1019,6 +1134,32 @@ def _trigger_deploy() -> str:
     with urllib.request.urlopen(hook, data=b"") as resp:
         return f"deploy triggered ({resp.status})"
 
+
+# Public web-chat entry point (gateway/public/chat.html -> /api/webchat,
+# source == "web") can only ever reach this subset — no destructive,
+# personal-calendar, or compute-heavy commands, and no LLM chat fallback
+# (see route()/_execute below). WEB_LABELS backs the web-only bilingual
+# LIST_COMMANDS listing.
+WEB_COMMANDS = {
+    "WEATHER_TODAY", "WEATHER_COMPARE", "FUEL_PRICES", "TIDE_TIMES", "BIN_DAY",
+    "MILK_PRICES", "MORTGAGE_RATES", "EARTHQUAKES", "NEWS_HEADLINES",
+    "JACKET_CHECK", "QUOTE_OF_DAY", "MOVIE_QUOTE", "LIST_COMMANDS",
+}
+WEB_LABELS = {
+    "WEATHER_TODAY": {"yue": "今日天氣", "en": "today's weather"},
+    "WEATHER_COMPARE": {"yue": "同琴日比", "en": "compare with yesterday"},
+    "FUEL_PRICES": {"yue": "油價", "en": "fuel prices"},
+    "TIDE_TIMES": {"yue": "潮汐", "en": "tide times"},
+    "BIN_DAY": {"yue": "幾時收垃圾", "en": "bin day"},
+    "MILK_PRICES": {"yue": "牛奶價錢", "en": "milk prices"},
+    "MORTGAGE_RATES": {"yue": "按揭利率", "en": "mortgage rates"},
+    "EARTHQUAKES": {"yue": "地震", "en": "earthquakes"},
+    "NEWS_HEADLINES": {"yue": "新聞", "en": "news headlines"},
+    "JACKET_CHECK": {"yue": "帶唔帶遮", "en": "jacket/umbrella check"},
+    "QUOTE_OF_DAY": {"yue": "今日金句", "en": "quote of the day"},
+    "MOVIE_QUOTE": {"yue": "電影金句", "en": "movie quote"},
+    "LIST_COMMANDS": {"yue": "有咩指令", "en": "list commands"},
+}
 
 COMMANDS = {
     "SYSTEM_STATUS": {
@@ -1424,15 +1565,21 @@ def _pause_english(text: str) -> str:
     return re.sub(r"(?<=[A-Za-z'])[ ](?=[A-Za-z'])", "，", text)
 
 
-def _execute(command_id: str) -> dict:
+def _execute(command_id: str, source: str = "voice", lang: str = "yue") -> dict:
     try:
-        out = COMMANDS[command_id]["run"]()
+        if source == "web" and command_id in WEB_COMMANDS:
+            out = COMMANDS[command_id]["run"](lang=lang)
+        else:
+            out = COMMANDS[command_id]["run"]()
         # Runners may return (reply, data): data is structured history for
         # later comparisons (e.g. today vs yesterday), never spoken.
         reply, data = out if isinstance(out, tuple) else (out, None)
-        reply = _localize_places(reply)
-        if COMMANDS[command_id].get("pause_english", True):
-            reply = _pause_english(reply)
+        # pause_english/_localize_places are Cantonese-TTS text massaging;
+        # they'd visibly mangle an English web reply meant to be read.
+        if not (source == "web" and lang == "en"):
+            reply = _localize_places(reply)
+            if COMMANDS[command_id].get("pause_english", True):
+                reply = _pause_english(reply)
         log.info("command %s reply: %r", command_id, reply)
         result = {"command": command_id, "status": "executed", "reply": reply}
         if data is not None:
@@ -1443,23 +1590,29 @@ def _execute(command_id: str) -> dict:
         return {"command": command_id, "status": "error", "reply": "command failed"}
 
 
-def route(text: str, source: str = "voice") -> dict:
+def route(text: str, source: str = "voice", lang: str = "yue") -> dict:
     phrase = _normalize(text)
     if not phrase:
         return {"command": None, "status": "no_match", "reply": "nothing heard"}
 
-    if phrase in CONFIRM_PHRASES:
-        pending = _pending["command"]
-        if pending and time.time() < _pending["expires"]:
+    # Confirm/cancel and the pending-destructive-command they act on are
+    # shared global state across every channel. A public web visitor must
+    # never be able to confirm a destructive command another channel armed
+    # seconds earlier, so source == "web" skips this branch entirely — it
+    # can't reach a destructive command in the first place (see below).
+    if source != "web":
+        if phrase in CONFIRM_PHRASES:
+            pending = _pending["command"]
+            if pending and time.time() < _pending["expires"]:
+                _pending["command"] = None
+                return _execute(pending, source, lang)
+            return {"command": None, "status": "no_match", "reply": "nothing to confirm"}
+
+        if phrase in CANCEL_PHRASES:
             _pending["command"] = None
-            return _execute(pending)
-        return {"command": None, "status": "no_match", "reply": "nothing to confirm"}
+            return {"command": None, "status": "cancelled", "reply": "cancelled"}
 
-    if phrase in CANCEL_PHRASES:
-        _pending["command"] = None
-        return {"command": None, "status": "cancelled", "reply": "cancelled"}
-
-    if phrase.startswith(REMINDER_PREFIXES):
+    if source != "web" and phrase.startswith(REMINDER_PREFIXES):
         return _create_reminder(text)
 
     image_match = _IMAGE_RE.match(text)
@@ -1467,6 +1620,8 @@ def route(text: str, source: str = "voice") -> dict:
         return _generate_image(image_match.group(1).strip(), source)
 
     for command_id, spec in COMMANDS.items():
+        if source == "web" and command_id not in WEB_COMMANDS:
+            continue
         if phrase in (_normalize(p) for p in spec["phrases"]):
             if spec["destructive"]:
                 _pending["command"] = command_id
@@ -1476,6 +1631,12 @@ def route(text: str, source: str = "voice") -> dict:
                     "status": "needs_confirmation",
                     "reply": f"say 確認 to run {command_id}",
                 }
-            return _execute(command_id)
+            return _execute(command_id, source, lang)
+
+    if source == "web":
+        reply = ("唔明呀，試下問吓天氣、油價、帶唔帶遮，或者打「有咩指令」睇晒可以問咩" if lang != "en"
+                  else "Sorry, I didn't understand that. Try asking about weather or fuel prices, "
+                       "or type 'list commands' to see what I can answer.")
+        return {"command": None, "status": "no_match", "reply": reply}
 
     return _ollama_fallback(text)

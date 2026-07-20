@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>傾偈 — 雞同鴨講</title>
+<style>
+  :root { --bg: #ffffff; --fg: #1a1a1a; --muted: #666; --line: #e0e0e0; --accent: #b45309; --bubble: #f4f4f5; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #16181d; --fg: #e8e8e8; --muted: #9a9a9a; --line: #333; --accent: #f59e0b; --bubble: #24272e; }
+  }
+  body { margin: 0 auto; max-width: 34rem; padding: 1.5rem 1.25rem 2rem;
+         background: var(--bg); color: var(--fg);
+         font-family: -apple-system, "PingFang HK", "Microsoft JhengHei", sans-serif;
+         line-height: 1.6; display: flex; flex-direction: column; min-height: 100vh;
+         box-sizing: border-box; }
+  h1 { font-size: 1.3rem; margin: 0 0 0.25rem; }
+  .tagline { color: var(--muted); margin: 0 0 1.5rem; font-size: 0.9rem; }
+
+  /* Language picker */
+  #picker { display: flex; flex-direction: column; gap: 0.75rem; margin-top: 2rem; }
+  .lang-btn { border: 1px solid var(--line); border-radius: 10px; background: none;
+              color: var(--fg); font: inherit; font-size: 1.05rem; padding: 0.9rem 1rem;
+              cursor: pointer; text-align: left; }
+  .lang-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* Chat screen */
+  #chat { display: none; flex-direction: column; flex: 1; min-height: 0; }
+  #chat.active { display: flex; }
+  #picker.hidden { display: none; }
+  .chat-header { display: flex; justify-content: space-between; align-items: baseline;
+                 border-bottom: 1px solid var(--line); padding-bottom: 0.6rem; margin-bottom: 0.75rem; }
+  #change-lang { border: none; background: none; color: var(--muted); font: inherit;
+                 font-size: 0.85rem; cursor: pointer; text-decoration: underline; padding: 0; }
+  #messages { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 0.6rem;
+              padding: 0.25rem 0; }
+  .msg { max-width: 85%; padding: 0.55rem 0.8rem; border-radius: 12px; font-size: 0.95rem;
+         white-space: pre-wrap; word-break: break-word; }
+  .msg.bot { background: var(--bubble); align-self: flex-start; }
+  .msg.user { background: var(--accent); color: #fff; align-self: flex-end; }
+  .msg.error { background: none; border: 1px solid var(--accent); color: var(--accent); align-self: flex-start; }
+  #composer { display: flex; gap: 0.5rem; margin-top: 0.75rem; }
+  #text-input { flex: 1; padding: 0.65rem 0.8rem; border-radius: 999px; border: 1px solid var(--line);
+                background: var(--bg); color: var(--fg); font: inherit; font-size: 0.95rem; }
+  #send-btn { border: none; border-radius: 999px; background: var(--accent); color: #fff;
+              font: inherit; font-size: 0.95rem; padding: 0 1.1rem; cursor: pointer; }
+  #send-btn:disabled { opacity: 0.5; cursor: default; }
+  footer { margin-top: 1.25rem; color: var(--muted); font-size: 0.78rem; text-align: center; }
+  footer a { color: inherit; }
+</style>
+</head>
+<body>
+
+<h1>雞同鴨講</h1>
+<p class="tagline">Ask about weather, fuel prices, tides, bins, news and more — 問吓天氣、油價、潮汐、垃圾日、新聞等等</p>
+
+<div id="picker">
+  <button class="lang-btn" data-lang="yue">廣東話</button>
+  <button class="lang-btn" data-lang="en">English</button>
+</div>
+
+<div id="chat">
+  <div class="chat-header">
+    <span id="lang-label"></span>
+    <button id="change-lang"></button>
+  </div>
+  <div id="messages"></div>
+  <form id="composer">
+    <input id="text-input" type="text" autocomplete="off">
+    <button id="send-btn" type="submit"></button>
+  </form>
+</div>
+
+<footer>私人系統 — <a href="/">返回首頁 / home</a></footer>
+
+<script>
+const picker = document.getElementById("picker");
+const chat = document.getElementById("chat");
+const messages = document.getElementById("messages");
+const composer = document.getElementById("composer");
+const textInput = document.getElementById("text-input");
+const sendBtn = document.getElementById("send-btn");
+const langLabel = document.getElementById("lang-label");
+const changeLangBtn = document.getElementById("change-lang");
+
+const COPY = {
+  yue: {
+    label: "廣東話",
+    change: "換語言",
+    placeholder: "打字問嘢…",
+    send: "send",
+    greeting: "早晨！可以試下問「有咩指令」睇晒可以問咩。",
+    networkError: "傾偈斷咗線，等陣再試",
+  },
+  en: {
+    label: "English",
+    change: "change language",
+    placeholder: "Type a message…",
+    send: "Send",
+    greeting: "Hi! Try asking \"list commands\" to see what I can answer.",
+    networkError: "Connection lost — please try again.",
+  },
+};
+
+function addMessage(text, cls) {
+  const el = document.createElement("div");
+  el.className = "msg " + cls;
+  el.textContent = text;
+  messages.appendChild(el);
+  messages.scrollTop = messages.scrollHeight;
+  return el;
+}
+
+function startChat(lang) {
+  sessionStorage.setItem("chatLang", lang);
+  const copy = COPY[lang];
+  picker.classList.add("hidden");
+  chat.classList.add("active");
+  langLabel.textContent = copy.label;
+  changeLangBtn.textContent = copy.change;
+  textInput.placeholder = copy.placeholder;
+  sendBtn.textContent = copy.send;
+  messages.innerHTML = "";
+  addMessage(copy.greeting, "bot");
+  textInput.focus();
+}
+
+document.querySelectorAll(".lang-btn").forEach((btn) => {
+  btn.addEventListener("click", () => startChat(btn.dataset.lang));
+});
+
+changeLangBtn.addEventListener("click", () => {
+  sessionStorage.removeItem("chatLang");
+  chat.classList.remove("active");
+  picker.classList.remove("hidden");
+});
+
+composer.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const lang = sessionStorage.getItem("chatLang") || "yue";
+  const text = textInput.value.trim();
+  if (!text) return;
+  addMessage(text, "user");
+  textInput.value = "";
+  textInput.disabled = true;
+  sendBtn.disabled = true;
+  try {
+    const resp = await fetch("/api/webchat", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text, lang }),
+    });
+    const data = await resp.json().catch(() => null);
+    if (!resp.ok || !data || typeof data.reply !== "string") {
+      addMessage((data && data.error) || COPY[lang].networkError, "error");
+    } else {
+      addMessage(data.reply, "bot");
+    }
+  } catch {
+    addMessage(COPY[lang].networkError, "error");
+  } finally {
+    textInput.disabled = false;
+    sendBtn.disabled = false;
+    textInput.focus();
+  }
+});
+
+const savedLang = sessionStorage.getItem("chatLang");
+if (savedLang === "yue" || savedLang === "en") {
+  startChat(savedLang);
+}
+</script>
+</body>
+</html>

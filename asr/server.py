@@ -180,6 +180,7 @@ async def inference(request: Request):
 
 @app.post("/command")
 async def command(request: Request):
+    lang = "yue"
     if request.headers.get("content-type", "").startswith("application/json"):
         # Text path (scheduled Shortcut automations, e.g. spoken morning
         # briefing): skip ASR and route the text directly.
@@ -191,15 +192,17 @@ async def command(request: Request):
         if not isinstance(text, str) or not text.strip():
             raise HTTPException(status_code=400, detail="json body must include a non-empty 'text'")
         result = {"text": text.strip()[:500]}
-        # Channel tag: the Slack bridge and workflow engine mark their
-        # requests; other JSON text callers (Shortcut automations) are
-        # "text". Audio is always "voice".
-        source = body.get("source") if body.get("source") in ("slack", "workflow") else "text"
+        # Channel tag: the Slack bridge, workflow engine, and public web
+        # chat mark their requests; other JSON text callers (Shortcut
+        # automations) are "text". Audio is always "voice".
+        source = body.get("source") if body.get("source") in ("slack", "workflow", "web") else "text"
+        # Only the web chat sends lang; every other channel is Cantonese.
+        lang = body.get("lang") if body.get("lang") in ("yue", "en") else "yue"
     else:
         data = await _read_audio(request)
         result = await run_in_threadpool(transcribe, data)
         source = "voice"
-    outcome = await run_in_threadpool(route, result["text"], source)
+    outcome = await run_in_threadpool(route, result["text"], source, lang)
     record_history(result["text"], outcome, source)
     # Phones just speak the reply; workflows need data for conditions, and
     # the Slack bridge needs it for image uploads.
