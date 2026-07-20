@@ -502,12 +502,12 @@ def _translate_image_prompt(prompt: str) -> str:
         return prompt
 
 
-def _generate_image(prompt: str, source: str) -> dict:
+def _generate_image(prompt: str, source: str, lang: str = "yue") -> dict:
     if source != "slack":
-        return {
-            "command": "GENERATE_IMAGE", "status": "error",
-            "reply": "呢個指令淨係Slack度用得，喺Slack嗌我畫先有得睇",
-        }
+        reply = ("This command only works in Slack — mention me there to draw"
+                  if source == "web" and lang == "en"
+                  else "呢個指令淨係Slack度用得，喺Slack嗌我畫先有得睇")
+        return {"command": "GENERATE_IMAGE", "status": "error", "reply": reply}
     if not prompt:
         return {
             "command": "GENERATE_IMAGE", "status": "error",
@@ -1617,7 +1617,7 @@ def route(text: str, source: str = "voice", lang: str = "yue") -> dict:
 
     image_match = _IMAGE_RE.match(text)
     if image_match:
-        return _generate_image(image_match.group(1).strip(), source)
+        return _generate_image(image_match.group(1).strip(), source, lang)
 
     for command_id, spec in COMMANDS.items():
         if source == "web" and command_id not in WEB_COMMANDS:

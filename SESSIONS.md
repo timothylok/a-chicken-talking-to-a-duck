@@ -1,5 +1,17 @@
 # Session log
 
+## 2026-07-20
+- Built a public bilingual web chatbot on top of the existing voice OS: `gateway/public/chat.html` (language picker, Cantonese/English) + `gateway/api/webchat.ts` (new, unauthenticated, own per-IP rate limiter, calls the ASR box directly rather than proxying through `/api/voice`).
+- `asr/router.py`/`asr/server.py`: new `source == "web"` value, restricted to a `WEB_COMMANDS` allowlist (12 read-only data commands + LIST_COMMANDS) — never destructive/personal/GENERATE_IMAGE commands, never the Ollama chat fallback. Added a `lang` parameter threaded through `route()`/`_execute()`; 12 commands got real per-language reply templates built from the same fetched data (no LLM in the public reply path). QUOTE_OF_DAY/MOVIE_QUOTE deliberately stay Cantonese-only (curated canonical content) with a short English note.
+- Found and fixed a safety gap while implementing this: CONFIRM_PHRASES/CANCEL_PHRASES act on a single global pending-command dict shared by every channel — a web visitor could otherwise have confirmed a destructive command armed seconds earlier by voice/Slack. Gated that branch behind `source != "web"`; verified live via a direct `router.route()` test that it now can't cross-execute.
+- Verified the router logic directly (bypassing the live service) for all new commands/paths — all correct. Committed (3a0b11b) and pushed to main; Vercel auto-deployed the gateway.
+- **Known issue found, then closed same session**: the live `VoiceASR` Windows service was still running the pre-webchat code at first (git push only redeploys the Vercel gateway, not the local service), so an initial English test on chat.html came back in Cantonese. User restarted the service and re-tested: English confirmed working live end-to-end.
+- Next: fuller browser pass — Cantonese on the actual page (only verified via a direct router call so far), the "change language" reset, confirm destructive/reminder commands can't be triggered from the chat UI, and a rate-limit sanity check.
+
+## 2026-07-21
+- Confirmed the webchat per-IP rate limiter (10 req/min, `gateway/api/webchat.ts`) was already live from 3a0b11b — no change needed.
+- Checked the decline path: the generic no-match reply already comes back correctly per-language. Found `_generate_image`'s non-Slack reject (`asr/router.py`) was hardcoded Cantonese-only, reachable from an English web-chat session via `draw`/`image` prefixes in `_IMAGE_RE`. Added a `lang` param and an English variant; verified live in the browser in both languages after a `VoiceASR` service restart.
+
 ## 2026-07-11
 - Filled CLAUDE.md section 10 with the voice-OS architecture blueprint; added memory/session-log paths.
 - Design review: added prioritized hardening checklist to CLAUDE.md (tunnel auth bypass, command-router injection, upload limits, reliability).
