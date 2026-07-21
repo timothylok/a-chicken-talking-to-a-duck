@@ -30,7 +30,7 @@ Say something in Cantonese to an iOS Shortcut and it speaks the answer back:
 
 Anything that isn't a command falls through to a local LLM that replies in genuine Hong Kong 口語 — and by design its output can *never* trigger a command.
 
-The same commands also work from a keyboard: @mention the bot in Slack and the answer comes back in the channel — same allowlist, same security model, and every command is tagged with the channel it came from (voice / automation / Slack).
+The same commands also work from a keyboard: @mention the bot in Slack and the answer comes back in the channel — same allowlist, same security model, and every command is tagged with the channel it came from (voice / automation / Slack). A public, unauthenticated bilingual web chat (Cantonese/English, at `/chat.html`) offers the same safe read-only subset for anyone without Slack access — no chat fallback, no destructive or personal commands.
 
 ## How we built it
 
@@ -45,6 +45,7 @@ The same commands also work from a keyboard: @mention the bot in Slack and the a
 - **Command router** — an exact normalized-phrase allowlist (`asr/router.py`). Adding a command is one dict entry; the recognition prompt rebuilds itself from it. NZ data commands shell out to vetted open-source NZ data connectors (Auckland Transport, LINZ tides, Gaspy fuel, Auckland Council bins, NZ news RSS).
 - **Local LLM** — Ollama running `gemma3:4b`, chosen after a bake-off for producing the most natural spoken Cantonese; it powers the chat fallback, live headline translation, and reminder extraction, warmed at service startup.
 - **Slack bridge** — a second front door (`gateway/api/slack.ts`): @mention the bot and the signature-verified event forwards the text through the same authenticated gateway path, with the Cantonese reply posted back to the channel. Mentions only, and Slack's delivery retries are acked and ignored so a slow command never runs twice. A burst of mentions is throttled per channel (three commands a minute) with an immediate "too fast" reply — nothing ever fails silently.
+- **Web chat** — a third, public front door (`gateway/public/chat.html` + `gateway/api/webchat.ts`): no shared secret, so it's locked down instead by scope — a fixed allowlist of 13 safe, read-only commands, no chat fallback, no destructive or personal-data commands, and its own per-IP rate limit.
 - **Ops** — everything runs as auto-restarting Windows services, with a scheduled heartbeat pinging healthchecks.io every 10 minutes so silent failure gets noticed. A fleet of small scheduled tasks does the rest: mirroring command history to Notion (chat never leaves the machine), pushing reminder notifications at their due time, watching milk prices, and pruning transcripts on a retention schedule.
 - **Workflows** — a declarative IF→THEN rule file replaces IFTTT for free: schedule or history triggers, conditions tested against live command data, and ntfy/command/webhook actions (destructive commands refused by design). Rain ≥ 70% at 07:30 → umbrella push; collection day tomorrow → bins-out push at 20:00; any command errors → instant alert.
 

@@ -132,6 +132,7 @@ PAGE = """<!DOCTYPE html>
 <p>成個過程語音同文字都留喺自己機度做辨識，唔會送去第三方雲端AI，
 指令仲要一字不差先會執行，危險動作重要講「確認」先做。</p>
 <p class="flow">iPhone 🎤 → Vercel → Cloudflare Tunnel → 屋企Win11（語音辨識）→ 指令／AI傾偈 → 講返畀你聽</p>
+<p><a href="/chat.html">打字版傾偈（廣東話／English）→</a></p>
 
 <h2>指令一覽</h2>
 <div class="filters">
