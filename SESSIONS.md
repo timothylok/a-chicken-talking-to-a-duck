@@ -10,7 +10,9 @@
 
 ## 2026-07-21
 - Confirmed the webchat per-IP rate limiter (10 req/min, `gateway/api/webchat.ts`) was already live from 3a0b11b — no change needed.
-- Checked the decline path: the generic no-match reply already comes back correctly per-language. Found `_generate_image`'s non-Slack reject (`asr/router.py`) was hardcoded Cantonese-only, reachable from an English web-chat session via `draw`/`image` prefixes in `_IMAGE_RE`. Added a `lang` param and an English variant; verified live in the browser in both languages after a `VoiceASR` service restart.
+- Checked the decline path: the generic no-match reply already comes back correctly per-language. Found `_generate_image`'s non-Slack reject (`asr/router.py`) was hardcoded Cantonese-only, reachable from an English web-chat session via `draw`/`image` prefixes in `_IMAGE_RE`. Added a `lang` param and an English variant; verified live in the browser in both languages after a `VoiceASR` service restart. Committed and pushed (d750a89).
+- User reported the umbrella-alert ntfy (rain warning) fired at 7:30/7:40AM, an hour after their ~6:40AM departure — useless by the time it arrived. Traced it to `ops/workflows.json`'s `umbrella-alert` rule, hardcoded to fire at 07:30 (`workflows.log` confirmed it fired exactly on schedule, not late — the schedule itself was just too late for this user). Rescheduled to 06:20 (config-only, no restart needed — `ops/workflows.py` reloads the JSON every run). Also gave it its own line on the homepage automations list (`ops/generate_homepage.py`) instead of being bundled into the generic workflow-engine line with no time shown. Committed and pushed (c47fb5e).
+- Updated memory (`voice-os-operational.md`, `next-session-plan.md`, `MEMORY.md`) to reflect both fixes and mark the webchat browser-pass follow-up items done.
 
 ## 2026-07-11
 - Filled CLAUDE.md section 10 with the voice-OS architecture blueprint; added memory/session-log paths.
