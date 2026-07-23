@@ -6,6 +6,7 @@ within CONFIRM_TTL_SECONDS before executing.
 """
 
 import base64
+import concurrent.futures
 import datetime as dt
 import json
 import logging
@@ -689,6 +690,8 @@ def _translate_headline(title: str) -> str:
            "抄落譯文度，唔准刪走或者改寫。例：【1】 wins election in 【2】"
            " → 【1】喺【2】贏咗選舉。"
            if names else "")
+        + "除咗【N】代號之外，譯文入面唔准留低任何英文字或者英文詞組，"
+          "全部都要譯做中文，包括『flooding』『blocked』噉嘅普通英文字。"
         + "只准輸出譯文嗰一句，唔好加編號、引號、解釋：\n"
     )
 
@@ -741,13 +744,17 @@ def _news_headlines(lang: str = "yue") -> tuple[str, dict]:
             for o, i in zip(("First", "Second", "Third"), items[:3])
         ]
         return "Today's news: " + ". ".join(parts), data
-    spoken = []
-    for item in items[:3]:
+    def _translate_or_fallback(item: dict) -> str:
         try:
-            spoken.append(_translate_headline(item["title"]))
+            return _translate_headline(item["title"])
         except Exception as exc:
             log.error("headline translation failed, using English: %s", exc)
-            spoken.append(item["title"])
+            return item["title"]
+
+    # 3 independent Ollama calls — run concurrently (~8-12s wall-clock
+    # instead of ~13-15s sequential); .map preserves order for 第一/第二/第三.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
+        spoken = list(pool.map(_translate_or_fallback, items[:3]))
     parts = [f"{o}，{t}" for o, t in zip(("第一", "第二", "第三"), spoken)]
     data["headlines_yue"] = spoken
     return "今日新聞：" + "。".join(parts), data
@@ -1113,7 +1120,7 @@ def _morning_briefing() -> str:
     # Compose existing sections; a failed source drops out instead of
     # killing the whole briefing.
     sections = []
-    for fn in (_weather_today, _bus_times, _briefing_agenda, _briefing_bins, _milk_drop_line, _news_headlines):
+    for fn in (_weather_today, _briefing_agenda, _briefing_bins, _milk_drop_line, _news_headlines):
         try:
             part = fn()
             if isinstance(part, tuple):  # runners that also return history data
