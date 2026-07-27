@@ -202,6 +202,7 @@ async def command(request: Request):
         data = await _read_audio(request)
         result = await run_in_threadpool(transcribe, data)
         source = "voice"
+    log.info("command [%s] received: %r", source, result["text"])
     outcome = await run_in_threadpool(route, result["text"], source, lang)
     record_history(result["text"], outcome, source)
     # Phones just speak the reply; workflows need data for conditions, and

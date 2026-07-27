@@ -24,6 +24,7 @@ Say something in Cantonese to an iOS Shortcut and it speaks the answer back:
 - **提我聽日朝早九點買牛奶** — creates an iOS Reminder *and* pushes a phone notification at the due time (the one command where an LLM extracts data — as data only, validated in code, never as an action)
 - **帶唔帶遮** — should you grab a jacket right now? Raining or rain likely within two hours gets a warning; a leave-home iPhone automation asks it automatically at the door
 - **早晨** — a composed morning briefing: weather + buses + bin reminder + news
+- **分析股票 AAPL** — ticker price, technicals (RSI, moving averages), and a local LLM's spoken 買入/持有/沽出 take — explicitly not investment advice
 - **今日金句 / 電影金句** — Stephen Chow and HK movie quotes, because a voice assistant should have some personality
 - **畫 一隻太空貓** (Slack only) — a local Stable Diffusion model (LCM, CPU — the GPU stays reserved for speech + chat) draws it and the image lands in the channel about a minute later, fully offline
 - **系統狀態 / 重啟語音系統 / 重新部署** — system health, voice-triggered service restart, and a deploy hook (destructive commands demand a spoken 確認 within 60 seconds)

@@ -13,3 +13,5 @@ ops/google.json
 .vercel
 # generated draft reports/social posts for ops/nvidia_daily.py — personal drafts, not source
 content/nvidia-daily/
+# generated SEC EDGAR fundamental snapshots for ops/stock_fundamentals.py — same reasoning
+content/stock-fundamentals/

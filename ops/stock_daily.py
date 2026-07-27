@@ -1,6 +1,6 @@
 """Daily batch stock analysis for a fixed watchlist, saved to Notion.
 
-Runs at 17:00 via the "VoiceOS Stock Daily" scheduled task (runs as the
+Runs at 09:30 NZT via the "VoiceOS Stock Daily" scheduled task (runs as the
 user, same isolation as notion_sync.py/nvidia_daily.py — not the VoiceASR
 service, so the Notion key never enters the service environment). Reuses
 asr/router.py's STOCK_ANALYSIS data fetch + Ollama narrative for each

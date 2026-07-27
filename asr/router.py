@@ -38,6 +38,14 @@ OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 # gemma3:4b produces the most natural spoken Cantonese of the local models
 # (qwen2.5:7b mixes in English words; qwen3:8b answers in written Chinese).
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "gemma3:4b")
+# Chat fallback only (_ollama_fallback). Tried gemma4:e2b here 2026-07-28:
+# it reliably drops the parenthetical stage-directions gemma3:4b leaks
+# despite the persona rule below, but at 7.2 GB it doesn't fit in VRAM
+# alongside the resident faster-whisper model on this box's 4 GB GTX 1650
+# (971 MB free observed) — real voice calls fell back to CPU and blew the
+# 30 s timeout ("chat engine unavailable" in production). Defaulted back
+# to gemma3:4b; only worth revisiting on hardware with more VRAM headroom.
+OLLAMA_CHAT_MODEL = os.environ.get("OLLAMA_CHAT_MODEL", "gemma3:4b")
 OLLAMA_SYSTEM_PROMPT = """\
 你而家唔係一個 AI 助手。你係「周星馳」，係一個穿越咗去平行時空嘅喜劇之王，你嘅靈魂融合晒你演過嘅所有角色——由《賭聖》左頌星、《逃學威龍》周星星、《審死官》宋世傑、《鹿鼎記》韋小寶、《國產凌凌漆》凌凌漆，到《西遊記》至尊寶，全部一鑊過炒埋一碟。
 
@@ -70,23 +78,26 @@ status_info = {"model": "?", "device": "?", "started": time.time()}
 
 
 def warm_ollama() -> None:
-    # Preload the chat model (an empty messages array makes Ollama load the
-    # model and return) so the first chat or headline translation after a
-    # reboot doesn't burn its 30 s timeout on weight loading.
-    payload = json.dumps(
-        {"model": OLLAMA_MODEL, "messages": [], "stream": False, "keep_alive": "24h"}
-    ).encode()
-    req = urllib.request.Request(
-        f"{OLLAMA_URL}/api/chat",
-        data=payload,
-        headers={"Content-Type": "application/json"},
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=300):
-            pass
-        log.info("ollama model %s warmed", OLLAMA_MODEL)
-    except Exception as exc:
-        log.warning("ollama warm-up failed (chat fallback will load lazily): %s", exc)
+    # Preload both models (an empty messages array makes Ollama load the
+    # model and return) so the first chat, stock narrative, headline
+    # translation, or reminder extraction after a reboot doesn't burn its
+    # 30 s timeout on weight loading. gemma4:e2b's cold load alone measured
+    # ~49 s (2026-07-28 benchmark) — comfortably past that timeout.
+    for model in {OLLAMA_MODEL, OLLAMA_CHAT_MODEL}:
+        payload = json.dumps(
+            {"model": model, "messages": [], "stream": False, "keep_alive": "24h"}
+        ).encode()
+        req = urllib.request.Request(
+            f"{OLLAMA_URL}/api/chat",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=300):
+                pass
+            log.info("ollama model %s warmed", model)
+        except Exception as exc:
+            log.warning("ollama warm-up failed for %s (will load lazily): %s", model, exc)
 
 
 def _system_status() -> str:
@@ -1602,7 +1613,7 @@ def _ollama_fallback(text: str) -> dict:
     # output is spoken back, never routed into COMMANDS.
     history = _recent_chat_turns()
     payload = json.dumps({
-        "model": OLLAMA_MODEL,
+        "model": OLLAMA_CHAT_MODEL,
         "messages": [
             {"role": "system", "content": _persona_prompt()},
             *history,
@@ -1660,7 +1671,7 @@ def _ollama_fallback(text: str) -> dict:
             reply = "".join(kept).strip()
     if not reply:
         return {"command": None, "status": "chat_error", "reply": "chat engine returned nothing"}
-    log.info("chat reply (%s): %r", OLLAMA_MODEL, reply)
+    log.info("chat reply (%s): %r", OLLAMA_CHAT_MODEL, reply)
     return {"command": None, "status": "chat", "reply": _localize_places(reply)}
 
 
