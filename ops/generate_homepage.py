@@ -40,6 +40,7 @@ DESCRIPTIONS = {
     "QUOTE_OF_DAY": "隨機講一句周星馳電影金句",
     "MOVIE_QUOTE": "隨機講一句港產片對白，會講埋戲名同角色",
     "CREATE_REMINDER": "喺你部iPhone加提醒事項：講「提我」加內容同時間（例：提我聽日朝早九點買牛奶）",
+    "STOCK_ANALYSIS": "分析股票代號嘅現價、技術指標（RSI、平均線）同AI睇法：講「分析股票」加埋代號（例：分析股票 AAPL）——AI意見僅供參考，唔係投資建議",
     "GENERATE_IMAGE": "本機AI畫圖（淨係Slack用得）：講「畫」加內容（例：畫 一隻太空貓），約一分鐘後張圖出現喺Slack",
     "RESTART_ASR": "重新啟動語音系統（約三十秒後恢復）",
     "TRIGGER_DEPLOY": "重新部署網站",
@@ -50,7 +51,7 @@ DESCRIPTIONS = {
 # unlisted falls into an automatic 其他 group so the hook never breaks.
 CATEGORIES = [
     ("天氣出行", ["WEATHER_TODAY", "WEATHER_COMPARE", "JACKET_CHECK", "BUS_TIMES", "TIDE_TIMES"]),
-    ("生活資訊", ["FUEL_PRICES", "BIN_DAY", "MILK_PRICES", "MORTGAGE_RATES", "EARTHQUAKES", "NEWS_HEADLINES"]),
+    ("生活資訊", ["FUEL_PRICES", "BIN_DAY", "MILK_PRICES", "MORTGAGE_RATES", "STOCK_ANALYSIS", "EARTHQUAKES", "NEWS_HEADLINES"]),
     ("日程提醒", ["MORNING_BRIEFING", "TODAY_AGENDA", "CREATE_REMINDER"]),
     ("玩吓", ["QUOTE_OF_DAY", "MOVIE_QUOTE", "GENERATE_IMAGE"]),
     ("系統", ["SYSTEM_STATUS", "LIST_COMMANDS", "RESTART_ASR", "TRIGGER_DEPLOY"]),

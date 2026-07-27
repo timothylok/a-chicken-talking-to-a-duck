@@ -17,6 +17,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.parse
 import urllib.request
 import zoneinfo
 
@@ -1048,6 +1049,153 @@ def _create_reminder(text: str) -> dict:
     }
 
 
+# STOCK_ANALYSIS: matched by prefix in route(), same free-text pattern as
+# CREATE_REMINDER — the ticker is regex-extracted in code (simple format, no
+# LLM needed), only the narrative/opinion comes from Ollama. Data source is
+# Yahoo Finance's undocumented chart JSON endpoint (what the yfinance package
+# wraps internally), called directly with urllib to avoid a pandas/numpy
+# dependency for what's otherwise a handful of arithmetic; confirmed working
+# unauthenticated 2026-07-27 — if Yahoo ever adds a crumb/cookie requirement
+# here this will need to switch to yfinance.
+STOCK_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range=1y&interval=1d"
+STOCK_PREFIXES = ("分析股票", "股票分析", "analyzestock", "stockanalysis")
+_STOCK_TRIGGER_RE = re.compile(r"分析股票|股票分析|analyze\s*stock|stock\s*analysis", re.IGNORECASE)
+_TICKER_RE = re.compile(r"[A-Za-z]{1,5}(?:\.[A-Za-z]{1,3})?|\d{3,6}(?:\.[A-Za-z]{1,3})?")
+
+
+def _extract_ticker(text: str) -> "str | None":
+    remainder = _STOCK_TRIGGER_RE.sub("", text, count=1)
+    match = _TICKER_RE.search(remainder)
+    return match.group().upper() if match else None
+
+
+def _sma(closes: list, period: int) -> "float | None":
+    if len(closes) < period:
+        return None
+    return sum(closes[-period:]) / period
+
+
+def _rsi(closes: list, period: int = 14) -> "float | None":
+    # Wilder's smoothing, the standard RSI definition.
+    if len(closes) < period + 1:
+        return None
+    gains = losses = 0.0
+    for i in range(1, period + 1):
+        diff = closes[i] - closes[i - 1]
+        gains += max(diff, 0.0)
+        losses += max(-diff, 0.0)
+    avg_gain, avg_loss = gains / period, losses / period
+    for i in range(period + 1, len(closes)):
+        diff = closes[i] - closes[i - 1]
+        avg_gain = (avg_gain * (period - 1) + max(diff, 0.0)) / period
+        avg_loss = (avg_loss * (period - 1) + max(-diff, 0.0)) / period
+    if avg_loss == 0:
+        return 100.0
+    rs = avg_gain / avg_loss
+    return 100 - 100 / (1 + rs)
+
+
+def _fetch_stock_stats(ticker: str) -> dict:
+    req = urllib.request.Request(
+        STOCK_CHART_URL.format(ticker=urllib.parse.quote(ticker, safe="")),
+        headers={"User-Agent": "Mozilla/5.0"},
+    )
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        payload = json.loads(resp.read())
+    result = (payload.get("chart") or {}).get("result")
+    if not result:
+        raise ValueError(f"no chart data for {ticker}")
+    node = result[0]
+    meta = node["meta"]
+    closes = [c for c in node["indicators"]["quote"][0]["close"] if c is not None]
+    if len(closes) < 2:
+        raise ValueError(f"not enough price history for {ticker}")
+    price = meta.get("regularMarketPrice", closes[-1])
+    # closes[-1] is the most recent *completed* trading day. If the market is
+    # still open that's yesterday (distinct from the live price) and is the
+    # right previous-close baseline; if the market is closed, closes[-1] IS
+    # today's already-settled bar (equal to price), so fall back one more.
+    # (meta's chartPreviousClose looks like this field but is actually the
+    # close at the start of the requested range, e.g. a year ago, not
+    # yesterday's — confirmed 2026-07-27 against a live AAPL quote.)
+    prev_close = closes[-2] if abs(closes[-1] - price) < 1e-6 else closes[-1]
+    week_chg = (price - closes[-6]) / closes[-6] * 100 if len(closes) >= 6 else None
+    sma50, sma200, rsi = _sma(closes, 50), _sma(closes, 200), _rsi(closes)
+    return {
+        "price": round(price, 2),
+        "currency": meta.get("currency") or "",
+        "day_change_pct": round((price - prev_close) / prev_close * 100, 2),
+        "week_change_pct": round(week_chg, 2) if week_chg is not None else None,
+        "sma50": round(sma50, 2) if sma50 else None,
+        "sma200": round(sma200, 2) if sma200 else None,
+        "rsi14": round(rsi, 1) if rsi is not None else None,
+    }
+
+
+def _stock_narrative(ticker: str, stats: dict) -> str:
+    lines = [f"股票代號：{ticker}", f"現價：{stats['price']} {stats['currency']}",
+             f"今日變動：{stats['day_change_pct']}%"]
+    if stats["week_change_pct"] is not None:
+        lines.append(f"一週變動：{stats['week_change_pct']}%")
+    if stats["sma50"]:
+        lines.append(f"50日平均線：{stats['sma50']}")
+    if stats["sma200"]:
+        lines.append(f"200日平均線：{stats['sma200']}")
+    if stats["rsi14"] is not None:
+        lines.append(f"RSI(14)：{stats['rsi14']}")
+    prompt = (
+        "你係一個股票技術分析助手，根據以下數據用廣東話講一段簡短分析，"
+        "最多三句，唔准用括號描述動作。要明確講出你嘅睇法係「買入」、"
+        "「持有」定「沽出」，最後一句提醒呢個純粹根據技術數據，唔係投資建議：\n"
+        + "\n".join(lines)
+    )
+    payload = json.dumps({
+        "model": OLLAMA_MODEL,
+        "messages": [{"role": "user", "content": prompt}],
+        "stream": False,
+        "keep_alive": "24h",
+    }).encode()
+    req = urllib.request.Request(
+        f"{OLLAMA_URL}/api/chat", data=payload,
+        headers={"Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        reply = json.loads(resp.read())["message"]["content"]
+    reply = re.sub(r"<think>.*?</think>", "", reply, flags=re.S).strip()
+    reply = re.sub(r"[（(][^）)]*[）)]", "", reply).strip()
+    return reply
+
+
+def _stock_analysis(text: str) -> dict:
+    ticker = _extract_ticker(text)
+    if not ticker:
+        return {
+            "command": "STOCK_ANALYSIS", "status": "error",
+            "reply": "冇聽到股票代號，例如：分析股票 AAPL",
+        }
+    try:
+        stats = _fetch_stock_stats(ticker)
+    except Exception as exc:
+        log.error("stock fetch failed for %r: %s", ticker, exc)
+        return {
+            "command": "STOCK_ANALYSIS", "status": "error",
+            "reply": f"攞唔到{ticker}嘅股票資料，check下代號啱唔啱",
+        }
+    try:
+        reply = _stock_narrative(ticker, stats)
+    except Exception as exc:
+        log.error("stock narrative failed for %r: %s", ticker, exc)
+        reply = (
+            f"{ticker}現價{stats['price']}{stats['currency']}，"
+            f"今日變動{stats['day_change_pct']}%（AI分析暫時攞唔到）"
+        )
+    log.info("stock analysis %s: %s", ticker, stats)
+    return {
+        "command": "STOCK_ANALYSIS", "status": "executed", "reply": reply,
+        "data": {"ticker": ticker, **stats},
+    }
+
+
 def _briefing_bins() -> str:
     # Bin reminder only when collection is today or tomorrow — the full
     # schedule is BIN_DAY's job.
@@ -1351,6 +1499,13 @@ COMMANDS = {
         "destructive": False,
         "run": lambda: "喺Slack度講畫加埋內容，例如：畫 一隻太空貓",
     },
+    "STOCK_ANALYSIS": {
+        # Matched by prefix in route(), not exact phrase — listed here so it
+        # appears in LIST_COMMANDS, the home page, and the Whisper prompt.
+        "phrases": ["分析股票", "股票分析", "analyze stock", "stock analysis"],
+        "destructive": False,
+        "run": lambda: "講分析股票加埋代號，例如：分析股票 AAPL",
+    },
     "RESTART_ASR": {
         "phrases": [
             "重啟語音系統", "重启语音系统", "重新啟動語音系統", "重新启动语音系统",
@@ -1621,6 +1776,9 @@ def route(text: str, source: str = "voice", lang: str = "yue") -> dict:
 
     if source != "web" and phrase.startswith(REMINDER_PREFIXES):
         return _create_reminder(text)
+
+    if source != "web" and phrase.startswith(STOCK_PREFIXES):
+        return _stock_analysis(text)
 
     image_match = _IMAGE_RE.match(text)
     if image_match:
