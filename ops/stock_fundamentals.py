@@ -48,10 +48,12 @@ OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 # document, never read aloud, and needs faithful text extraction instead:
 # tested on a real AAPL 10-K excerpt with no disclosed customer/geographic
 # concentration, gemma3:4b fabricated a "20%+ concentrated in Apple Inc.
-# itself" flag on two separate attempts, while qwen3:8b correctly reported
-# no concentration was disclosed (2026-07-28). This script also isn't on
-# the service's latency budget, so the larger model's extra weight is fine.
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3:8b")
+# itself" flag on two separate attempts (2026-07-28). qwen3:8b (think:false)
+# fixed that, then lfm2.5 was benchmarked against it on the same real AAPL
+# excerpts (2026-07-28): matched qwen3:8b's quality (no false-flag repeat)
+# at roughly half the wall-clock time -- swapped in as the default. See the
+# num_predict note on _ollama_generate for the one config gotcha it needs.
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "lfm2.5")
 SEC_UA = "voice-ecosystem stock-fundamentals research (timlok@gmail.com)"
 SEC_DELAY = 0.2  # SEC asks for <=10 req/sec; well under that.
 
@@ -380,15 +382,18 @@ OWNERSHIP_PROMPT = (
 )
 
 
-def _ollama_generate(prompt: str, num_predict: int = 400) -> str:
-    # qwen3:8b is a hybrid reasoning model -- with thinking left on, its
-    # <think> tokens (returned in a separate message.thinking field, not
-    # content) ate the whole num_predict budget and left content empty or
-    # cut off mid-sentence (observed 2026-07-28). think:false disables that
-    # and is both ~3-5x faster and still faithful in testing.
+def _ollama_generate(prompt: str, num_predict: int = 1500) -> str:
+    # lfm2.5 is also a hybrid reasoning model, but unlike qwen3:8b its
+    # "think": false doesn't suppress reasoning -- it just dumps <think>
+    # into the visible content instead. Left unset, Ollama correctly
+    # separates reasoning into message.thinking and keeps content clean,
+    # but the reasoning still consumes num_predict: the 400 budget tuned
+    # for qwen3:8b's think:false path left content empty here (observed
+    # 2026-07-28); 1500 was enough for all three prompts on a real AAPL
+    # filing (1.3-2.8k reasoning chars, still ~2x faster than the old
+    # qwen3:8b/400 baseline).
     payload = json.dumps({
         "model": OLLAMA_MODEL,
-        "think": False,
         "messages": [{"role": "user", "content": prompt}],
         "stream": False,
         "options": {"num_ctx": 8192, "num_predict": num_predict},
