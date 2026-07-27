@@ -23,6 +23,16 @@ import zoneinfo
 
 log = logging.getLogger("router")
 
+# STOCK_ANALYSIS gets its own log file instead of mixing into service.log.
+_STOCK_LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", "stock.log")
+os.makedirs(os.path.dirname(_STOCK_LOG_PATH), exist_ok=True)
+stock_log = logging.getLogger("router.stock")
+stock_log.propagate = False
+stock_log.setLevel(logging.INFO)
+_stock_handler = logging.FileHandler(_STOCK_LOG_PATH, encoding="utf-8")
+_stock_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+stock_log.addHandler(_stock_handler)
+
 CONFIRM_TTL_SECONDS = 60
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 # gemma3:4b produces the most natural spoken Cantonese of the local models
@@ -1176,7 +1186,7 @@ def _stock_analysis(text: str) -> dict:
     try:
         stats = _fetch_stock_stats(ticker)
     except Exception as exc:
-        log.error("stock fetch failed for %r: %s", ticker, exc)
+        stock_log.error("stock fetch failed for %r: %s", ticker, exc)
         return {
             "command": "STOCK_ANALYSIS", "status": "error",
             "reply": f"攞唔到{ticker}嘅股票資料，check下代號啱唔啱",
@@ -1184,12 +1194,12 @@ def _stock_analysis(text: str) -> dict:
     try:
         reply = _stock_narrative(ticker, stats)
     except Exception as exc:
-        log.error("stock narrative failed for %r: %s", ticker, exc)
+        stock_log.error("stock narrative failed for %r: %s", ticker, exc)
         reply = (
             f"{ticker}現價{stats['price']}{stats['currency']}，"
             f"今日變動{stats['day_change_pct']}%（AI分析暫時攞唔到）"
         )
-    log.info("stock analysis %s: %s", ticker, stats)
+    stock_log.info("stock analysis %s: %s", ticker, stats)
     return {
         "command": "STOCK_ANALYSIS", "status": "executed", "reply": reply,
         "data": {"ticker": ticker, **stats},
