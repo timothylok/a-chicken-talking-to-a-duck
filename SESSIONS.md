@@ -1,5 +1,13 @@
 # Session log
 
+## 2026-07-27
+- Added a new voice command, `STOCK_ANALYSIS`: "分析股票 AAPL" / "stock analysis TSLA" (prefix-matched free text like `CREATE_REMINDER`, ticker regex-extracted in code) fetches price, 50/200-day SMA, RSI(14), and day/week % change, then local Ollama narrates a Cantonese buy/hold/sell take with a "not investment advice" disclaimer.
+- Evaluated the referenced repo (github.com/ZhuLinsen/daily_stock_analysis) and deliberately didn't adopt its approach — it's a heavy multi-market/multi-source pipeline needing paid LLM+news API keys and notification integrations, a poor fit for one voice command in this project. Built a lightweight equivalent instead, matching the existing data-command pattern (`_weather_today`, `_news_headlines`).
+- Data source: Yahoo Finance's unauthenticated chart JSON endpoint (`query1.finance.yahoo.com/v8/finance/chart/...`) called directly via `urllib` rather than adding the `yfinance`/`pandas`/`numpy` dependency chain — confirmed working keyless 2026-07-27, same endpoint `yfinance` wraps internally.
+- Caught and fixed a real bug while testing against live AAPL/TSLA data: the chart response's `chartPreviousClose` field is the close at the *start* of the requested range (e.g. a year ago), not yesterday's close — using it produced a bogus 55% "day change." Fixed by deriving previous close from the close-price series itself (handles both market-open and market-closed cases).
+- `ops/generate_homepage.py` updated (DESCRIPTIONS + 生活資訊 category); ran manually to sync `gateway/public/index.html` and CLAUDE.md's command list. Committed and pushed (d9bfeeb). User restarted the `VoiceASR` service and confirmed "stock analysis AAPL" works live.
+- Next: watch for Yahoo Finance endpoint flakiness/breakage (undocumented API, no crumb/cookie auth) in daily use; still-open items from prior sessions unchanged (see 2026-07-24 entry).
+
 ## 2026-07-21 (later)
 - Post-reboot check: `Cloudflared`/`Ollama`/`VoiceASR` all Running/Automatic, `sc qc VoiceASR` still shows `DEPENDENCIES: Ollama` from the earlier NSSM conversion, Ollama warmed cleanly before VoiceASR's own startup completed (no warm-up race) — service.log confirmed clean boot sequence.
 - User reported a webchat GENERATE_IMAGE (畫) error; traced to expected Slack-only decline behavior (`asr/router.py:505-510`), not a bug — but flagged a possible language mismatch (English reply on a Cantonese session) that's still unconfirmed/open.
