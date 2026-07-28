@@ -1,0 +1,10 @@
+{
+  "_comment": "User-curated peer groups for STOCK_ANALYSIS Category 3 prompt 16 (peer multiples comparison). SEC's SIC-code company listing was tested and found too coarse for genuine 'closest peer' matching (e.g. AAPL's SIC 3571 groups it with legacy PC makers) -- edit this file directly to adjust peer sets. Tickers missing here get an N/A peer comparison rather than a guess. Peers don't need to be on STOCK_WATCHLIST -- any ticker with real US SEC filings (10-K/10-Q, not a foreign private issuer's 20-F) works, since the comparison reuses the same SEC EDGAR pipeline.",
+  "AAPL": ["MSFT", "GOOGL", "DELL"],
+  "MSFT": ["GOOGL", "AAPL", "ORCL"],
+  "GOOGL": ["MSFT", "META", "AMZN"],
+  "AMZN": ["WMT", "MSFT", "GOOGL"],
+  "META": ["GOOGL", "SNAP", "PINS"],
+  "NVDA": ["AMD", "INTC", "AVGO"],
+  "TSLA": ["GM", "F", "RIVN"]
+}
