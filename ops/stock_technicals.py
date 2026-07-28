@@ -729,8 +729,20 @@ def _html_page(report: dict) -> str:
     )
 
 
-def write_html(report: dict) -> str:
-    out_path = os.path.join(OUTPUT_DIR, f"{report['ticker']}.html")
+def write_html(report: dict) -> "str | None":
+    # Folder name is the ticker's own latest real trading-day date (from
+    # Yahoo's daily series), not "today" -- NZT run-time and US market dates
+    # don't line up, and weekends/holidays produce no new bar at all. If that
+    # date's file already exists, there's no new data since the last run, so
+    # skip rather than overwrite/duplicate it.
+    dates = report["daily_raw"]["dates"]
+    if not dates or dates[-1] is None:
+        return None
+    date_str = dates[-1].isoformat()
+    out_path = os.path.join(OUTPUT_DIR, date_str, f"{report['ticker']}.html")
+    if os.path.exists(out_path):
+        return None
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(_html_page(report))
     return out_path
@@ -874,7 +886,10 @@ def run() -> int:
             if not report:
                 continue
             html_path = write_html(report)
-            log.info("%s: wrote HTML report to %s", ticker, html_path)
+            if html_path:
+                log.info("%s: wrote HTML report to %s", ticker, html_path)
+            else:
+                log.info("%s: no new trading data since last report; skipped HTML write", ticker)
             if notion_ready:
                 _notion("POST", "/pages", {
                     "parent": {"database_id": cfg["technicals_database_id"]},
