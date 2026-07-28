@@ -15,3 +15,5 @@ ops/google.json
 content/nvidia-daily/
 # generated SEC EDGAR fundamental snapshots for ops/stock_fundamentals.py — same reasoning
 content/stock-fundamentals/
+# generated technical analysis reports for ops/stock_technicals.py — same reasoning
+content/stock-technicals/

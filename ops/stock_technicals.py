@@ -73,6 +73,11 @@ CONFIG = os.path.join(ROOT, "ops", "notion.json")
 NOTION_VERSION = "2022-06-28"
 NZ_TZ = ZoneInfo("Pacific/Auckland")
 
+# Vendored (Apache-2.0), not npm-installed, so the generated HTML report stays
+# a single self-contained file with no CDN/runtime dependency -- same
+# rationale as everything else in this file being stdlib-only.
+CHART_LIB_PATH = os.path.join(ROOT, "ops", "vendor", "lightweight-charts.standalone.production.js")
+
 WATCHLIST = [
     t.strip().upper()
     for t in os.environ.get("STOCK_WATCHLIST", "AAPL,MSFT,NVDA,TSLA,GOOGL,AMZN,META,SPCX").split(",")
@@ -113,20 +118,22 @@ def _fetch_series(ticker: str, range_: str, interval: str) -> dict:
     quote = node["indicators"]["quote"][0]
     timestamps = node.get("timestamp") or []
     raw_closes = quote.get("close") or []
-    closes, highs, lows, volumes, dates = [], [], [], [], []
+    closes, opens, highs, lows, volumes, dates = [], [], [], [], [], []
     for i, c in enumerate(raw_closes):
         if c is None:
             continue
         closes.append(c)
+        o = quote.get("open", [None] * len(raw_closes))[i]
         h = quote.get("high", [None] * len(raw_closes))[i]
         l = quote.get("low", [None] * len(raw_closes))[i]
         v = quote.get("volume", [None] * len(raw_closes))[i]
+        opens.append(o if o is not None else c)
         highs.append(h if h is not None else c)
         lows.append(l if l is not None else c)
         volumes.append(v if v is not None else 0)
         dates.append(dt.date.fromtimestamp(timestamps[i]) if i < len(timestamps) else None)
     return {
-        "closes": closes, "highs": highs, "lows": lows, "volumes": volumes, "dates": dates,
+        "closes": closes, "opens": opens, "highs": highs, "lows": lows, "volumes": volumes, "dates": dates,
         "currency": meta.get("currency") or "",
         "price": meta.get("regularMarketPrice", closes[-1] if closes else None),
         "fifty_two_week_high": meta.get("fiftyTwoWeekHigh"),
@@ -147,6 +154,34 @@ def _ema(closes: list, period: int) -> "float | None":
     for c in closes[period:]:
         ema = c * k + ema * (1 - k)
     return ema
+
+
+def _rolling_sma(closes: list, period: int) -> list:
+    # Same math as _sma, but returns the full per-bar series (for chart
+    # overlay lines) instead of only the latest value.
+    out = [None] * len(closes)
+    if len(closes) < period:
+        return out
+    window_sum = sum(closes[:period])
+    out[period - 1] = window_sum / period
+    for i in range(period, len(closes)):
+        window_sum += closes[i] - closes[i - period]
+        out[i] = window_sum / period
+    return out
+
+
+def _rolling_ema(closes: list, period: int) -> list:
+    # Same seed/recursion as _ema, full per-bar series for chart overlays.
+    out = [None] * len(closes)
+    if len(closes) < period:
+        return out
+    ema = sum(closes[:period]) / period
+    out[period - 1] = ema
+    k = 2 / (period + 1)
+    for i in range(period, len(closes)):
+        ema = closes[i] * k + ema * (1 - k)
+        out[i] = ema
+    return out
 
 
 def _support_resistance(highs: list, lows: list, price: float, k: int = 2) -> "tuple[float | None, float | None]":
@@ -452,7 +487,253 @@ def build_report(ticker: str, spy_daily: dict) -> "dict | None":
         "volume": _section_volume(ticker, daily),
         "rs": _section_relative_strength(ticker, daily, spy_daily),
         "earnings": _section_earnings_volatility(ticker, daily),
+        # Raw OHLCV kept only for the HTML chart section below -- not
+        # written to Notion (_page_properties only reads the sub-dicts
+        # above).
+        "daily_raw": daily,
+        "weekly_raw": weekly,
     }
+
+
+# ---------------------------------------------------------------------------
+# HTML report -- same self-contained-file pattern as stock_fundamentals.py's
+# Category 1 (content/<category>/<ticker>.html), which this script lacked
+# until now (it previously only wrote to Notion).
+# ---------------------------------------------------------------------------
+
+OUTPUT_DIR = os.path.join(ROOT, "content", "stock-technicals")
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+PAGE_TEMPLATE = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{ticker} -- Category 4 Technical Analysis</title>
+<style>
+  :root {{ --bg: #ffffff; --fg: #1a1a1a; --muted: #666; --line: #e0e0e0; --accent: #b45309; }}
+  @media (prefers-color-scheme: dark) {{
+    :root {{ --bg: #16181d; --fg: #e8e8e8; --muted: #9a9a9a; --line: #333; --accent: #f59e0b; }}
+  }}
+  body {{ margin: 0 auto; max-width: 56rem; padding: 2rem 1.25rem 4rem;
+         background: var(--bg); color: var(--fg);
+         font-family: -apple-system, "Segoe UI", sans-serif; line-height: 1.6; }}
+  h1 {{ font-size: 1.6rem; margin-bottom: 0.25rem; }}
+  h2 {{ font-size: 1.15rem; margin-top: 2.5rem; border-bottom: 1px solid var(--line);
+       padding-bottom: 0.35rem; }}
+  table {{ border-collapse: collapse; width: 100%; margin-top: 0.75rem; }}
+  th, td {{ text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line);
+           vertical-align: top; }}
+  th {{ font-size: 0.85rem; color: var(--muted); font-weight: 600; }}
+  p.cite {{ color: var(--muted); font-size: 0.8rem; margin-top: 0.6rem; }}
+  .meta {{ color: var(--muted); font-size: 0.9rem; }}
+  .badge {{ display: inline-block; padding: 0.15rem 0.6rem; border-radius: 999px;
+           font-weight: 700; font-size: 0.85rem; background: var(--line); }}
+  pre {{ background: var(--line); padding: 0.75rem 1rem; border-radius: 0.4rem;
+        overflow-x: auto; font-size: 0.85rem; }}
+  code {{ font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }}
+  .chart {{ width: 100%; margin-top: 0.75rem; border: 1px solid var(--line); border-radius: 0.4rem; }}
+  h3 {{ font-size: 1rem; color: var(--muted); margin-top: 1.25rem; margin-bottom: 0.25rem; }}
+</style>
+<script>{chart_lib}</script>
+</head>
+<body>
+<h1>{ticker} -- Category 4 Technical Analysis</h1>
+<p class="meta">Yahoo Finance price data. Report generated {generated} NZT.</p>
+{sections}
+</body>
+</html>
+"""
+
+SECTION_TITLES = [
+    "Weekly Chart Read",
+    "Daily Chart Read for Swing Entries",
+    "Volume & Accumulation",
+    "Relative Strength vs SPY",
+    "Earnings Volatility Expectation",
+    "Interactive Chart",
+]
+
+_chart_lib_cache = None
+
+
+def _chart_library_js() -> str:
+    global _chart_lib_cache
+    if _chart_lib_cache is None:
+        with open(CHART_LIB_PATH, encoding="utf-8") as f:
+            # Defensive only -- the vendored minified build doesn't contain
+            # this sequence, but a page must never let embedded text close
+            # the surrounding <script> tag early.
+            _chart_lib_cache = f.read().replace("</script", "<\\/script")
+    return _chart_lib_cache
+
+
+def _bar_series(dates: list, opens: list, highs: list, lows: list, closes: list) -> list:
+    return [
+        {"time": d.isoformat(), "open": round(o, 4), "high": round(h, 4), "low": round(l, 4), "close": round(c, 4)}
+        for d, o, h, l, c in zip(dates, opens, highs, lows, closes) if d is not None
+    ]
+
+
+def _volume_series(dates: list, closes: list, volumes: list) -> list:
+    out, prev = [], None
+    for d, c, v in zip(dates, closes, volumes):
+        if d is None:
+            continue
+        out.append({"time": d.isoformat(), "value": v, "color": "#26a69a" if (prev is None or c >= prev) else "#ef5350"})
+        prev = c
+    return out
+
+
+def _line_series(dates: list, values: list) -> list:
+    return [
+        {"time": d.isoformat(), "value": round(v, 4)}
+        for d, v in zip(dates, values) if d is not None and v is not None
+    ]
+
+
+def _chart_block(elem_id: str, height: int, bars: list, volumes: "list | None",
+                  lines: list, support: "float | None", resistance: "float | None") -> str:
+    # Rendered with TradingView's own Lightweight Charts (vendored, see
+    # CHART_LIB_PATH) -- candles/volume are the real OHLCV already fetched
+    # above; the SMA/EMA/support/resistance overlays are the exact values
+    # computed in the sections above, not re-derived independently.
+    lines_js = "".join(
+        f'  chart.addLineSeries({{color:"{color}", lineWidth:1, title:"{sf._esc(label)}"}}).setData({json.dumps(data)});\n'
+        for label, color, data in lines
+    )
+    vol_js = ""
+    if volumes:
+        vol_js = (
+            '  chart.addHistogramSeries({priceFormat:{type:"volume"}, priceScaleId:"vol", '
+            'scaleMargins:{top:0.8, bottom:0}}).setData(' + json.dumps(volumes) + ");\n"
+        )
+    price_lines_js = ""
+    if support is not None:
+        price_lines_js += f'  candleSeries.createPriceLine({{price:{support}, color:"#16a34a", lineWidth:1, lineStyle:2, title:"Support"}});\n'
+    if resistance is not None:
+        price_lines_js += f'  candleSeries.createPriceLine({{price:{resistance}, color:"#dc2626", lineWidth:1, lineStyle:2, title:"Resistance"}});\n'
+    return f"""<div id="{elem_id}" class="chart"></div>
+<script>
+(function() {{
+  var el = document.getElementById("{elem_id}");
+  var style = getComputedStyle(document.documentElement);
+  var chart = LightweightCharts.createChart(el, {{
+    layout: {{ background: {{ color: "transparent" }}, textColor: (style.getPropertyValue("--fg") || "#1a1a1a").trim() }},
+    grid: {{ vertLines: {{ color: "rgba(128,128,128,0.15)" }}, horzLines: {{ color: "rgba(128,128,128,0.15)" }} }},
+    rightPriceScale: {{ borderVisible: false }},
+    timeScale: {{ borderVisible: false }},
+    width: el.clientWidth,
+    height: {height},
+  }});
+  var candleSeries = chart.addCandlestickSeries({{upColor:"#26a69a", downColor:"#ef5350", borderVisible:false, wickUpColor:"#26a69a", wickDownColor:"#ef5350"}});
+  candleSeries.setData({json.dumps(bars)});
+{vol_js}{lines_js}{price_lines_js}  chart.timeScale().fitContent();
+  window.addEventListener("resize", function() {{ chart.applyOptions({{width: el.clientWidth}}); }});
+}})();
+</script>
+"""
+
+
+def _text_html(text: str) -> str:
+    lines = [l.strip() for l in (text or "").split("\n") if l.strip()]
+    return "".join(f"<p>{sf._esc(l)}</p>" for l in lines) or "<p>N/A</p>"
+
+
+def _html_page(report: dict) -> str:
+    ticker = report["ticker"]
+    currency = f" {report['currency']}" if report.get("currency") else ""
+    w, d, v, rs, e = report["weekly"], report["daily"], report["volume"], report["rs"], report["earnings"]
+
+    sec1 = sf._table(["Metric", "Value"], [
+        ("Weekly Close", _fmt(w["close"], currency)),
+        ("50-Week EMA", _fmt(w["ema50w"], currency)),
+        ("200-Week EMA", _fmt(w["ema200w"], currency)),
+        ("14-Period Weekly RSI", _fmt(w["rsi14w"], digits=1)),
+        ("52-Week High", _fmt(w["high52w"], currency)),
+        ("52-Week Low", _fmt(w["low52w"], currency)),
+        ("Weekly Support", _fmt(w["support"], currency)),
+        ("Weekly Resistance", _fmt(w["resistance"], currency)),
+    ]) + _text_html(w["read"])
+
+    sec2 = (
+        f'<p><span class="badge">{sf._esc(d["setup"])}</span></p>'
+        + sf._table(["Metric", "Value"], [
+            ("Price", _fmt(d["price"], currency)),
+            ("14-Period Daily RSI", _fmt(d["rsi14"], digits=1)),
+            ("50-Day SMA", _fmt(d["sma50"], currency)),
+            ("200-Day SMA", _fmt(d["sma200"], currency)),
+            ("Daily Support", _fmt(d["support"], currency)),
+            ("Daily Resistance", _fmt(d["resistance"], currency)),
+        ])
+        + _text_html(d["read"])
+    )
+
+    sec3 = sf._table(["Metric", "Value"], [
+        ("OBV Trend", v["obv_trend"] or "N/A"),
+        ("20-Day Volume MA", _fmt(v["vol_ma20"], digits=0)),
+        ("Volume Signal", v["signal"] or "N/A"),
+    ]) + _text_html(v["notes"])
+
+    sec4 = sf._table(["Metric", "Value"], [
+        ("3-Month RS vs SPY", _fmt(rs["rs_3m_diff"], " pp")),
+        ("6-Month RS vs SPY", _fmt(rs["rs_6m_diff"], " pp")),
+        ("Verdict", rs["verdict"] or "N/A"),
+    ]) + _text_html(rs["notes"])
+
+    sec5 = sf._table(["Metric", "Value"], [
+        ("Average Earnings-Day Move", _fmt(e["avg_move_pct"], "%")),
+    ]) + _text_html(e["basis"])
+
+    generated = dt.datetime.now(NZ_TZ).strftime("%Y-%m-%d %H:%M")
+
+    daily_raw, weekly_raw = report["daily_raw"], report["weekly_raw"]
+    daily_chart = _chart_block(
+        f"chart-daily-{ticker}", 400,
+        _bar_series(daily_raw["dates"], daily_raw["opens"], daily_raw["highs"], daily_raw["lows"], daily_raw["closes"]),
+        _volume_series(daily_raw["dates"], daily_raw["closes"], daily_raw["volumes"]),
+        [
+            ("SMA 50", "#2563eb", _line_series(daily_raw["dates"], _rolling_sma(daily_raw["closes"], 50))),
+            ("SMA 200", "#dc2626", _line_series(daily_raw["dates"], _rolling_sma(daily_raw["closes"], 200))),
+        ],
+        d["support"], d["resistance"],
+    )
+    weekly_chart = _chart_block(
+        f"chart-weekly-{ticker}", 320,
+        _bar_series(weekly_raw["dates"], weekly_raw["opens"], weekly_raw["highs"], weekly_raw["lows"], weekly_raw["closes"]),
+        None,
+        [
+            ("EMA 50w", "#2563eb", _line_series(weekly_raw["dates"], _rolling_ema(weekly_raw["closes"], 50))),
+            ("EMA 200w", "#dc2626", _line_series(weekly_raw["dates"], _rolling_ema(weekly_raw["closes"], 200))),
+        ],
+        w["support"], w["resistance"],
+    )
+    sec6 = (
+        "<h3>Daily (2y, swing-entry view)</h3>" + daily_chart
+        + "<h3>Weekly (10y, trend view)</h3>" + weekly_chart
+        + '<p class="cite">Candles and volume are the real OHLCV fetched above; SMA/EMA and '
+        "support/resistance lines are the same values computed in sections 1-2. "
+        "Rendered with TradingView Lightweight Charts (vendored, Apache-2.0) -- pan and "
+        "zoom with the mouse/trackpad, hover for a crosshair readout.</p>"
+    )
+
+    sections_html = "".join(
+        f"<section><h2>{i}. {sf._esc(title)}</h2>{body}</section>"
+        for i, (title, body) in enumerate(
+            zip(SECTION_TITLES, [sec1, sec2, sec3, sec4, sec5, sec6]), start=1
+        )
+    )
+    return PAGE_TEMPLATE.format(
+        ticker=sf._esc(ticker), generated=sf._esc(generated),
+        sections=sections_html, chart_lib=_chart_library_js(),
+    )
+
+
+def write_html(report: dict) -> str:
+    out_path = os.path.join(OUTPUT_DIR, f"{report['ticker']}.html")
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write(_html_page(report))
+    return out_path
 
 
 # ---------------------------------------------------------------------------
@@ -577,9 +858,9 @@ def _page_properties(report: dict, when: dt.datetime) -> dict:
 
 def run() -> int:
     cfg = load_config()
-    if not cfg or not cfg.get("api_key") or not cfg.get("technicals_database_id"):
-        log.info("not configured (%s); skipping", CONFIG)
-        return 0
+    notion_ready = bool(cfg and cfg.get("api_key") and cfg.get("technicals_database_id"))
+    if not notion_ready:
+        log.info("not configured (%s); Notion writes skipped, HTML still generated", CONFIG)
     try:
         spy_daily = _fetch_series(BENCHMARK_TICKER, "2y", "1d")
     except Exception as exc:
@@ -592,12 +873,15 @@ def run() -> int:
             report = build_report(ticker, spy_daily)
             if not report:
                 continue
-            _notion("POST", "/pages", {
-                "parent": {"database_id": cfg["technicals_database_id"]},
-                "properties": _page_properties(report, now),
-            }, cfg["api_key"])
-            written += 1
-            log.info("%s: wrote technical analysis report", ticker)
+            html_path = write_html(report)
+            log.info("%s: wrote HTML report to %s", ticker, html_path)
+            if notion_ready:
+                _notion("POST", "/pages", {
+                    "parent": {"database_id": cfg["technicals_database_id"]},
+                    "properties": _page_properties(report, now),
+                }, cfg["api_key"])
+                written += 1
+                log.info("%s: wrote technical analysis report", ticker)
         except Exception as exc:
             log.error("%s: technicals report failed: %s", ticker, exc)
     log.info("wrote %d/%d tickers", written, len(WATCHLIST))
