@@ -220,19 +220,50 @@ def _column_order_current_first(text: str, before_idx: int) -> bool:
     return years[-2] >= years[-1]
 
 
+def _number_run(text: str, label_end: int) -> list:
+    # Grabs every consecutive dollar/plain number right after a label, e.g.
+    # "22,496 28,095 24,901 22,387 28,236" -- stops at the first "%" or word
+    # (3+ letters), which is either the line's own YoY% or the next row's
+    # label. Used only for trailing-quarter-style tables (see
+    # _is_trailing_quarter_table), where the number of columns isn't fixed
+    # at 2.
+    window = text[label_end:label_end + 250]
+    # \d+% as one unit, not just "%" alone -- otherwise the bare YoY number
+    # itself (e.g. "26" in "26%") stays in the numeric_part and gets picked
+    # up as a spurious extra column.
+    stop = re.search(r"\d+%|[A-Za-z]{3,}", window)
+    numeric_part = window[:stop.start()] if stop else window
+    return [float(x.replace(",", "")) for x in re.findall(r"\$?\s*([\d,]+(?:\.\d+)?)", numeric_part)]
+
+
 def _extract_income_figures(text: str) -> dict:
     out = {}
     rev_end = 0
+    is_trailing = False
     for pat in _REVENUE_LINE_PATTERNS:
-        m = re.search(pat + r"\s*(?:\(\d\))?\s+" + _NUM + r"\s+" + _NUM, text)
-        if m and _is_trailing_quarter_table(text, m.start()):
-            continue  # a 5-quarter trailing table, not a simple current/prior pair -- don't guess
-        if m:
-            a, b = float(m.group(1).replace(",", "")), float(m.group(2).replace(",", ""))
-            cur, prior = (a, b) if _column_order_current_first(text, m.start()) else (b, a)
-            out["revenue_cur"], out["revenue_prior"] = cur, prior
-            rev_end = m.end()
+        lm = re.search(pat + r"\s*(?:\(\d\))?", text)  # the label alone, to know where its numbers start
+        if not lm:
+            continue
+        if _is_trailing_quarter_table(text, lm.start()):
+            # A 5-quarter trailing table (TSLA, confirmed live): column
+            # count isn't 2, and it's oldest-to-newest left-to-right (from
+            # the "Q2-2025 ... Q2-2026" header itself) -- first/last of the
+            # full run are same-quarter-last-year/current, not group(1)/(2).
+            nums = _number_run(text, lm.end())
+            if len(nums) < 2:
+                continue
+            out["revenue_prior"], out["revenue_cur"] = nums[0], nums[-1]
+            is_trailing = True
+            rev_end = lm.end()
             break
+        m = re.match(_NUM + r"\s+" + _NUM, text[lm.end():])
+        if not m:
+            continue
+        a, b = float(m.group(1).replace(",", "")), float(m.group(2).replace(",", ""))
+        cur, prior = (a, b) if _column_order_current_first(text, lm.start()) else (b, a)
+        out["revenue_cur"], out["revenue_prior"] = cur, prior
+        rev_end = lm.end()
+        break
     # Scoped to start right after the revenue line, not searched from
     # document start: some filers (GOOGL, confirmed live) have an earlier,
     # unrelated "Diluted ... NUM NUM" match inside a GAAP/non-GAAP
@@ -242,11 +273,37 @@ def _extract_income_figures(text: str) -> dict:
     # income-statement table (confirmed within ~750 chars for AAPL/MSFT);
     # if a filer's layout doesn't match this, EPS is honestly left unset
     # rather than risking another wrong-column mismatch.
-    m = re.search(r"Diluted\s+" + _NUM + r"\s+" + _NUM, text[rev_end:rev_end + 5000])
-    if m:
-        a, b = float(m.group(1)), float(m.group(2))
-        cur, prior = (a, b) if _column_order_current_first(text, rev_end + m.start()) else (b, a)
-        out["eps_cur"], out["eps_prior"] = cur, prior
+    if is_trailing:
+        # TSLA's EPS "Diluted" line is a 5-column run too, but confirmed
+        # live it does NOT repeat the "Q#-YYYY" header nearby (it's deep in
+        # a separate STATEMENT OF OPERATIONS block) -- so this is inferred
+        # from the filer already having shown the trailing-quarter
+        # convention on revenue, not re-detected independently. Gated
+        # behind is_trailing so AAPL/MSFT (whose own EPS lines also have
+        # >2 trailing numbers -- their quarter pair plus a YTD pair) are
+        # never affected; they never set is_trailing in the first place.
+        dm = re.search(r"Diluted", text[rev_end:rev_end + 30000])
+        if dm:
+            nums = _number_run(text, rev_end + dm.end())
+            if len(nums) >= 2:
+                out["eps_prior"], out["eps_cur"] = nums[0], nums[-1]
+    else:
+        # GOOGL's real comparative EPS line ("Diluted net income per common
+        # share $2.31 $9.11") sits in an earlier compact "financial
+        # highlights" table, BEFORE the detailed segment table this script
+        # extracts revenue from -- confirmed live 2026-07-28, so it's
+        # invisible to a search scoped to start after revenue. Tried first,
+        # unscoped: this exact phrase is specific enough (distinct from
+        # MSFT's "Diluted earnings per share"/"Diluted Earnings per Share"
+        # decoy-table wording) not to risk repeating the earlier reconciliation-
+        # table false-positive that motivated scoping in the first place.
+        m = re.search(r"Diluted\s+net\s+income\s+per\s+common\s+share\s+" + _NUM + r"\s+" + _NUM, text)
+        if not m:
+            m = re.search(r"Diluted\s+" + _NUM + r"\s+" + _NUM, text[rev_end:rev_end + 30000])
+        if m:
+            a, b = float(m.group(1)), float(m.group(2))
+            cur, prior = (a, b) if _column_order_current_first(text, m.start()) else (b, a)
+            out["eps_cur"], out["eps_prior"] = cur, prior
     if out.get("revenue_cur") is not None and out.get("revenue_prior"):
         out["revenue_yoy"] = (out["revenue_cur"] - out["revenue_prior"]) / abs(out["revenue_prior"]) * 100
     if out.get("eps_cur") is not None and out.get("eps_prior"):
