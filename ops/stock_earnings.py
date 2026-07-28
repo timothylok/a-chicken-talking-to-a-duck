@@ -736,6 +736,8 @@ def poll_and_generate() -> int:
             written += 1
             generated.append(ticker)
             log.info("%s: generated earnings report for accession %s (filed %s)", ticker, hit["accn"], hit["filed"])
+            if sf.regenerate(ticker):
+                log.info("%s: regenerated Category 1 report after earnings update", ticker)
         except Exception as exc:
             log.error("%s: earnings report failed: %s", ticker, exc)
 

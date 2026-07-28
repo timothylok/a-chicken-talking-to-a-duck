@@ -1217,6 +1217,116 @@ def _stock_analysis(text: str) -> dict:
     }
 
 
+# Pine Script generation (prompts 25/26): free-form code from a plain-English
+# description, not a fixed watchlist -- doesn't fit ops/stock_technicals.py's
+# daily report, so it's a separate on-demand command instead. Broader than
+# GENERATE_IMAGE's Slack-only gate (this is plain text, no file upload -- the
+# JSON text path works too) but still excludes voice (code read aloud is
+# useless) and the public web chatbot (this project keeps LLM-triggered
+# free-form output off the unauthenticated public surface).
+PINE_MODEL = "qwen3:8b"  # most capable local model available; none are
+# code-tuned, so the reply is a draft, never verified against TradingView's
+# real compiler -- the reply says so, same "not investment advice" framing
+# as STOCK_ANALYSIS.
+_PINE_INDICATOR_RE = re.compile(
+    r"^\s*pine\s*(?:indicator|script)\b[:\-,，、\s]*(.*)$", re.IGNORECASE | re.DOTALL)
+_PINE_STRATEGY_RE = re.compile(
+    r"^\s*pine\s*(?:strategy|backtest)\b[:\-,，、\s]*(.*)$", re.IGNORECASE | re.DOTALL)
+_CODE_FENCE_RE = re.compile(r"```(?:\w+)?\s*\n(.*?)```", re.DOTALL)
+
+
+def _pine_reject(source: str, lang: str) -> "dict | None":
+    if source in ("slack", "text"):
+        return None
+    reply = ("This command only works in Slack or the text API" if lang == "en"
+              else "呢個指令淨係Slack或者文字介面用得")
+    return {"status": "error", "reply": reply}
+
+
+def _extract_pine_code(reply: str) -> str:
+    # The model is asked for "only the code" but doesn't always comply --
+    # strip surrounding prose via the fenced block if present, else return
+    # the raw reply so nothing is silently dropped.
+    match = _CODE_FENCE_RE.search(reply)
+    return match.group(1).strip() if match else reply.strip()
+
+
+def _generate_pine(prompt: str) -> str:
+    payload = json.dumps({
+        "model": PINE_MODEL,
+        "think": False,
+        "messages": [{"role": "user", "content": prompt}],
+        "stream": False,
+        "options": {"num_ctx": 8192, "num_predict": 1200},
+    }).encode()
+    req = urllib.request.Request(
+        f"{OLLAMA_URL}/api/chat", data=payload,
+        headers={"Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=120) as resp:
+        reply = json.loads(resp.read()).get("message", {}).get("content", "").strip()
+    if not reply:
+        raise RuntimeError("model returned empty content")
+    return _extract_pine_code(reply)
+
+
+def _pine_indicator(description: str, source: str, lang: str) -> dict:
+    reject = _pine_reject(source, lang)
+    if reject:
+        return {"command": "PINE_INDICATOR", **reject}
+    if not description:
+        return {"command": "PINE_INDICATOR", "status": "error",
+                 "reply": "Describe the indicator logic, e.g.: pine indicator: 20/50 SMA crossover with alert"}
+    prompt = (
+        "Write a Pine Script v5 indicator for TradingView implementing this logic: "
+        f"{description}\n\nInclude inputs for all parameters, plot the result on the "
+        "chart, and add alert conditions. Return only the code in a single fenced "
+        "code block, no explanation."
+    )
+    try:
+        code = _generate_pine(prompt)
+    except Exception as exc:
+        log.error("pine indicator generation failed: %s", exc)
+        return {"command": "PINE_INDICATOR", "status": "error",
+                 "reply": "Couldn't generate that script right now, try again shortly"}
+    return {
+        "command": "PINE_INDICATOR", "status": "executed",
+        "reply": f"```pinescript\n{code}\n```\n(Draft only -- not verified against TradingView's compiler.)",
+        "data": {"description": description},
+    }
+
+
+def _pine_strategy(description: str, source: str, lang: str) -> dict:
+    reject = _pine_reject(source, lang)
+    if reject:
+        return {"command": "PINE_STRATEGY", **reject}
+    if not description:
+        return {"command": "PINE_STRATEGY", "status": "error",
+                 "reply": "Describe the strategy logic, e.g.: pine strategy: 20/50 SMA crossover"}
+    # Prompt 26 says "convert the indicator above" -- this router has no
+    # cross-message memory outside the TTL-bound confirm/cancel state, so
+    # "the above" can't be resolved. Generates strategy() directly from a
+    # fresh description instead, with the fixed backtest params baked in.
+    prompt = (
+        "Write a Pine Script v5 strategy() for TradingView implementing this logic: "
+        f"{description}\n\nInclude explicit entry, exit, take-profit, and stop-loss "
+        "conditions, commission of 0.1%, position size of 10% of equity, and starting "
+        "capital of $10,000. Return only the code in a single fenced code block, no "
+        "explanation."
+    )
+    try:
+        code = _generate_pine(prompt)
+    except Exception as exc:
+        log.error("pine strategy generation failed: %s", exc)
+        return {"command": "PINE_STRATEGY", "status": "error",
+                 "reply": "Couldn't generate that script right now, try again shortly"}
+    return {
+        "command": "PINE_STRATEGY", "status": "executed",
+        "reply": f"```pinescript\n{code}\n```\n(Draft only -- not verified against TradingView's compiler.)",
+        "data": {"description": description},
+    }
+
+
 def _briefing_bins() -> str:
     # Bin reminder only when collection is today or tomorrow — the full
     # schedule is BIN_DAY's job.
@@ -1527,6 +1637,21 @@ COMMANDS = {
         "destructive": False,
         "run": lambda: "講分析股票加埋代號，例如：分析股票 AAPL",
     },
+    "PINE_INDICATOR": {
+        # Matched by prefix in route(), not exact phrase — listed here so it
+        # appears in LIST_COMMANDS, the home page, and the Whisper prompt.
+        # Slack/text-only: draft code, not verified against TradingView.
+        "phrases": ["pine indicator", "pine script"],
+        "destructive": False,
+        "run": lambda: "Say pine indicator: then describe the logic, e.g. pine indicator: 20/50 SMA crossover with alert",
+    },
+    "PINE_STRATEGY": {
+        # Matched by prefix in route(), not exact phrase — listed here so it
+        # appears in LIST_COMMANDS, the home page, and the Whisper prompt.
+        "phrases": ["pine strategy", "pine backtest"],
+        "destructive": False,
+        "run": lambda: "Say pine strategy: then describe the logic, e.g. pine strategy: 20/50 SMA crossover",
+    },
     "RESTART_ASR": {
         "phrases": [
             "重啟語音系統", "重启语音系统", "重新啟動語音系統", "重新启动语音系统",
@@ -1800,6 +1925,14 @@ def route(text: str, source: str = "voice", lang: str = "yue") -> dict:
 
     if source != "web" and phrase.startswith(STOCK_PREFIXES):
         return _stock_analysis(text)
+
+    pine_indicator_match = _PINE_INDICATOR_RE.match(text)
+    if pine_indicator_match:
+        return _pine_indicator(pine_indicator_match.group(1).strip(), source, lang)
+
+    pine_strategy_match = _PINE_STRATEGY_RE.match(text)
+    if pine_strategy_match:
+        return _pine_strategy(pine_strategy_match.group(1).strip(), source, lang)
 
     image_match = _IMAGE_RE.match(text)
     if image_match:

@@ -1277,6 +1277,8 @@ def poll_and_generate() -> int:
             state[ticker]["last_processed_filed"] = hit["filed"]
             written += 1
             log.info("%s: generated valuation report for accession %s (filed %s)", ticker, hit["accn"], hit["filed"])
+            if sf.regenerate(ticker):
+                log.info("%s: regenerated Category 1 report after valuation update", ticker)
         except Exception as exc:
             log.error("%s: valuation report failed: %s", ticker, exc)
 

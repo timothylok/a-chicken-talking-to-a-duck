@@ -41,6 +41,8 @@ DESCRIPTIONS = {
     "MOVIE_QUOTE": "隨機講一句港產片對白，會講埋戲名同角色",
     "CREATE_REMINDER": "喺你部iPhone加提醒事項：講「提我」加內容同時間（例：提我聽日朝早九點買牛奶）",
     "STOCK_ANALYSIS": "分析股票代號嘅現價、技術指標（RSI、平均線）同AI睇法：講「分析股票」加埋代號（例：分析股票 AAPL）——AI意見僅供參考，唔係投資建議",
+    "PINE_INDICATOR": "本機AI生成TradingView Pine Script v5指標代碼（淨係Slack或者文字介面用得）：講「pine indicator:」加埋想要嘅指標邏輯——AI生成代碼未經TradingView編譯器驗證，只係草稿",
+    "PINE_STRATEGY": "本機AI生成TradingView Pine Script v5回測策略代碼（淨係Slack或者文字介面用得）：講「pine strategy:」加埋想要嘅策略邏輯，固定用0.1%手續費、10%資金比例、一萬蚊本金——AI生成代碼未經TradingView編譯器驗證，只係草稿",
     "GENERATE_IMAGE": "本機AI畫圖（淨係Slack用得）：講「畫」加內容（例：畫 一隻太空貓），約一分鐘後張圖出現喺Slack",
     "RESTART_ASR": "重新啟動語音系統（約三十秒後恢復）",
     "TRIGGER_DEPLOY": "重新部署網站",
@@ -51,7 +53,7 @@ DESCRIPTIONS = {
 # unlisted falls into an automatic 其他 group so the hook never breaks.
 CATEGORIES = [
     ("天氣出行", ["WEATHER_TODAY", "WEATHER_COMPARE", "JACKET_CHECK", "BUS_TIMES", "TIDE_TIMES"]),
-    ("生活資訊", ["FUEL_PRICES", "BIN_DAY", "MILK_PRICES", "MORTGAGE_RATES", "STOCK_ANALYSIS", "EARTHQUAKES", "NEWS_HEADLINES"]),
+    ("生活資訊", ["FUEL_PRICES", "BIN_DAY", "MILK_PRICES", "MORTGAGE_RATES", "STOCK_ANALYSIS", "PINE_INDICATOR", "PINE_STRATEGY", "EARTHQUAKES", "NEWS_HEADLINES"]),
     ("日程提醒", ["MORNING_BRIEFING", "TODAY_AGENDA", "CREATE_REMINDER"]),
     ("玩吓", ["QUOTE_OF_DAY", "MOVIE_QUOTE", "GENERATE_IMAGE"]),
     ("系統", ["SYSTEM_STATUS", "LIST_COMMANDS", "RESTART_ASR", "TRIGGER_DEPLOY"]),
@@ -69,7 +71,7 @@ AUTOMATIONS = [
     ("每十分鐘", "同步Google日曆去本機（淨係攞標題同時間，其他資料唔會落嚟）"),
     ("朝早6點20分", "落雨機率高過7成就推送通知提你帶遮"),
     ("每分鐘", "執行自訂工作流規則：聽日收垃圾今晚提你、指令出錯即刻通知"),
-    ("朝早9點半", "分析定咗嗰幾隻股票（現價、技術指標、AI睇法），寫落Notion"),
+    ("朝早9點半", "分析定咗嗰幾隻股票嘅技術走勢（週線日線讀圖、成交量、對SPY強弱、業績波幅），寫落Notion"),
     ("凌晨1點", "檢查定咗嗰啲股票有冇出季度業績，有嘅話自動生成分析報告寫落Notion"),
     ("朝早10點", "如果凌晨嗰輪生成咗新嘅季度業績報告，推送通知話你知"),
     ("凌晨1點半", "檢查定咗嗰啲股票有冇出季度業績，有嘅話自動生成估值報告（多種估值模型）寫落Notion"),
