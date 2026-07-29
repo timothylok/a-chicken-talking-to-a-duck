@@ -62,7 +62,6 @@ Current inventory:
 | Notion API key | `ops/notion.json` (gitignored, deny-ACLed) | "VoiceOS Notion Sync" task, runs as user |
 | ntfy topic | `ops/ntfy.json` (gitignored, deny-ACLed) | heartbeat / milk-watch / reminder-alerts tasks, run as user |
 | Gateway key + CF Access token | `gateway/.env` (gitignored, deny-ACLed) + Vercel env | Vercel only; local copy for reference |
-| Google OAuth client + refresh token (`calendar.events.readonly` only) | `ops/google.json` (gitignored, deny-ACLed) | "VoiceOS Calendar Sync" task, runs as user |
 | Slack signing secret + bot token | `gateway/.env` (same file as above) + Vercel env | Vercel only; never on the Win11 box |
 | VoiceASR service env | registry `AppEnvironmentExtra` | model path, fuel location, property ID — nothing sensitive |
 
@@ -80,8 +79,10 @@ buys a service that never holds a secret.
 ## External integrations (the "plugin" pattern, added 2026-07-17)
 
 Every integration with an authenticated external service follows one of two
-shapes. Google Calendar (`ops/google_calendar.py` + `TODAY_AGENDA`) is the
-reference implementation for reads.
+shapes. (Google Calendar was the reference implementation for reads; removed
+2026-07-29 — no paid Google Workspace license, so OAuth setup was never
+completable. No reads integration is currently live; follow the shape below
+when the next one is built.)
 
 **Reads — synced sanitized cache:**
 a user-context scheduled task holds the credentials, pulls from the provider

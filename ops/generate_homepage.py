@@ -35,8 +35,7 @@ DESCRIPTIONS = {
     "EARTHQUAKES": "報告紐西蘭最近一次有感地震：幾耐之前、邊度、幾多級、幾深",
     "NEWS_HEADLINES": "用廣東話讀出紐西蘭今日三條頭條新聞（人名地名保留英文）",
     "JACKET_CHECK": "出門前檢查：而家有冇落雨、兩個鐘內會唔會落雨，話你知使唔使帶遮帶褸",
-    "TODAY_AGENDA": "讀出今日Google日曆剩低嘅行程：時間同標題",
-    "MORNING_BRIEFING": "一次過講晒：今日天氣、嚟緊嘅巴士、今日行程、收垃圾提醒（今日或聽日先講）同三條新聞",
+    "MORNING_BRIEFING": "一次過講晒：今日天氣、嚟緊嘅巴士、收垃圾提醒（今日或聽日先講）同三條新聞",
     "QUOTE_OF_DAY": "隨機講一句周星馳電影金句",
     "MOVIE_QUOTE": "隨機講一句港產片對白，會講埋戲名同角色",
     "CREATE_REMINDER": "喺你部iPhone加提醒事項：講「提我」加內容同時間（例：提我聽日朝早九點買牛奶）",
@@ -54,7 +53,7 @@ DESCRIPTIONS = {
 CATEGORIES = [
     ("天氣出行", ["WEATHER_TODAY", "WEATHER_COMPARE", "JACKET_CHECK", "BUS_TIMES", "TIDE_TIMES"]),
     ("生活資訊", ["FUEL_PRICES", "BIN_DAY", "MILK_PRICES", "MORTGAGE_RATES", "STOCK_ANALYSIS", "PINE_INDICATOR", "PINE_STRATEGY", "EARTHQUAKES", "NEWS_HEADLINES"]),
-    ("日程提醒", ["MORNING_BRIEFING", "TODAY_AGENDA", "CREATE_REMINDER"]),
+    ("日程提醒", ["MORNING_BRIEFING", "CREATE_REMINDER"]),
     ("玩吓", ["QUOTE_OF_DAY", "MOVIE_QUOTE", "GENERATE_IMAGE"]),
     ("系統", ["SYSTEM_STATUS", "LIST_COMMANDS", "RESTART_ASR", "TRIGGER_DEPLOY"]),
 ]
@@ -68,7 +67,6 @@ AUTOMATIONS = [
     ("每五分鐘", "指令紀錄自動同步去Notion（傾偈內容唔會離開屋企部機）"),
     ("朝早三點半", "自動清理舊紀錄：傾偈內容留30日，系統日誌留90日，指令紀錄長期保存"),
     ("每分鐘", "檢查提醒事項，到咗指定時間就推送通知去手機"),
-    ("每十分鐘", "同步Google日曆去本機（淨係攞標題同時間，其他資料唔會落嚟）"),
     ("朝早6點20分", "落雨機率高過7成就推送通知提你帶遮"),
     ("每分鐘", "執行自訂工作流規則：聽日收垃圾今晚提你、指令出錯即刻通知"),
     ("朝早9點半", "分析定咗嗰幾隻股票嘅技術走勢（週線日線讀圖、成交量、對SPY強弱、業績波幅），寫落Notion"),
