@@ -12,8 +12,10 @@ silently stalled for days, causing the same stale "drop" to be re-reported
 every morning) -- our own daily observation is always the source of truth.
 
 Products: PRICEWATCH_PRODUCTS env var, comma-separated PriceSpy product ids
-(default: 13779039, "Pokemon Legends Z-A (Switch)",
-https://pricespy.co.nz/product.php?p=13779039).
+(default: 13779039 "Pokemon Legends Z-A (Switch)" +
+13101596 "Nintendo Switch 2",
+https://pricespy.co.nz/product.php?p=13779039 /
+https://pricespy.co.nz/product.php?p=13101596).
 
 Uses the thecolab-ai nz-pricewatch skill's CLI directly (no login, no
 account, public PriceSpy product pages only).
@@ -33,7 +35,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LOG_PATH = os.path.join(ROOT, "asr", "logs", "pricewatch.log")
 STATE_PATH = os.path.join(ROOT, "asr", "logs", "pricewatch_state.json")
 CLI = "D:/ai/thecolab-skills/skills/nz-pricewatch/scripts/cli.py"
-PRODUCTS = [p.strip() for p in os.environ.get("PRICEWATCH_PRODUCTS", "13779039").split(",") if p.strip()]
+PRODUCTS = [p.strip() for p in os.environ.get("PRICEWATCH_PRODUCTS", "13779039,13101596").split(",") if p.strip()]
 NZ_TZ = ZoneInfo("Pacific/Auckland")
 sys.path.insert(0, os.path.join(ROOT, "ops"))
 
