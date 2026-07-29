@@ -1,0 +1,161 @@
+/* Same CSS-variable convention as the rest of this project's generated
+   pages (gateway/public/index.html, the content/stock-technicals reports)
+   for visual consistency and light/dark support with zero JS toggle logic. */
+:root {
+  --bg: #ffffff;
+  --fg: #1a1a1a;
+  --muted: #666;
+  --line: #e0e0e0;
+  --accent: #b45309;
+  --card-bg: #fafafa;
+  --green: #16a34a;
+  --amber: #d97706;
+  --red: #dc2626;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16181d;
+    --fg: #e8e8e8;
+    --muted: #9a9a9a;
+    --line: #333;
+    --accent: #f59e0b;
+    --card-bg: #1c1f26;
+    --green: #22c55e;
+    --amber: #f59e0b;
+    --red: #ef4444;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0 auto;
+  max-width: 72rem;
+  padding: 2rem 1.25rem 4rem;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: -apple-system, "Segoe UI", sans-serif;
+  line-height: 1.55;
+}
+
+h1 {
+  font-size: 1.6rem;
+  margin-bottom: 0.25rem;
+}
+
+.tagline {
+  color: var(--muted);
+  margin-top: 0;
+  font-size: 0.9rem;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr));
+  gap: 1rem;
+  margin-top: 2rem;
+}
+
+.card {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card-bg);
+  padding: 1rem 1.1rem;
+}
+
+.card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 0.5rem;
+}
+
+.ticker {
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.composite {
+  font-size: 1.4rem;
+  font-weight: 700;
+}
+
+.coverage {
+  color: var(--muted);
+  font-size: 0.78rem;
+  margin: 0 0 0.75rem;
+}
+
+.summary {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin: 0 0 0.9rem;
+}
+
+.kpi-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.kpi-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+}
+
+.kpi-name {
+  flex: 1;
+}
+
+.kpi-score {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  width: 2.5rem;
+  text-align: right;
+}
+
+.dot {
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 50%;
+  flex: none;
+}
+.dot.Green {
+  background: var(--green);
+}
+.dot.Amber {
+  background: var(--amber);
+}
+.dot.Red {
+  background: var(--red);
+}
+.dot.na {
+  background: var(--line);
+}
+
+.generated {
+  color: var(--muted);
+  font-size: 0.72rem;
+  margin-top: 0.75rem;
+}
+
+footer {
+  margin-top: 3rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+  border-top: 1px solid var(--line);
+  padding-top: 1rem;
+}
+
+.error {
+  color: var(--red);
+  border: 1px solid var(--red);
+  border-radius: 8px;
+  padding: 1rem;
+  margin-top: 2rem;
+}

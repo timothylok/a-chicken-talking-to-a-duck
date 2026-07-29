@@ -9,5 +9,15 @@
     "api/webchat.ts": {
       "maxDuration": 300
     }
-  }
+  },
+  "rewrites": [
+    {
+      "source": "/dashboard",
+      "destination": "https://dashboard-pink-psi-88.vercel.app/dashboard"
+    },
+    {
+      "source": "/dashboard/:path*",
+      "destination": "https://dashboard-pink-psi-88.vercel.app/dashboard/:path*"
+    }
+  ]
 }

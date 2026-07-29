@@ -73,6 +73,7 @@ AUTOMATIONS = [
     ("凌晨1點", "檢查定咗嗰啲股票有冇出季度業績，有嘅話自動生成分析報告寫落Notion"),
     ("朝早10點", "如果凌晨嗰輪生成咗新嘅季度業績報告，推送通知話你知"),
     ("凌晨1點半", "檢查定咗嗰啲股票有冇出季度業績，有嘅話自動生成估值報告（多種估值模型）寫落Notion"),
+    ("朝早10點", "計算定咗嗰幾隻股票嘅10個風險評分（0-1分同紅黃綠燈），寫落Notion俾網頁儀表板讀"),
 ]
 
 PAGE = """<!DOCTYPE html>
@@ -96,6 +97,9 @@ PAGE = """<!DOCTYPE html>
   .tagline {{ color: var(--muted); margin-top: 0; }}
   .translate {{ font-size: 0.85rem; margin-top: 0.25rem; }}
   .translate a {{ color: var(--muted); }}
+  .nav {{ display: flex; gap: 1.25rem; margin-top: 1rem; }}
+  .nav a {{ color: var(--accent); font-weight: 600; text-decoration: none; }}
+  .nav a:hover {{ text-decoration: underline; }}
   .flow {{ color: var(--muted); font-size: 0.9rem; overflow-x: auto; white-space: nowrap; }}
   table {{ border-collapse: collapse; width: 100%; margin-top: 1rem; }}
   th, td {{ text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--line);
@@ -124,6 +128,10 @@ PAGE = """<!DOCTYPE html>
 <h1>雞同鴨講</h1>
 <p class="tagline">私人廣東話語音OS</p>
 <p class="translate"><a href="https://translate.google.com/translate?sl=auto&amp;tl=en&amp;u=https://a-chicken-talking-to-a-duck.vercel.app/" rel="nofollow">Translate to English (Google Translate)</a></p>
+<nav class="nav">
+<a href="/dashboard">📊 風險儀表板</a>
+<a href="/chat.html">💬 打字版傾偈</a>
+</nav>
 
 <div class="stats">
   <div class="stat"><div class="num">{command_count}</div><div class="label">語音指令</div></div>
@@ -137,7 +145,6 @@ PAGE = """<!DOCTYPE html>
 <p>成個過程語音同文字都留喺自己機度做辨識，唔會送去第三方雲端AI，
 指令仲要一字不差先會執行，危險動作重要講「確認」先做。</p>
 <p class="flow">iPhone 🎤 → Vercel → Cloudflare Tunnel → 屋企Win11（語音辨識）→ 指令／AI傾偈 → 講返畀你聽</p>
-<p><a href="/chat.html">打字版傾偈（廣東話／English）→</a></p>
 
 <h2>指令一覽</h2>
 <div class="filters">

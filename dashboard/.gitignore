@@ -1,0 +1,10 @@
+node_modules/
+.next/
+.env.local
+.vercel
+next-env.d.ts
+*.tsbuildinfo
+
+# generated locally by ops/stock_risk_dashboard.py, baked into the site at
+# publish time via `vercel --prod` -- regenerated output, not source
+data/
