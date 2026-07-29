@@ -15,7 +15,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "asr"))
 
-from router import COMMANDS  # noqa: E402
+from router import COMMANDS, MACRO_DESCRIPTIONS  # noqa: E402
 
 OUT_PATH = os.path.join(ROOT, "gateway", "public", "index.html")
 
@@ -223,7 +223,7 @@ chips.forEach((chip) => chip.addEventListener("click", () => {{
 def _command_row(command_id: str) -> str:
     spec = COMMANDS[command_id]
     primary, *alts = spec["phrases"]
-    desc = DESCRIPTIONS.get(command_id, "（未有說明）")
+    desc = DESCRIPTIONS.get(command_id) or MACRO_DESCRIPTIONS.get(command_id) or "（未有說明）"
     if spec["destructive"]:
         desc += '<div class="confirm">⚠ 要講「確認」先執行</div>'
     return (

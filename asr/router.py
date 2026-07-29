@@ -1622,6 +1622,95 @@ def _normalize(text: str) -> str:
     return re.sub(r"[^\w一-鿿]+", "", text.lower())
 
 
+# Voice macros: owner-edited ops/macros.json chains several existing
+# allowlisted commands into one combined reply under a new trigger phrase
+# (e.g. "focus mode" -> weather + bus times). Same trust model as
+# ops/workflows.json (committed, no secrets, no LLM involvement) rather
+# than a dynamic plugin system -- macros can only reference commands that
+# already exist in COMMANDS, never define new behaviour.
+_MACROS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "ops", "macros.json")
+# Real dispatch for these 5 is intercepted by regex before the COMMANDS loop
+# (see route()); their registered "run" is just a usage-hint lambda, so
+# chaining them would silently produce a nonsense reply, not an error.
+_MACRO_STUB_IDS = {"CREATE_REMINDER", "GENERATE_IMAGE", "STOCK_ANALYSIS", "PINE_INDICATOR", "PINE_STRATEGY"}
+# Not "destructive" but its run() schedules os._exit(0) via a 2s timer and
+# returns immediately, assuming "reply first, then exit" is atomic -- chained
+# with slower steps after it, the process can exit mid-macro.
+_MACRO_DENY_IDS = _MACRO_STUB_IDS | {"RESTART_ASR"}
+
+MACRO_DESCRIPTIONS: dict = {}
+
+
+def _make_macro_runner(command_ids: "list[str]"):
+    # Mirrors _morning_briefing: per-step try/except so one failing section
+    # doesn't kill the whole macro, "。"-joined like every other multi-part
+    # Cantonese reply.
+    def _run() -> str:
+        sections = []
+        for cid in command_ids:
+            try:
+                out = COMMANDS[cid]["run"]()
+                reply = out[0] if isinstance(out, tuple) else out
+                if reply:
+                    sections.append(reply)
+            except Exception as exc:
+                log.error("macro step %s failed: %s", cid, exc)
+        return "。".join(sections) if sections else "冇嘢返到嚟"
+    return _run
+
+
+def _load_macros() -> None:
+    try:
+        with open(_MACROS_PATH, encoding="utf-8") as f:
+            macros = json.load(f).get("macros", [])
+    except FileNotFoundError:
+        return
+    except (OSError, ValueError) as exc:
+        log.error("ops/macros.json: failed to load, skipping all macros: %s", exc)
+        return
+
+    for macro in macros:
+        macro_id = macro.get("id")
+        phrases = macro.get("phrases") or []
+        command_ids = macro.get("commands") or []
+        if not macro_id or not phrases or not command_ids:
+            log.error("macro %r: skipped, missing id/phrases/commands", macro_id)
+            continue
+
+        bad = [
+            cid for cid in command_ids
+            if cid not in COMMANDS
+            or COMMANDS[cid]["destructive"]
+            or cid in _MACRO_DENY_IDS
+            or cid.startswith("MACRO_")
+        ]
+        if bad:
+            log.error("macro %s: skipped, ineligible commands %r", macro_id, bad)
+            continue
+
+        existing_phrases = {
+            _normalize(p) for spec in COMMANDS.values() for p in spec["phrases"]
+        }
+        normalized = [_normalize(p) for p in phrases]
+        if any(n in existing_phrases for n in normalized):
+            log.error("macro %s: skipped, phrase collides with an existing command/macro", macro_id)
+            continue
+
+        command_id = "MACRO_" + macro_id.upper().replace("-", "_")
+        COMMANDS[command_id] = {
+            "phrases": phrases,
+            "destructive": False,
+            "pause_english": all(COMMANDS[cid].get("pause_english", True) for cid in command_ids),
+            "run": _make_macro_runner(command_ids),
+        }
+        if macro.get("description"):
+            MACRO_DESCRIPTIONS[command_id] = macro["description"]
+        log.info("macro %s registered: %r -> %r", command_id, phrases, command_ids)
+
+
+_load_macros()
+
+
 def _recent_chat_turns(max_turns: int = 5, max_age_s: int = 1800) -> list:
     # Short-term conversation memory: replay the last few chat exchanges so
     # follow-ups make sense. All channels share one thread (single-user

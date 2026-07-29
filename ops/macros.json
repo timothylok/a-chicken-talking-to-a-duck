@@ -1,0 +1,22 @@
+{
+  "macros": [
+    {
+      "id": "leaving-home",
+      "phrases": ["出門模式", "leaving home"],
+      "commands": ["JACKET_CHECK", "BUS_TIMES", "FUEL_PRICES"],
+      "description": "出門前一次過check：使唔使帶遮、下班車幾耐到、附近邊度油最平"
+    },
+    {
+      "id": "house-check",
+      "phrases": ["屋企資訊", "house check"],
+      "commands": ["BIN_DAY", "MILK_PRICES"],
+      "description": "屋企日常一次過check：幾時收垃圾、邊度牛奶最平"
+    },
+    {
+      "id": "wind-down",
+      "phrases": ["瞓覺前", "wind down"],
+      "commands": ["QUOTE_OF_DAY", "MOVIE_QUOTE"],
+      "description": "瞓覺前輕鬆一下：一句電影金句加一句對白"
+    }
+  ]
+}
