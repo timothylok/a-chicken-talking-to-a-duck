@@ -7,6 +7,7 @@ export default function Dashboard() {
   if (rows.length === 0) {
     return (
       <main>
+        <a className="back-link" href="https://a-chicken-talking-to-a-duck.vercel.app/">← Home</a>
         <h1>Mag 7 Risk Dashboard</h1>
         <div className="error">
           No dashboard data yet -- run <code>python ops/stock_risk_dashboard.py</code> locally, then{" "}
@@ -20,6 +21,7 @@ export default function Dashboard() {
 
   return (
     <main>
+      <a className="back-link" href="https://a-chicken-talking-to-a-duck.vercel.app/">← Home</a>
       <h1>Mag 7 Risk Dashboard</h1>
       <p className="tagline">
         10 KPIs, computed by a local pipeline from SEC/Yahoo data (no cloud AI). Static snapshot published
