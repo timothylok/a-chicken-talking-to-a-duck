@@ -69,11 +69,29 @@ AUTOMATIONS = [
     ("每分鐘", "檢查提醒事項，到咗指定時間就推送通知去手機"),
     ("朝早6點20分", "落雨機率高過7成就推送通知提你帶遮"),
     ("每分鐘", "執行自訂工作流規則：聽日收垃圾今晚提你、指令出錯即刻通知"),
-    ("朝早9點半", "分析定咗嗰幾隻股票嘅技術走勢（週線日線讀圖、成交量、對SPY強弱、業績波幅），寫落Notion"),
-    ("凌晨1點", "檢查定咗嗰啲股票有冇出季度業績，有嘅話自動生成分析報告寫落Notion"),
-    ("朝早10點", "如果凌晨嗰輪生成咗新嘅季度業績報告，推送通知話你知"),
-    ("凌晨1點半", "檢查定咗嗰啲股票有冇出季度業績，有嘅話自動生成估值報告（多種估值模型）寫落Notion"),
-    ("朝早10點", "計算定咗嗰幾隻股票嘅10個風險評分（0-1分同紅黃綠燈），寫落Notion俾網頁儀表板讀"),
+]
+
+# Stock-related automations get their own visual timeline on the home page
+# (see STOCK_TIMELINE_INTRO + the .timeline CSS/render logic below) instead
+# of living in the generic AUTOMATIONS table above — six real scheduled
+# tasks plus Category 1's reactive refresh, in actual chronological order.
+# Times/scripts confirmed live via `Get-ScheduledTask` 2026-07-29 — keep in
+# sync if a task's trigger time ever changes.
+STOCK_TIMELINE = [
+    ("01:00", "凌晨", "Category 2", "業績監察 Earnings Watch",
+     "監察定咗嗰啲股票嘅SEC新聞稿（8-K），一有新季度業績就自動生成分析報告——EPS對比市場預期、前瞻指引、四季分部趨勢——寫落Notion"),
+    ("01:30", "凌晨", "Category 3", "估值分析 Valuation Watch",
+     "同一個觸發條件，自動跑齊DCF現金流折現、倍數法、反推隱含增長率、同業比較等多種估值模型，寫落Notion"),
+    ("02:00", "凌晨", "Category 5", "風險紅旗 Risk Watch",
+     "監察定咗嗰啲股票有冇新年報（10-K），揪出主要風險因素、資產負債表外負債、商譽減值、應收帳款同存貨趨勢等鑑證式分析，寫落Notion"),
+    ("即時", "觸發", "Category 1", "基本面快照刷新",
+     "Category 2／3／5 一有新報告成功生成，即刻觸發，重新整理返嗰隻股票嘅基本面快照（現價、時效標記），確保資料新鮮"),
+    ("09:30", "朝早", "Category 4", "技術分析 Technicals Daily",
+     "讀週線同日線走勢圖、成交量、對大盤（SPY）強弱、業績波幅，每日生成技術分析報告寫落Notion"),
+    ("10:00", "朝早", "Category 6", "風險評分儀表板 Risk Dashboard",
+     "計算10個KPI風險評分（0-1分同紅黃綠燈），寫落Notion，然後自動出版去<a href=\"/dashboard\">網頁儀表板</a>——生成失敗就唔會出版，唔會俾舊儀表板落線"),
+    ("10:00", "朝早", "—", "業績報告通知",
+     "如果凌晨嗰輪監察到新嘅季度業績報告，推送手機通知話你知——刻意同生成分開幾個鐘，唔會半夜嘈醒你"),
 ]
 
 PAGE = """<!DOCTYPE html>
@@ -122,6 +140,25 @@ PAGE = """<!DOCTYPE html>
   .stat .label {{ color: var(--muted); font-size: 0.85rem; }}
   footer {{ margin-top: 3rem; color: var(--muted); font-size: 0.8rem;
            border-top: 1px solid var(--line); padding-top: 1rem; }}
+  h3.timeline-title {{ font-size: 1rem; margin: 2rem 0 0.15rem; }}
+  .timeline-caption {{ color: var(--muted); font-size: 0.85rem; margin: 0 0 1.25rem; }}
+  .timeline {{ display: flex; flex-direction: column; }}
+  .t-row {{ display: flex; gap: 0.9rem; }}
+  .t-time {{ flex: 0 0 3.4rem; text-align: right; font-weight: 700;
+            color: var(--accent); font-size: 0.85rem; padding-top: 0.15rem;
+            white-space: nowrap; }}
+  .t-rail {{ flex: 0 0 0.7rem; display: flex; flex-direction: column; align-items: center; }}
+  .t-dot {{ width: 0.65rem; height: 0.65rem; border-radius: 50%;
+           background: var(--accent); flex: none; margin-top: 0.22rem; }}
+  .t-line {{ flex: 1; width: 2px; background: var(--line); margin-top: 0.15rem; }}
+  .t-row:last-child .t-line {{ display: none; }}
+  .t-card {{ flex: 1; padding-bottom: 1.4rem; }}
+  .t-head {{ display: flex; align-items: baseline; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.2rem; }}
+  .t-cat {{ font-size: 0.72rem; font-weight: 700; color: var(--bg); background: var(--accent);
+           border-radius: 999px; padding: 0.05rem 0.55rem; white-space: nowrap; }}
+  .t-name {{ font-weight: 600; font-size: 0.95rem; }}
+  .t-desc {{ margin: 0; color: var(--muted); font-size: 0.85rem; }}
+  .t-desc a {{ color: var(--accent); }}
 </style>
 </head>
 <body>
@@ -159,6 +196,12 @@ PAGE = """<!DOCTYPE html>
 <tr><th>幾時</th><th>做乜嘢</th></tr>
 {automation_rows}
 </table>
+
+<h3 class="timeline-title">股票分析自動化時間表</h3>
+<p class="timeline-caption">六個獨立股票分析程序，由凌晨到朝早自動接力執行，資料寫落Notion</p>
+<div class="timeline">
+{stock_timeline}
+</div>
 
 <footer>私人系統：所有指令都要有授權金鑰先用得。呢頁由 asr/router.py 嘅指令表自動生成。</footer>
 <script>
@@ -216,10 +259,26 @@ def render() -> str:
         f'<tr><td class="phrase">{html.escape(when)}</td><td>{html.escape(what)}</td></tr>'
         for when, what in AUTOMATIONS
     ]
+
+    timeline_rows = [
+        "<div class=\"t-row\">\n"
+        f'<div class="t-time">{html.escape(time)}<br>{html.escape(period)}</div>\n'
+        '<div class="t-rail"><span class="t-dot"></span><span class="t-line"></span></div>\n'
+        '<div class="t-card">\n'
+        '<div class="t-head">'
+        f'<span class="t-cat">{html.escape(cat)}</span>'
+        f'<span class="t-name">{html.escape(name)}</span>'
+        "</div>\n"
+        f'<p class="t-desc">{desc}</p>\n'
+        "</div>\n</div>"
+        for time, period, cat, name, desc in STOCK_TIMELINE
+    ]
+
     return PAGE.format(
         filter_chips="\n".join(chips),
         command_groups="\n".join(groups),
         automation_rows="\n".join(automation_rows),
+        stock_timeline="\n".join(timeline_rows),
         command_count=len(COMMANDS),
         automation_count=len(AUTOMATIONS),
     )
