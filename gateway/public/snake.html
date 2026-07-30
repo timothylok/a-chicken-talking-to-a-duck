@@ -80,6 +80,7 @@
     <div class="lcd">
       <div class="lcd-statusbar">
         <span id="score">0000</span>
+        <span>LV<span id="level">1</span></span>
         <span>🏆 <span id="high-score">0000</span></span>
       </div>
       <div id="board-wrap">
@@ -125,6 +126,7 @@ const COLS = 24, ROWS = 16, CELL = 20, TICK_MS = 150;
 const canvas = document.getElementById("board");
 const ctx = canvas.getContext("2d");
 const scoreEl = document.getElementById("score");
+const levelEl = document.getElementById("level");
 const highScoreEl = document.getElementById("high-score");
 const overlay = document.getElementById("overlay");
 const overlayText = document.getElementById("overlay-text");
@@ -187,16 +189,32 @@ const HIGH_SCORE_KEY = "snakeHighScore";
 let highScore = Number(localStorage.getItem(HIGH_SCORE_KEY)) || 0;
 highScoreEl.textContent = String(highScore).padStart(4, "0");
 
-let snake, direction, nextDirection, food, score, paused, over, timer;
+// Level system: speeds up every LEVEL_UP_SCORE points, floored so it never
+// becomes unplayably fast.
+const LEVEL_UP_SCORE = 5;
+const TICK_STEP_MS = 10;
+const MIN_TICK_MS = 60;
+
+function levelForScore(s) {
+  return Math.floor(s / LEVEL_UP_SCORE) + 1;
+}
+
+function tickMsForLevel(lv) {
+  return Math.max(MIN_TICK_MS, TICK_MS - (lv - 1) * TICK_STEP_MS);
+}
+
+let snake, direction, nextDirection, food, score, level, paused, over, timer;
 
 function resetGame() {
   snake = [{ x: 10, y: 8 }, { x: 9, y: 8 }, { x: 8, y: 8 }];
   direction = { x: 1, y: 0 };
   nextDirection = direction;
   score = 0;
+  level = 1;
   paused = false;
   over = false;
   scoreEl.textContent = "0000";
+  levelEl.textContent = "1";
   pauseIcon.textContent = "⏸";
   overlay.classList.remove("show");
   pickRandomTrack();
@@ -204,7 +222,7 @@ function resetGame() {
   spawnFood();
   draw();
   if (timer) clearInterval(timer);
-  timer = setInterval(tick, TICK_MS);
+  timer = setInterval(tick, tickMsForLevel(level));
 }
 
 function spawnFood() {
@@ -248,6 +266,13 @@ function tick() {
       highScore = score;
       highScoreEl.textContent = String(highScore).padStart(4, "0");
       localStorage.setItem(HIGH_SCORE_KEY, String(highScore));
+    }
+    const newLevel = levelForScore(score);
+    if (newLevel !== level) {
+      level = newLevel;
+      levelEl.textContent = String(level);
+      clearInterval(timer);
+      timer = setInterval(tick, tickMsForLevel(level));
     }
     spawnFood();
   } else {
