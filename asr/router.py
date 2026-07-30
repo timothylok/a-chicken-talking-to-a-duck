@@ -114,6 +114,11 @@ def _list_commands(lang: str | None = None) -> str:
     # keep the original unfiltered, all-command Cantonese listing.
     if lang is not None:
         ids = [cid for cid in COMMANDS if cid in WEB_COMMANDS]
+        if lang == "en":
+            # QUOTE_OF_DAY/MOVIE_QUOTE decline outright in English (see
+            # _quote_of_day/_movie_quote) — don't advertise a command that
+            # only ever refuses.
+            ids = [cid for cid in ids if cid not in EN_UNAVAILABLE_COMMANDS]
         labels = [WEB_LABELS[cid][lang] for cid in ids]
         if lang == "en":
             return "Available commands: " + ", ".join(labels)
@@ -455,10 +460,12 @@ with open(_QUOTES_PATH, encoding="utf-8") as _f:
 
 def _quote_of_day(lang: str = "yue") -> str:
     # Curated canonical Cantonese quotes — translating them fabricates a
-    # "canonical" line that doesn't exist, so an English session still gets
-    # the real Cantonese quote with a short English note instead.
-    quote = random.choice(QUOTES)
-    return f"(Cantonese) {quote}" if lang == "en" else quote
+    # "canonical" line that doesn't exist, so this stays Cantonese-only:
+    # declined outright in an English session rather than the earlier
+    # "(Cantonese) <quote>" workaround.
+    if lang == "en":
+        return "This command isn't available in English — try 廣東話 mode."
+    return random.choice(QUOTES)
 
 
 # HK movie quotes across films (asr/movie_quotes.json, user-provided 2026-07-15).
@@ -468,11 +475,12 @@ with open(_MOVIE_QUOTES_PATH, encoding="utf-8") as _f:
 
 
 def _movie_quote(lang: str = "yue") -> str:
+    # Same canonical-content reasoning as _quote_of_day: Cantonese-only,
+    # declined in English rather than translated or noted.
+    if lang == "en":
+        return "This command isn't available in English — try 廣東話 mode."
     pick = random.choice(MOVIE_QUOTES)
-    reply = f"《{pick['movie']}》，{pick['character']}話：{pick['quote']}"
-    # Same canonical-content reasoning as _quote_of_day: no fabricated
-    # translation of the real line.
-    return f"(Cantonese) {reply}" if lang == "en" else reply
+    return f"《{pick['movie']}》，{pick['character']}話：{pick['quote']}"
 
 
 # Slack-only image generation (asr/image_gen.py subprocess, LCM on CPU).
@@ -1379,6 +1387,9 @@ WEB_COMMANDS = {
     "MILK_PRICES", "MORTGAGE_RATES", "EARTHQUAKES", "NEWS_HEADLINES",
     "JACKET_CHECK", "QUOTE_OF_DAY", "MOVIE_QUOTE", "LIST_COMMANDS",
 }
+# Still reachable via WEB_COMMANDS for Cantonese (source == "web", lang ==
+# "yue"), but decline outright in English — see _quote_of_day/_movie_quote.
+EN_UNAVAILABLE_COMMANDS = {"QUOTE_OF_DAY", "MOVIE_QUOTE"}
 WEB_LABELS = {
     "WEATHER_TODAY": {"yue": "今日天氣", "en": "today's weather"},
     "WEATHER_COMPARE": {"yue": "同琴日比", "en": "compare with yesterday"},
