@@ -169,6 +169,7 @@ PAGE = """<!DOCTYPE html>
 <nav class="nav">
 <a href="/dashboard">📊 風險儀表板</a>
 <a href="/chat.html">💬 打字版傾偈</a>
+<a href="/snake.html">🐍 食蛇</a>
 </nav>
 
 <div class="stats">

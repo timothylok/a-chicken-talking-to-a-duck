@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>食蛇 — 雞同鴨講</title>
+<style>
+  :root { --bg: #ffffff; --fg: #1a1a1a; --muted: #666; --line: #e0e0e0; --accent: #b45309; --bubble: #f4f4f5; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #16181d; --fg: #e8e8e8; --muted: #9a9a9a; --line: #333; --accent: #f59e0b; --bubble: #24272e; }
+  }
+  body { margin: 0 auto; max-width: 26rem; padding: 1.5rem 1.25rem 2rem;
+         background: var(--bg); color: var(--fg);
+         font-family: -apple-system, "PingFang HK", "Microsoft JhengHei", sans-serif;
+         line-height: 1.6; box-sizing: border-box; text-align: center; }
+  h1 { font-size: 1.3rem; margin: 0 0 0.25rem; }
+  .tagline { color: var(--muted); margin: 0 0 1rem; font-size: 0.9rem; }
+  .nav { display: flex; gap: 1.25rem; justify-content: center; margin: 0 0 1.5rem; }
+  .nav a { color: var(--accent); font-weight: 600; text-decoration: none; }
+  .nav a:hover { text-decoration: underline; }
+
+  .scores { display: flex; justify-content: space-between; font-size: 0.9rem;
+            color: var(--muted); margin-bottom: 0.5rem; }
+  .scores strong { color: var(--fg); font-size: 1.1rem; }
+
+  #board-wrap { position: relative; display: inline-block; }
+  #board { background: var(--bubble); border: 1px solid var(--line); border-radius: 8px;
+           max-width: 100%; height: auto; touch-action: none; }
+  #overlay { position: absolute; inset: 0; display: none; flex-direction: column;
+             align-items: center; justify-content: center; gap: 0.6rem;
+             background: color-mix(in srgb, var(--bg) 82%, transparent);
+             border-radius: 8px; }
+  #overlay.show { display: flex; }
+  #overlay p { margin: 0; font-size: 1.05rem; }
+  #restart-btn { border: none; border-radius: 999px; background: var(--accent); color: #fff;
+                 font: inherit; font-size: 0.95rem; padding: 0.5rem 1.3rem; cursor: pointer; }
+
+  .pad { display: grid; grid-template-columns: repeat(3, 3.2rem); grid-template-rows: repeat(3, 3.2rem);
+         gap: 0.4rem; justify-content: center; margin: 1.1rem auto 0; }
+  .pad button { border: 1px solid var(--line); border-radius: 10px; background: none;
+                color: var(--fg); font-size: 1.3rem; cursor: pointer; }
+  .pad button:active { border-color: var(--accent); }
+  .pad-up { grid-column: 2; grid-row: 1; }
+  .pad-left { grid-column: 1; grid-row: 2; }
+  .pad-pause { grid-column: 2; grid-row: 2; font-size: 1rem; }
+  .pad-right { grid-column: 3; grid-row: 2; }
+  .pad-down { grid-column: 2; grid-row: 3; }
+
+  #music-btn { border: 1px solid var(--line); border-radius: 999px; background: none;
+               color: var(--fg); font: inherit; font-size: 0.9rem; padding: 0.4rem 1rem;
+               cursor: pointer; margin-top: 1.25rem; }
+  #music-btn.playing { border-color: var(--accent); color: var(--accent); }
+
+  footer { margin-top: 1.5rem; color: var(--muted); font-size: 0.78rem; }
+  footer a { color: inherit; }
+</style>
+</head>
+<body>
+
+<h1>食蛇</h1>
+<p class="tagline">箭嘴或者螢幕撳掣控制 — arrow keys or the on-screen buttons</p>
+
+<nav class="nav">
+<a href="/">🏠 首頁</a>
+<a href="/dashboard">📊 風險儀表板</a>
+<a href="/chat.html">💬 打字版傾偈</a>
+</nav>
+
+<div class="scores">
+  <span>分數 score: <strong id="score">0</strong></span>
+  <span>最高 best: <strong id="high-score">0</strong></span>
+</div>
+
+<div id="board-wrap">
+  <canvas id="board" width="400" height="400"></canvas>
+  <div id="overlay">
+    <p id="overlay-text"></p>
+    <button id="restart-btn">再嚟一鋪 / play again</button>
+  </div>
+</div>
+
+<div class="pad">
+  <button class="pad-up" data-dir="up">▲</button>
+  <button class="pad-left" data-dir="left">◀</button>
+  <button class="pad-pause" id="pause-btn">⏸</button>
+  <button class="pad-right" data-dir="right">▶</button>
+  <button class="pad-down" data-dir="down">▼</button>
+</div>
+
+<button id="music-btn">🎵 音樂 / music</button>
+<audio id="bgm" loop preload="none"></audio>
+
+<footer><a href="/">返回首頁 / home</a></footer>
+
+<script>
+const COLS = 20, ROWS = 20, CELL = 20, TICK_MS = 150;
+const canvas = document.getElementById("board");
+const ctx = canvas.getContext("2d");
+const scoreEl = document.getElementById("score");
+const highScoreEl = document.getElementById("high-score");
+const overlay = document.getElementById("overlay");
+const overlayText = document.getElementById("overlay-text");
+const restartBtn = document.getElementById("restart-btn");
+const pauseBtn = document.getElementById("pause-btn");
+const musicBtn = document.getElementById("music-btn");
+const bgm = document.getElementById("bgm");
+bgm.volume = 0.5;
+
+// No server/directory listing to draw from (static Vercel hosting) -- this
+// list is hand-maintained, same convention as this project's other
+// hand-maintained lists (e.g. PRICEWATCH_PRODUCTS). Keep in sync with
+// gateway/public/music/ if tracks are added or removed.
+const TRACKS = [
+  "the_mountain-game-game-music-508018.mp3",
+  "kulakovka-game-streaming-291439.mp3",
+  "mfcc-retro-arcade-game-music-297305.mp3",
+  "mondamusic-retro-arcade-game-music-512837.mp3",
+  "tatamusic-game-gaming-video-game-music-482380.mp3",
+  "viacheslavstarostin-gaming-game-video-game-music-474517.mp3",
+];
+
+function pickRandomTrack() {
+  const wasPlaying = !bgm.paused;
+  bgm.src = "/music/" + TRACKS[Math.floor(Math.random() * TRACKS.length)];
+  if (wasPlaying) bgm.play();
+}
+
+const HIGH_SCORE_KEY = "snakeHighScore";
+let highScore = Number(localStorage.getItem(HIGH_SCORE_KEY)) || 0;
+highScoreEl.textContent = highScore;
+
+let snake, direction, nextDirection, food, score, paused, over, timer;
+
+function resetGame() {
+  snake = [{ x: 10, y: 10 }, { x: 9, y: 10 }, { x: 8, y: 10 }];
+  direction = { x: 1, y: 0 };
+  nextDirection = direction;
+  score = 0;
+  paused = false;
+  over = false;
+  scoreEl.textContent = "0";
+  overlay.classList.remove("show");
+  pickRandomTrack();
+  spawnFood();
+  draw();
+  if (timer) clearInterval(timer);
+  timer = setInterval(tick, TICK_MS);
+}
+
+function spawnFood() {
+  let cell;
+  do {
+    cell = { x: Math.floor(Math.random() * COLS), y: Math.floor(Math.random() * ROWS) };
+  } while (snake.some((s) => s.x === cell.x && s.y === cell.y));
+  food = cell;
+}
+
+function setDirection(dx, dy) {
+  if (over || paused) return;
+  // Ignore a reversal into the snake's own neck.
+  if (dx === -direction.x && dy === -direction.y) return;
+  nextDirection = { x: dx, y: dy };
+}
+
+function togglePause() {
+  if (over) return;
+  paused = !paused;
+  pauseBtn.textContent = paused ? "▶" : "⏸";
+}
+
+function tick() {
+  if (paused || over) return;
+  direction = nextDirection;
+  const head = { x: snake[0].x + direction.x, y: snake[0].y + direction.y };
+
+  const hitWall = head.x < 0 || head.x >= COLS || head.y < 0 || head.y >= ROWS;
+  const hitSelf = snake.some((s) => s.x === head.x && s.y === head.y);
+  if (hitWall || hitSelf) {
+    endGame();
+    return;
+  }
+
+  snake.unshift(head);
+  if (head.x === food.x && head.y === food.y) {
+    score++;
+    scoreEl.textContent = score;
+    if (score > highScore) {
+      highScore = score;
+      highScoreEl.textContent = highScore;
+      localStorage.setItem(HIGH_SCORE_KEY, String(highScore));
+    }
+    spawnFood();
+  } else {
+    snake.pop();
+  }
+  draw();
+}
+
+function endGame() {
+  over = true;
+  clearInterval(timer);
+  overlayText.textContent = `遊戲結束，分數 ${score} / game over, score ${score}`;
+  overlay.classList.add("show");
+}
+
+function draw() {
+  ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--bubble");
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--accent");
+  ctx.fillRect(food.x * CELL, food.y * CELL, CELL - 1, CELL - 1);
+  ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--fg");
+  snake.forEach((s) => ctx.fillRect(s.x * CELL, s.y * CELL, CELL - 1, CELL - 1));
+}
+
+document.addEventListener("keydown", (e) => {
+  const map = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
+  if (map[e.key]) {
+    e.preventDefault();
+    setDirection(...map[e.key]);
+  } else if (e.key === " ") {
+    e.preventDefault();
+    togglePause();
+  }
+});
+
+document.querySelectorAll(".pad [data-dir]").forEach((btn) => {
+  const map = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
+  btn.addEventListener("click", () => setDirection(...map[btn.dataset.dir]));
+});
+pauseBtn.addEventListener("click", togglePause);
+restartBtn.addEventListener("click", resetGame);
+
+// Browsers block audio autoplay until a user gesture -- start muted/paused,
+// let the player opt in with a click (also doubles as a mute toggle).
+musicBtn.addEventListener("click", () => {
+  if (bgm.paused) {
+    bgm.play();
+    musicBtn.classList.add("playing");
+  } else {
+    bgm.pause();
+    musicBtn.classList.remove("playing");
+  }
+});
+
+resetGame();
+</script>
+</body>
+</html>
