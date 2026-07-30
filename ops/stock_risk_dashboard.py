@@ -97,7 +97,7 @@ DASHBOARD_DATA_PATH = os.path.join(ROOT, "dashboard", "data", "latest.json")
 
 WATCHLIST = [
     t.strip().upper()
-    for t in os.environ.get("STOCK_WATCHLIST", "AAPL,MSFT,NVDA,TSLA,GOOGL,AMZN,META,SPCX").split(",")
+    for t in os.environ.get("STOCK_WATCHLIST", "AAPL,MSFT,NVDA,TSLA,GOOGL,AMZN,META,AON,SPCX").split(",")
     if t.strip()
 ]
 

@@ -89,7 +89,7 @@ logging.basicConfig(
 log = logging.getLogger("stock_fundamentals")
 
 DEFAULT_WATCHLIST = os.environ.get(
-    "STOCK_WATCHLIST", "AAPL,MSFT,NVDA,TSLA,GOOGL,AMZN,META,SPCX"
+    "STOCK_WATCHLIST", "AAPL,MSFT,NVDA,TSLA,GOOGL,AMZN,META,AON,SPCX"
 )
 EXCLUDE_NO_SEC_FILINGS = {"SPCX"}
 

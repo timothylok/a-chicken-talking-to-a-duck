@@ -95,7 +95,7 @@ STALE_DAYS = 30  # don't fire on a filing older than this on a ticker's first-ev
 
 WATCHLIST = [
     t.strip().upper()
-    for t in os.environ.get("STOCK_WATCHLIST", "AAPL,MSFT,NVDA,TSLA,GOOGL,AMZN,META,SPCX").split(",")
+    for t in os.environ.get("STOCK_WATCHLIST", "AAPL,MSFT,NVDA,TSLA,GOOGL,AMZN,META,AON,SPCX").split(",")
     if t.strip()
 ]
 

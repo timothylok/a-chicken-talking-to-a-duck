@@ -6,5 +6,6 @@
   "AMZN": ["WMT", "MSFT", "GOOGL"],
   "META": ["GOOGL", "SNAP", "PINS"],
   "NVDA": ["AMD", "INTC", "AVGO"],
-  "TSLA": ["GM", "F", "RIVN"]
+  "TSLA": ["GM", "F", "RIVN"],
+  "AON": ["MMC", "WTW", "AJG"]
 }

@@ -80,7 +80,7 @@ CHART_LIB_PATH = os.path.join(ROOT, "ops", "vendor", "lightweight-charts.standal
 
 WATCHLIST = [
     t.strip().upper()
-    for t in os.environ.get("STOCK_WATCHLIST", "AAPL,MSFT,NVDA,TSLA,GOOGL,AMZN,META,SPCX").split(",")
+    for t in os.environ.get("STOCK_WATCHLIST", "AAPL,MSFT,NVDA,TSLA,GOOGL,AMZN,META,AON,SPCX").split(",")
     if t.strip()
 ]
 BENCHMARK_TICKER = "SPY"

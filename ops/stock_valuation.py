@@ -102,7 +102,7 @@ EQUITY_RISK_PREMIUM = 5.5  # percent; fixed per the prompt's own spec
 
 WATCHLIST = [
     t.strip().upper()
-    for t in os.environ.get("STOCK_WATCHLIST", "AAPL,MSFT,NVDA,TSLA,GOOGL,AMZN,META,SPCX").split(",")
+    for t in os.environ.get("STOCK_WATCHLIST", "AAPL,MSFT,NVDA,TSLA,GOOGL,AMZN,META,AON,SPCX").split(",")
     if t.strip()
 ]
 
