@@ -32,6 +32,10 @@
                  border-bottom: 1px solid var(--line); padding-bottom: 0.6rem; margin-bottom: 0.75rem; }
   #change-lang { border: none; background: none; color: var(--muted); font: inherit;
                  font-size: 0.85rem; cursor: pointer; text-decoration: underline; padding: 0; }
+  .header-controls { display: flex; gap: 0.75rem; align-items: baseline; }
+  #voice-toggle { border: none; background: none; color: var(--muted); font-size: 0.95rem;
+                  cursor: pointer; padding: 0; display: none; }
+  #voice-toggle.available { display: inline-block; }
   #messages { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 0.6rem;
               padding: 0.25rem 0; }
   .msg { max-width: 85%; padding: 0.55rem 0.8rem; border-radius: 12px; font-size: 0.95rem;
@@ -45,6 +49,11 @@
   #send-btn { border: none; border-radius: 999px; background: var(--accent); color: #fff;
               font: inherit; font-size: 0.95rem; padding: 0 1.1rem; cursor: pointer; }
   #send-btn:disabled { opacity: 0.5; cursor: default; }
+  #mic-btn { border: none; border-radius: 999px; background: var(--bubble); color: var(--fg);
+             font-size: 1.1rem; width: 2.6rem; cursor: pointer; display: none; }
+  #mic-btn.available { display: inline-block; }
+  #mic-btn.listening { background: var(--accent); color: #fff; }
+  #mic-btn:disabled { opacity: 0.5; cursor: default; }
   footer { margin-top: 1.25rem; color: var(--muted); font-size: 0.78rem; text-align: center; }
   footer a { color: inherit; }
 </style>
@@ -62,11 +71,15 @@
 <div id="chat">
   <div class="chat-header">
     <span id="lang-label"></span>
-    <button id="change-lang"></button>
+    <div class="header-controls">
+      <button id="voice-toggle" type="button"></button>
+      <button id="change-lang"></button>
+    </div>
   </div>
   <div id="messages"></div>
   <form id="composer">
     <input id="text-input" type="text" autocomplete="off">
+    <button id="mic-btn" type="button">🎤</button>
     <button id="send-btn" type="submit"></button>
   </form>
 </div>
@@ -82,6 +95,8 @@ const textInput = document.getElementById("text-input");
 const sendBtn = document.getElementById("send-btn");
 const langLabel = document.getElementById("lang-label");
 const changeLangBtn = document.getElementById("change-lang");
+const micBtn = document.getElementById("mic-btn");
+const voiceToggle = document.getElementById("voice-toggle");
 
 const COPY = {
   yue: {
@@ -101,6 +116,69 @@ const COPY = {
     networkError: "Connection lost — please try again.",
   },
 };
+
+// English voice I/O: mic input (SpeechRecognition) + spoken replies (SpeechSynthesis).
+// Cantonese isn't wired here — no reliable free zh-HK TTS voice across browsers/OSes.
+const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+let recognition = null;
+let listening = false;
+
+if (SpeechRecognitionCtor) {
+  recognition = new SpeechRecognitionCtor();
+  recognition.lang = "en-US";
+  recognition.interimResults = false;
+  recognition.continuous = false;
+
+  recognition.onresult = (event) => {
+    const transcript = event.results[event.results.length - 1][0].transcript.trim();
+    if (transcript) {
+      textInput.value = transcript;
+      composer.requestSubmit();
+    }
+  };
+  recognition.onerror = (event) => {
+    // no-speech/aborted are routine (silence timeout, user stopped early), not failures.
+    if (event.error !== "no-speech" && event.error !== "aborted") {
+      addMessage("Mic error: " + event.error, "error");
+    }
+  };
+  recognition.onend = () => {
+    listening = false;
+    micBtn.classList.remove("listening");
+  };
+
+  micBtn.addEventListener("click", () => {
+    if (micBtn.disabled) return;
+    if (listening) {
+      recognition.stop();
+    } else {
+      listening = true;
+      micBtn.classList.add("listening");
+      recognition.start();
+    }
+  });
+}
+
+let voiceReplyEnabled = localStorage.getItem("voiceReplyEnabled") !== "off";
+
+function updateVoiceToggle() {
+  voiceToggle.textContent = voiceReplyEnabled ? "🔊" : "🔇";
+}
+
+voiceToggle.addEventListener("click", () => {
+  voiceReplyEnabled = !voiceReplyEnabled;
+  localStorage.setItem("voiceReplyEnabled", voiceReplyEnabled ? "on" : "off");
+  updateVoiceToggle();
+  if (!voiceReplyEnabled) speechSynthesis.cancel();
+});
+
+function speakReply(text) {
+  if (!voiceReplyEnabled || !window.speechSynthesis) return;
+  speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = "en-US";
+  speechSynthesis.speak(utterance);
+}
 
 function addMessage(text, cls) {
   const el = document.createElement("div");
@@ -123,6 +201,17 @@ function startChat(lang) {
   messages.innerHTML = "";
   addMessage(copy.greeting, "bot");
   textInput.focus();
+
+  const englishVoice = lang === "en";
+  if (recognition) {
+    if (listening) recognition.stop();
+    micBtn.classList.toggle("available", englishVoice);
+  }
+  if (window.speechSynthesis) {
+    speechSynthesis.cancel();
+    voiceToggle.classList.toggle("available", englishVoice);
+    updateVoiceToggle();
+  }
 }
 
 document.querySelectorAll(".lang-btn").forEach((btn) => {
@@ -130,6 +219,8 @@ document.querySelectorAll(".lang-btn").forEach((btn) => {
 });
 
 changeLangBtn.addEventListener("click", () => {
+  if (recognition && listening) recognition.stop();
+  if (window.speechSynthesis) speechSynthesis.cancel();
   sessionStorage.removeItem("chatLang");
   chat.classList.remove("active");
   picker.classList.remove("hidden");
@@ -144,6 +235,7 @@ composer.addEventListener("submit", async (event) => {
   textInput.value = "";
   textInput.disabled = true;
   sendBtn.disabled = true;
+  micBtn.disabled = true;
   try {
     const resp = await fetch("/api/webchat", {
       method: "POST",
@@ -155,12 +247,14 @@ composer.addEventListener("submit", async (event) => {
       addMessage((data && data.error) || COPY[lang].networkError, "error");
     } else {
       addMessage(data.reply, "bot");
+      if (lang === "en") speakReply(data.reply);
     }
   } catch {
     addMessage(COPY[lang].networkError, "error");
   } finally {
     textInput.disabled = false;
     sendBtn.disabled = false;
+    micBtn.disabled = false;
     textInput.focus();
   }
 });
