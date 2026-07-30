@@ -120,14 +120,54 @@ const TRACKS = [
 ];
 
 function pickRandomTrack() {
-  const wasPlaying = !bgm.paused;
   bgm.src = "/music/" + TRACKS[Math.floor(Math.random() * TRACKS.length)];
-  if (wasPlaying) bgm.play();
 }
+
+// Music preference persists (default on) the same way high score does;
+// "on" only means "play when the game is actually running" -- it always
+// stops for a game-over and always (re)starts on a fresh game, unless the
+// player has explicitly turned it off via the button.
+const MUSIC_KEY = "snakeMusicEnabled";
+let musicEnabled = localStorage.getItem(MUSIC_KEY) !== "off";
+
+function updateMusicBtn() {
+  musicBtn.classList.toggle("playing", musicEnabled);
+}
+updateMusicBtn();
+
+function playMusicIfEnabled() {
+  if (!musicEnabled || over) return;
+  // Browsers reject play() without a prior user gesture -- harmless here,
+  // the first-gesture listener below retries once that gesture happens.
+  bgm.play().catch(() => {});
+}
+
+musicBtn.addEventListener("click", () => {
+  musicEnabled = !musicEnabled;
+  localStorage.setItem(MUSIC_KEY, musicEnabled ? "on" : "off");
+  updateMusicBtn();
+  if (musicEnabled) playMusicIfEnabled();
+  else bgm.pause();
+});
+
+["keydown", "click", "touchstart"].forEach((evt) =>
+  document.addEventListener(evt, () => playMusicIfEnabled(), { once: true })
+);
 
 const HIGH_SCORE_KEY = "snakeHighScore";
 let highScore = Number(localStorage.getItem(HIGH_SCORE_KEY)) || 0;
 highScoreEl.textContent = highScore;
+
+// A curated set of fruit emoji drawn as the food, and a fresh random hue
+// for the snake each game -- purely cosmetic variety, same idea as the
+// randomized background track.
+const FRUITS = ["🍎", "🍊", "🍇", "🍓", "🍒", "🍑", "🍉", "🍌", "🍍", "🥝"];
+let foodEmoji = FRUITS[0];
+let snakeColor = "";
+
+function pickSnakeColor() {
+  snakeColor = `hsl(${Math.floor(Math.random() * 360)}, 65%, 55%)`;
+}
 
 let snake, direction, nextDirection, food, score, paused, over, timer;
 
@@ -140,7 +180,9 @@ function resetGame() {
   over = false;
   scoreEl.textContent = "0";
   overlay.classList.remove("show");
+  pickSnakeColor();
   pickRandomTrack();
+  playMusicIfEnabled();
   spawnFood();
   draw();
   if (timer) clearInterval(timer);
@@ -153,6 +195,7 @@ function spawnFood() {
     cell = { x: Math.floor(Math.random() * COLS), y: Math.floor(Math.random() * ROWS) };
   } while (snake.some((s) => s.x === cell.x && s.y === cell.y));
   food = cell;
+  foodEmoji = FRUITS[Math.floor(Math.random() * FRUITS.length)];
 }
 
 function setDirection(dx, dy) {
@@ -199,6 +242,7 @@ function tick() {
 function endGame() {
   over = true;
   clearInterval(timer);
+  bgm.pause();
   overlayText.textContent = `遊戲結束，分數 ${score} / game over, score ${score}`;
   overlay.classList.add("show");
 }
@@ -206,9 +250,11 @@ function endGame() {
 function draw() {
   ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--bubble");
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--accent");
-  ctx.fillRect(food.x * CELL, food.y * CELL, CELL - 1, CELL - 1);
-  ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--fg");
+  ctx.font = `${CELL}px sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(foodEmoji, food.x * CELL + CELL / 2, food.y * CELL + CELL / 2 + 1);
+  ctx.fillStyle = snakeColor;
   snake.forEach((s) => ctx.fillRect(s.x * CELL, s.y * CELL, CELL - 1, CELL - 1));
 }
 
@@ -229,18 +275,6 @@ document.querySelectorAll(".pad [data-dir]").forEach((btn) => {
 });
 pauseBtn.addEventListener("click", togglePause);
 restartBtn.addEventListener("click", resetGame);
-
-// Browsers block audio autoplay until a user gesture -- start muted/paused,
-// let the player opt in with a click (also doubles as a mute toggle).
-musicBtn.addEventListener("click", () => {
-  if (bgm.paused) {
-    bgm.play();
-    musicBtn.classList.add("playing");
-  } else {
-    bgm.pause();
-    musicBtn.classList.remove("playing");
-  }
-});
 
 resetGame();
 </script>
