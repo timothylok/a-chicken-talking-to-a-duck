@@ -36,18 +36,23 @@
                  letter-spacing: 0.3em; font-size: 0.8rem; margin: 0 0 0.9rem; }
   .screen-bezel { background: #aab0bd; border-radius: 1rem; padding: 0.55rem;
                   box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.4); }
-  .lcd { position: relative; background: #9bbc0f; border-radius: 0.35rem;
+  /* Level-tier LCD skin, applied via JS as these two custom properties --
+     defaults here are the level-1 classic green, everything screen-related
+     derives from just these two colours so a skin change is a one-place
+     update (see applySkin() / SKINS in the script). */
+  :root { --lcd-bg: #9bbc0f; --lcd-fg: #0f380f; }
+  .lcd { position: relative; background: var(--lcd-bg); border-radius: 0.35rem;
          padding: 0.4rem 0.5rem 0.5rem; overflow: hidden; }
   .lcd-statusbar { display: flex; justify-content: space-between; align-items: center;
-                   color: #1f3300; font-family: "Courier New", monospace; font-weight: 700;
+                   color: var(--lcd-fg); font-family: "Courier New", monospace; font-weight: 700;
                    font-size: 0.85rem; padding: 0 0.15rem 0.3rem; }
   #board { display: block; width: 100%; height: auto; }
   #overlay { position: absolute; inset: 0.4rem; display: none; flex-direction: column;
              align-items: center; justify-content: center; gap: 0.6rem;
-             background: rgba(15, 40, 10, 0.88); border-radius: 0.2rem; }
+             background: rgba(0, 0, 0, 0.78); border-radius: 0.2rem; }
   #overlay.show { display: flex; }
-  #overlay p { margin: 0; font-size: 0.95rem; color: #cdeaa0; font-family: "Courier New", monospace; }
-  #restart-btn { border: none; border-radius: 999px; background: #9bbc0f; color: #1f3300;
+  #overlay p { margin: 0; font-size: 0.95rem; color: var(--lcd-bg); font-family: "Courier New", monospace; }
+  #restart-btn { border: none; border-radius: 999px; background: var(--lcd-bg); color: var(--lcd-fg);
                  font: inherit; font-weight: 700; font-size: 0.85rem; padding: 0.5rem 1.1rem; cursor: pointer; }
 
   .softkeys { display: flex; justify-content: space-between; align-items: center;
@@ -211,6 +216,7 @@ function resetGame() {
   nextDirection = direction;
   score = 0;
   level = 1;
+  applySkin(level);
   paused = false;
   over = false;
   scoreEl.textContent = "0000";
@@ -271,6 +277,7 @@ function tick() {
     if (newLevel !== level) {
       level = newLevel;
       levelEl.textContent = String(level);
+      applySkin(level);
       clearInterval(timer);
       timer = setInterval(tick, tickMsForLevel(level));
     }
@@ -289,11 +296,23 @@ function endGame() {
   overlay.classList.add("show");
 }
 
-// Classic monochrome LCD palette -- fixed colours, matching the reference
-// Nokia 3310 screen exactly rather than following the site's light/dark
-// theme (this is meant to look like a physical LCD, not adapt to it).
-const LCD_BG = "#9bbc0f";
-const LCD_FG = "#0f380f";
+// Level-tier LCD skins -- fixed colours, not following the site's light/dark
+// theme (meant to look like a physical LCD under a different colour
+// backlight, not adapt to the page). Cycles back to green past level 3.
+const SKINS = [
+  { bg: "#9bbc0f", fg: "#0f380f" }, // level 1: classic Nokia 3310 green
+  { bg: "#f2c14e", fg: "#4a2f00" }, // level 2: amber backlight
+  { bg: "#a8d0e6", fg: "#0a2f4a" }, // level 3: ice-blue backlight
+];
+let LCD_BG, LCD_FG;
+
+function applySkin(lv) {
+  const skin = SKINS[(lv - 1) % SKINS.length];
+  LCD_BG = skin.bg;
+  LCD_FG = skin.fg;
+  document.documentElement.style.setProperty("--lcd-bg", skin.bg);
+  document.documentElement.style.setProperty("--lcd-fg", skin.fg);
+}
 
 function draw() {
   ctx.fillStyle = LCD_BG;
