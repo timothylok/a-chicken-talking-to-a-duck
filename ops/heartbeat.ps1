@@ -2,7 +2,12 @@
 # Healthy = ASR /health responds ok AND the Cloudflared service is running.
 # On failure, pings the /fail endpoint with a reason for an immediate alert.
 # Registered as a scheduled task every 5 minutes (see SESSIONS.md 2026-07-12).
-param([Parameter(Mandatory = $true)][string]$PingUrl)
+param([string]$PingUrl = $env:HEALTHCHECKS_PING_URL)
+
+if (-not $PingUrl) {
+    Write-Error "PingUrl not set (pass -PingUrl or set HEALTHCHECKS_PING_URL env var)"
+    exit 1
+}
 
 $reason = @()
 try {
