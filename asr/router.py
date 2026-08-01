@@ -774,19 +774,21 @@ def _news_headlines(lang: str = "yue") -> tuple[str, dict]:
             for o, i in zip(("First", "Second", "Third"), items[:3])
         ]
         return "Today's news: " + ". ".join(parts), data
-    def _translate_or_fallback(item: dict) -> str:
+    def _translate_or_skip(item: dict) -> str | None:
         try:
             return _translate_headline(item["title"])
         except Exception as exc:
-            log.error("headline translation failed, using English: %s", exc)
-            return item["title"]
+            log.error("headline translation failed, skipping: %s", exc)
+            return None
 
     # 3 independent Ollama calls — run concurrently (~8-12s wall-clock
     # instead of ~13-15s sequential); .map preserves order for 第一/第二/第三.
     with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
-        spoken = list(pool.map(_translate_or_fallback, items[:3]))
-    parts = [f"{o}，{t}" for o, t in zip(("第一", "第二", "第三"), spoken)]
+        spoken = [s for s in pool.map(_translate_or_skip, items[:3]) if s is not None]
     data["headlines_yue"] = spoken
+    if not spoken:
+        return "攞唔到新聞", data
+    parts = [f"{o}，{t}" for o, t in zip(("第一", "第二", "第三"), spoken)]
     return "今日新聞：" + "。".join(parts), data
 
 
