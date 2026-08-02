@@ -299,9 +299,22 @@ def _extract_income_figures(text: str) -> dict:
         # table false-positive that motivated scoping in the first place.
         m = re.search(r"Diluted\s+net\s+income\s+per\s+common\s+share\s+" + _NUM + r"\s+" + _NUM, text)
         if not m:
+            # AMZN's real wording ("Diluted earnings per share $1.68 $5.75",
+            # confirmed live 2026-08-03) -- scoped post-revenue like the
+            # generic fallback below, not unscoped like the GOOGL pattern
+            # above, specifically so this can't repeat the MSFT decoy-table
+            # bug the comment above warns about if some future filer has an
+            # earlier, unrelated "earnings per share" table pre-revenue.
+            m = re.search(r"Diluted\s+earnings\s+per\s+share\s+" + _NUM + r"\s+" + _NUM, text[rev_end:rev_end + 30000])
+        if not m:
+            # Last resort: bare "Diluted NUM NUM" with no EPS-specific
+            # wording nearby. Confirmed AMZN's real weighted-average-diluted-
+            # shares row ("Diluted 10,806 10,806 ...") would otherwise match
+            # this and get silently written as EPS -- the pattern above
+            # exists specifically to be tried first and avoid that.
             m = re.search(r"Diluted\s+" + _NUM + r"\s+" + _NUM, text[rev_end:rev_end + 30000])
         if m:
-            a, b = float(m.group(1)), float(m.group(2))
+            a, b = float(m.group(1).replace(",", "")), float(m.group(2).replace(",", ""))
             cur, prior = (a, b) if _column_order_current_first(text, m.start()) else (b, a)
             out["eps_cur"], out["eps_prior"] = cur, prior
     if out.get("revenue_cur") is not None and out.get("revenue_prior"):
