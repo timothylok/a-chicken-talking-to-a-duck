@@ -239,6 +239,7 @@ def _number_run(text: str, label_end: int) -> list:
 def _extract_income_figures(text: str) -> dict:
     out = {}
     rev_end = 0
+    rev_start = 0
     is_trailing = False
     for pat in _REVENUE_LINE_PATTERNS:
         lm = re.search(pat + r"\s*(?:\(\d\))?", text)  # the label alone, to know where its numbers start
@@ -262,6 +263,7 @@ def _extract_income_figures(text: str) -> dict:
         a, b = float(m.group(1).replace(",", "")), float(m.group(2).replace(",", ""))
         cur, prior = (a, b) if _column_order_current_first(text, lm.start()) else (b, a)
         out["revenue_cur"], out["revenue_prior"] = cur, prior
+        rev_start = lm.start()
         rev_end = lm.end()
         break
     # Scoped to start right after the revenue line, not searched from
@@ -298,6 +300,7 @@ def _extract_income_figures(text: str) -> dict:
         # decoy-table wording) not to risk repeating the earlier reconciliation-
         # table false-positive that motivated scoping in the first place.
         m = re.search(r"Diluted\s+net\s+income\s+per\s+common\s+share\s+" + _NUM + r"\s+" + _NUM, text)
+        order_pos = m.start() if m else None
         if not m:
             # AMZN's real wording ("Diluted earnings per share $1.68 $5.75",
             # confirmed live 2026-08-03) -- scoped post-revenue like the
@@ -306,6 +309,16 @@ def _extract_income_figures(text: str) -> dict:
             # bug the comment above warns about if some future filer has an
             # earlier, unrelated "earnings per share" table pre-revenue.
             m = re.search(r"Diluted\s+earnings\s+per\s+share\s+" + _NUM + r"\s+" + _NUM, text[rev_end:rev_end + 30000])
+            # Order determined from the revenue line's own position, not
+            # this match's -- confirmed live (AMZN 2026-08-03) that this
+            # EPS line can sit >600 chars past the header, past
+            # _column_order_current_first()'s lookback window, silently
+            # defaulting to the wrong "current-first" guess (real order
+            # here was prior-first, inverting a real +242% YoY EPS jump
+            # into a fabricated -71% "decline"). Same table as revenue, so
+            # revenue's already-verified-reachable header position is safe
+            # to reuse.
+            order_pos = rev_start if m else None
         if not m:
             # Last resort: bare "Diluted NUM NUM" with no EPS-specific
             # wording nearby. Confirmed AMZN's real weighted-average-diluted-
@@ -313,9 +326,10 @@ def _extract_income_figures(text: str) -> dict:
             # this and get silently written as EPS -- the pattern above
             # exists specifically to be tried first and avoid that.
             m = re.search(r"Diluted\s+" + _NUM + r"\s+" + _NUM, text[rev_end:rev_end + 30000])
+            order_pos = rev_start if m else None  # same-table reasoning as above
         if m:
             a, b = float(m.group(1).replace(",", "")), float(m.group(2).replace(",", ""))
-            cur, prior = (a, b) if _column_order_current_first(text, m.start()) else (b, a)
+            cur, prior = (a, b) if _column_order_current_first(text, order_pos) else (b, a)
             out["eps_cur"], out["eps_prior"] = cur, prior
     if out.get("revenue_cur") is not None and out.get("revenue_prior"):
         out["revenue_yoy"] = (out["revenue_cur"] - out["revenue_prior"]) / abs(out["revenue_prior"]) * 100
