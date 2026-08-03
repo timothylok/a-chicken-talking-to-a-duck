@@ -301,6 +301,7 @@ def _extract_income_figures(text: str) -> dict:
         # table false-positive that motivated scoping in the first place.
         m = re.search(r"Diluted\s+net\s+income\s+per\s+common\s+share\s+" + _NUM + r"\s+" + _NUM, text)
         order_pos = m.start() if m else None
+        m_abs_end = m.end() if m else None  # unscoped match: position is already absolute
         if not m:
             # META's real wording ("Diluted earnings per share (EPS) $6.18
             # $7.14", confirmed live 2026-08-03) -- also sits in an earlier
@@ -311,6 +312,7 @@ def _extract_income_figures(text: str) -> dict:
             # collision risk with the other tickers' own wordings.
             m = re.search(r"Diluted\s+earnings\s+per\s+share\s*\(EPS\)\s+" + _NUM + r"\s+" + _NUM, text)
             order_pos = m.start() if m else None
+            m_abs_end = m.end() if m else None  # also unscoped
         if not m:
             # AMZN's real wording ("Diluted earnings per share $1.68 $5.75",
             # confirmed live 2026-08-03) -- scoped post-revenue like the
@@ -329,6 +331,13 @@ def _extract_income_figures(text: str) -> dict:
             # revenue's already-verified-reachable header position is safe
             # to reuse.
             order_pos = rev_start if m else None
+            # m.end() is relative to the text[rev_end:...] slice, not the
+            # full document -- must add rev_end back to get an absolute
+            # position (confirmed live 2026-08-03: using the bare relative
+            # offset silently searched the wrong region of the document for
+            # an adjusted-EPS figure below, near the very start of the
+            # text instead of right after this match).
+            m_abs_end = rev_end + m.end() if m else None
         if not m:
             # AON's real wording ("Diluted EPS $2.58 $2.66", confirmed live
             # 2026-08-03) -- a compact summary line right after revenue
@@ -336,6 +345,7 @@ def _extract_income_figures(text: str) -> dict:
             # rev_start like the AMZN tier above, same reasoning.
             m = re.search(r"Diluted\s+EPS\s+" + _NUM + r"\s+" + _NUM, text[rev_end:rev_end + 30000])
             order_pos = rev_start if m else None
+            m_abs_end = rev_end + m.end() if m else None  # same slice-offset fix as above
         if not m:
             # Last resort: bare "Diluted NUM NUM" with no EPS-specific
             # wording nearby. Confirmed AMZN's real weighted-average-diluted-
@@ -344,10 +354,30 @@ def _extract_income_figures(text: str) -> dict:
             # exists specifically to be tried first and avoid that.
             m = re.search(r"Diluted\s+" + _NUM + r"\s+" + _NUM, text[rev_end:rev_end + 30000])
             order_pos = rev_start if m else None  # same-table reasoning as above
+            m_abs_end = rev_end + m.end() if m else None  # same slice-offset fix as above
         if m:
             a, b = float(m.group(1).replace(",", "")), float(m.group(2).replace(",", ""))
             cur, prior = (a, b) if _column_order_current_first(text, order_pos) else (b, a)
             out["eps_cur"], out["eps_prior"] = cur, prior
+            # Some filers (AON, confirmed live 2026-08-03) also report a
+            # distinct "Adjusted EPS (Non-GAAP)" figure right after GAAP
+            # diluted EPS in the same summary line -- and Nasdaq's analyst
+            # consensus is virtually always built on THIS figure, not GAAP
+            # (confirmed: AON's real consensus $3.77 matches adjusted $3.81,
+            # nowhere near GAAP $2.58 -- comparing GAAP actual against an
+            # adjusted-basis consensus would fabricate a ~32% "miss" out of
+            # a real ~1% beat). Scoped tight (300 chars after the GAAP
+            # match, same table); absent for filers with no separate
+            # adjusted metric (AAPL/MSFT/GOOGL/AMZN/META don't report one
+            # here), so eps_adjusted stays unset and beat/miss falls back
+            # to GAAP, unchanged from before.
+            am = re.search(
+                r"Adjusted\s+(?:diluted\s+)?(?:EPS|earnings\s+per\s+share)\s*\(Non-GAAP\)\s+" + _NUM + r"\s+" + _NUM,
+                text[m_abs_end:m_abs_end + 300],
+            )
+            if am:
+                aa, ab = float(am.group(1).replace(",", "")), float(am.group(2).replace(",", ""))
+                out["eps_adjusted"] = aa if _column_order_current_first(text, order_pos) else ab
     if out.get("revenue_cur") is not None and out.get("revenue_prior"):
         out["revenue_yoy"] = (out["revenue_cur"] - out["revenue_prior"]) / abs(out["revenue_prior"]) * 100
     if out.get("eps_cur") is not None and out.get("eps_prior"):
@@ -510,14 +540,24 @@ def _section8_summary(ticker: str, ex99_text: str, figures: dict, accn: str, fil
 
 def _section9_beat_miss(figures: dict, consensus: "dict | None") -> str:
     lines = []
-    if figures.get("eps_cur") is not None and consensus and consensus.get("eps_forecast") is not None:
-        diff = figures["eps_cur"] - consensus["eps_forecast"]
+    # Prefer the non-GAAP adjusted figure for the consensus comparison when
+    # a filer reports one -- Street consensus is virtually always built on
+    # it, not GAAP (see the extraction-side comment in
+    # _extract_income_figures for the AON evidence). GAAP actual is still
+    # surfaced in the same line, never hidden.
+    compare_eps = figures.get("eps_adjusted", figures.get("eps_cur"))
+    if compare_eps is not None and consensus and consensus.get("eps_forecast") is not None:
+        diff = compare_eps - consensus["eps_forecast"]
         pct = diff / abs(consensus["eps_forecast"]) * 100 if consensus["eps_forecast"] else None
         verdict = "beat" if diff > 0.005 else "miss" if diff < -0.005 else "in-line"
+        if "eps_adjusted" in figures:
+            basis_note = f" (basis: adjusted/non-GAAP; GAAP diluted EPS was ${figures['eps_cur']:.2f})"
+        else:
+            basis_note = ""
         lines.append(
-            f"EPS {verdict}: actual ${figures['eps_cur']:.2f} vs. consensus "
+            f"EPS {verdict}: actual ${compare_eps:.2f} vs. consensus "
             f"${consensus['eps_forecast']:.2f} ({diff:+.2f}, {_pct(pct)}), based on "
-            f"{consensus.get('num_estimates') or '?'} analyst estimates (source: Nasdaq)."
+            f"{consensus.get('num_estimates') or '?'} analyst estimates (source: Nasdaq).{basis_note}"
         )
     elif figures.get("eps_cur") is not None:
         lines.append(f"EPS: actual ${figures['eps_cur']:.2f}. Beat/miss: N/A -- consensus estimate not available.")
