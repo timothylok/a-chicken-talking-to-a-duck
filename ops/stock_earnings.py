@@ -302,6 +302,16 @@ def _extract_income_figures(text: str) -> dict:
         m = re.search(r"Diluted\s+net\s+income\s+per\s+common\s+share\s+" + _NUM + r"\s+" + _NUM, text)
         order_pos = m.start() if m else None
         if not m:
+            # META's real wording ("Diluted earnings per share (EPS) $6.18
+            # $7.14", confirmed live 2026-08-03) -- also sits in an earlier
+            # compact "financial highlights" table before revenue, same
+            # reasoning as the GOOGL pattern above, so also unscoped. The
+            # "(EPS)" parenthetical is what breaks the plainer AMZN pattern
+            # below; confirmed a single occurrence in META's real filing, no
+            # collision risk with the other tickers' own wordings.
+            m = re.search(r"Diluted\s+earnings\s+per\s+share\s*\(EPS\)\s+" + _NUM + r"\s+" + _NUM, text)
+            order_pos = m.start() if m else None
+        if not m:
             # AMZN's real wording ("Diluted earnings per share $1.68 $5.75",
             # confirmed live 2026-08-03) -- scoped post-revenue like the
             # generic fallback below, not unscoped like the GOOGL pattern
@@ -318,6 +328,13 @@ def _extract_income_figures(text: str) -> dict:
             # into a fabricated -71% "decline"). Same table as revenue, so
             # revenue's already-verified-reachable header position is safe
             # to reuse.
+            order_pos = rev_start if m else None
+        if not m:
+            # AON's real wording ("Diluted EPS $2.58 $2.66", confirmed live
+            # 2026-08-03) -- a compact summary line right after revenue
+            # (unlike META/GOOGL's before-revenue tables), so scoped +
+            # rev_start like the AMZN tier above, same reasoning.
+            m = re.search(r"Diluted\s+EPS\s+" + _NUM + r"\s+" + _NUM, text[rev_end:rev_end + 30000])
             order_pos = rev_start if m else None
         if not m:
             # Last resort: bare "Diluted NUM NUM" with no EPS-specific
