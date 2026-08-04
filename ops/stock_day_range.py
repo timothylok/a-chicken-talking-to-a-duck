@@ -71,6 +71,7 @@ DASHBOARD_JSON = os.path.join(ROOT, "dashboard", "data", "latest.json")
 LOG_PATH = os.path.join(ROOT, "asr", "logs", "stock_day_range.log")
 HISTORY_PATH = os.path.join(ROOT, "asr", "logs", "stock_day_range_history.json")
 NZ_TZ = ZoneInfo("Pacific/Auckland")
+EXCHANGE_TZ = ZoneInfo("America/New_York")
 
 WATCHLIST = [
     t.strip().upper()
@@ -124,6 +125,37 @@ def _grounding_text(dash_row: "dict | None") -> str:
         if detail and kpi.get("score") is not None:
             parts.append(f"{label}: {detail}")
     return " ".join(parts)
+
+
+def _prev_business_day(d: dt.date) -> dt.date:
+    d -= dt.timedelta(days=1)
+    while d.weekday() >= 5:  # Sat=5, Sun=6
+        d -= dt.timedelta(days=1)
+    return d
+
+
+def _expected_latest_session(now_exchange: dt.datetime) -> dt.date:
+    # The most recent US trading day whose closing bar should already be
+    # published, given the current wall-clock time in the exchange's own
+    # timezone -- today's session counts only once it has actually closed
+    # (4pm ET); a weekend/holiday-adjacent run rolls back to the prior
+    # weekday. No holiday calendar here (see the tolerance in _is_stale).
+    d = now_exchange.date()
+    if now_exchange.weekday() < 5 and now_exchange.time() >= dt.time(16, 0):
+        return d
+    return _prev_business_day(d)
+
+
+def _is_stale(as_of: "str | None", now_exchange: dt.datetime) -> bool:
+    # Real gap seen 2026-08-04: Yahoo's daily-bar array can lag its own
+    # regularMarketTime by many hours, so a run can still see the *prior*
+    # trading day's bar as "latest". One trading day of slack tolerates that
+    # plus unrecognized market holidays; two or more means the data is
+    # genuinely too old to report a same-day lean/range against.
+    if not as_of:
+        return True
+    tolerated = _prev_business_day(_expected_latest_session(now_exchange))
+    return dt.date.fromisoformat(as_of) < tolerated
 
 
 def _technical_snapshot(ticker: str) -> "dict | None":
@@ -286,8 +318,36 @@ def _lean_color(lean: str) -> str:
     return sf.PALETTE["LEAN_NEUTRAL"]
 
 
+def _lean_icon(lean: str) -> str:
+    if lean.startswith("Bullish"):
+        return "↗"  # up-right arrow
+    if lean.startswith("Bearish"):
+        return "↘"  # down-right arrow
+    if "insufficient" in lean.lower():
+        return "•"  # bullet -- no directional read at all
+    return "↔"  # left-right arrow, mixed trend
+
+
 def _badge(text: str, color: str) -> str:
-    return f'<span class="badge" style="background:{color}; color:#fff">{sf._esc(text)}</span>'
+    return sf._pill(text, color, _lean_icon(text))
+
+
+LEAN_LEGEND = [
+    ("Bullish", "LEAN_BULLISH"),
+    ("Bullish (pullback risk)", "LEAN_BULLISH_PULLBACK"),
+    ("Neutral", "LEAN_NEUTRAL"),
+    ("Bearish", "LEAN_BEARISH"),
+]
+
+
+def _legend_html() -> str:
+    chips = "".join(
+        f'<span class="inline-flex items-center gap-1.5 rounded-full border border-slate-200 '
+        f'bg-white px-3 py-1.5 text-xs font-medium text-slate-600">'
+        f'<span class="h-2 w-2 rounded-full" style="background:{sf.PALETTE[key]}"></span>{sf._esc(label)}</span>'
+        for label, key in LEAN_LEGEND
+    )
+    return f'<div class="flex flex-wrap gap-2">{chips}</div>'
 
 
 # ---------------------------------------------------------------------------
@@ -332,6 +392,13 @@ def build_ticker_report(ticker: str, dashboard: dict) -> "dict | None":
     snap = _technical_snapshot(ticker)
     if not snap:
         return None
+    now_exchange = dt.datetime.now(EXCHANGE_TZ)
+    if _is_stale(snap.get("as_of"), now_exchange):
+        log.warning(
+            "%s: latest bar (%s) is more than 1 trading day behind the expected session -- "
+            "skipping rather than reporting a stale price/lean", ticker, snap.get("as_of"),
+        )
+        return None
     lean = _lean(snap["price"], snap["sma50"], snap["sma200"], snap["rsi14"])
     context = _grounding_text(dashboard.get(ticker))
     narrative = _narrate(snap, lean, context)
@@ -350,39 +417,10 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Stock Day Range -- {date}</title>
-<style>
-  :root {{ --bg: #ffffff; --fg: #1a1a1a; --muted: #666; --line: #e0e0e0; --accent: #b45309; }}
-  @media (prefers-color-scheme: dark) {{
-    :root {{ --bg: #16181d; --fg: #e8e8e8; --muted: #9a9a9a; --line: #333; --accent: #f59e0b; }}
-  }}
-  body {{ margin: 0 auto; max-width: 56rem; padding: 2rem 1.25rem 4rem;
-         background: var(--bg); color: var(--fg);
-         font-family: -apple-system, "Segoe UI", sans-serif; line-height: 1.6; }}
-  h1 {{ font-size: 1.6rem; margin-bottom: 0.25rem; }}
-  h2 {{ font-size: 1.15rem; margin-top: 2.5rem; border-bottom: 1px solid var(--line); padding-bottom: 0.35rem; }}
-  table {{ border-collapse: collapse; width: 100%; margin-top: 0.75rem; }}
-  th, td {{ text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line); vertical-align: top; }}
-  th {{ font-size: 0.85rem; color: var(--muted); font-weight: 600; }}
-  p.cite {{ color: var(--muted); font-size: 0.8rem; margin-top: 0.6rem; }}
-  .meta {{ color: var(--muted); font-size: 0.9rem; }}
-  .caveat {{ border: 1px solid var(--accent); border-radius: 0.4rem; padding: 0.75rem 1rem;
-            margin-top: 1rem; font-size: 0.9rem; }}
-  .badge {{ display: inline-block; padding: 0.15rem 0.6rem; border-radius: 999px;
-           font-weight: 700; font-size: 0.85rem; background: var(--line); }}
-</style>
+{tailwind_head}
 </head>
-<body>
-<h1>Stock Day Range</h1>
-<p class="meta">Generated {generated} NZT.</p>
-<p class="caveat">{caveat}</p>
-<h2>Accuracy Check</h2>
-{accuracy_section}
-<h2>Overview</h2>
-{overview_table}
-{ticker_sections}
-</body>
-</html>
-"""
+{page_header}{sections}
+{page_footer}"""
 
 
 def _accuracy_section_html(accuracy_rows: list, cumulative: dict) -> str:
@@ -420,24 +458,45 @@ def _accuracy_section_html(accuracy_rows: list, cumulative: dict) -> str:
 
 
 def _overview_table(reports: list) -> str:
-    rows = [
-        (
-            r["ticker"],
-            st._fmt(r["price"]),
-            (r["lean"], _badge(r["lean"], _lean_color(r["lean"]))),
-            (st._fmt(r["rsi14"], digits=1), sf._colored_span(st._fmt(r["rsi14"], digits=1), sf._rsi_color(r["rsi14"]))),
-            f'{st._fmt(r["range_low"])} - {st._fmt(r["range_high"])}',
+    # The watchlist table proper -- ticker + lean pill left-aligned, the
+    # numeric columns right-aligned with tabular numerals, matching the
+    # scan-speed-first layout of the watchlist mockup this report follows.
+    thead = (
+        '<th class="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Ticker</th>'
+        '<th class="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Lean</th>'
+        '<th class="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Price</th>'
+        '<th class="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">RSI (14)</th>'
+        '<th class="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">~1&sigma; range</th>'
+    )
+    row_html = []
+    for r in reports:
+        rsi_text = st._fmt(r["rsi14"], digits=1)
+        range_text = f'{st._fmt(r["range_low"])} - {st._fmt(r["range_high"])}'
+        row_html.append(
+            '<tr class="hover:bg-slate-50">'
+            f'<td class="px-4 py-3 font-semibold text-slate-900">{sf._esc(r["ticker"])}</td>'
+            f'<td class="px-4 py-3">{_badge(r["lean"], _lean_color(r["lean"]))}</td>'
+            f'<td class="px-4 py-3 text-right font-medium tabular-nums text-slate-900">{sf._esc(st._fmt(r["price"]))}</td>'
+            f'<td class="px-4 py-3 text-right tabular-nums">{sf._colored_span(rsi_text, sf._rsi_color(r["rsi14"]))}</td>'
+            f'<td class="px-4 py-3 text-right tabular-nums text-slate-600">{sf._esc(range_text)}</td>'
+            '</tr>'
         )
-        for r in reports
-    ]
-    return sf._table2(["Ticker", "Price", "Lean", "RSI(14)", "~1-sigma range"], rows)
+    return (
+        '<div class="overflow-x-auto"><table class="min-w-full divide-y divide-slate-200 text-sm">'
+        f'<thead class="bg-slate-50/80">{thead}</thead>'
+        f'<tbody class="divide-y divide-slate-100">{"".join(row_html)}</tbody>'
+        '</table></div>'
+    )
 
 
 def _html_page(reports: list, date_str: str, generated: str, accuracy_rows: list, cumulative: dict) -> str:
     overview_table = _overview_table(reports)
     accuracy_section = _accuracy_section_html(accuracy_rows, cumulative)
 
-    sections = []
+    sections = [
+        sf._card("Overview", overview_table),
+        sf._card("Accuracy Check", accuracy_section),
+    ]
     for r in reports:
         rsi_text = st._fmt(r["rsi14"], digits=1)
         detail_table = sf._table2(["Metric", "Value"], [
@@ -454,15 +513,24 @@ def _html_page(reports: list, date_str: str, generated: str, accuracy_rows: list
         narrative_html = "".join(
             f"<p>{sf._esc(line.strip())}</p>" for line in r["narrative"].split("\n") if line.strip()
         ) or "<p>N/A</p>"
-        sections.append(
-            f'<section><h2>{sf._esc(r["ticker"])} -- {_badge(r["lean"], _lean_color(r["lean"]))}</h2>'
+        title_html = f'{sf._esc(r["ticker"])} -- {_badge(r["lean"], _lean_color(r["lean"]))}'
+        body_html = (
             f'{detail_table}{narrative_html}'
-            f'<p class="cite">Fundamental context: {sf._esc(r["context"])}</p></section>'
+            f'<p class="cite">Fundamental context: {sf._esc(r["context"])}</p>'
         )
+        sections.append(sf._card(title_html, body_html))
 
+    meta = (
+        f'<p class="text-xs text-slate-500">Generated {sf._esc(generated)} NZT.</p>'
+        f'<p class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">{sf._esc(CAVEAT)}</p>'
+        f'<div class="pt-1">{_legend_html()}</div>'
+    )
+    page_header = sf.PAGE_HEADER.format(
+        eyebrow="Daily Synthesis", heading="Stock Day Range", meta=meta,
+    )
     return PAGE_TEMPLATE.format(
-        date=sf._esc(date_str), generated=sf._esc(generated), caveat=sf._esc(CAVEAT),
-        accuracy_section=accuracy_section, overview_table=overview_table, ticker_sections="".join(sections),
+        date=sf._esc(date_str), tailwind_head=sf.TAILWIND_HEAD,
+        page_header=page_header, sections="".join(sections), page_footer=sf.PAGE_FOOTER,
     )
 
 

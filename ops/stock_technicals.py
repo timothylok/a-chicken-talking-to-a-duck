@@ -116,6 +116,14 @@ def _fetch_series(ticker: str, range_: str, interval: str) -> dict:
     node = result[0]
     meta = node["meta"]
     quote = node["indicators"]["quote"][0]
+    # Bar timestamps mark the exchange's regular-session OPEN (e.g. 13:30 UTC
+    # = 9:30am ET) -- converting with dt.date.fromtimestamp() used the local
+    # system timezone (NZT, UTC+12 in southern winter), which rolls that
+    # open-time into the *next* calendar day and mislabels every US trading
+    # day one day late (a Friday session showed up dated "Saturday"). Convert
+    # in the exchange's own timezone instead so the date always matches the
+    # real trading day, independent of where this script happens to run.
+    exchange_tz = ZoneInfo(meta.get("exchangeTimezoneName") or "America/New_York")
     timestamps = node.get("timestamp") or []
     raw_closes = quote.get("close") or []
     closes, opens, highs, lows, volumes, dates = [], [], [], [], [], []
@@ -131,7 +139,9 @@ def _fetch_series(ticker: str, range_: str, interval: str) -> dict:
         highs.append(h if h is not None else c)
         lows.append(l if l is not None else c)
         volumes.append(v if v is not None else 0)
-        dates.append(dt.date.fromtimestamp(timestamps[i]) if i < len(timestamps) else None)
+        dates.append(
+            dt.datetime.fromtimestamp(timestamps[i], tz=exchange_tz).date() if i < len(timestamps) else None
+        )
     return {
         "closes": closes, "opens": opens, "highs": highs, "lows": lows, "volumes": volumes, "dates": dates,
         "currency": meta.get("currency") or "",
@@ -510,40 +520,11 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{ticker} -- Category 4 Technical Analysis</title>
-<style>
-  :root {{ --bg: #ffffff; --fg: #1a1a1a; --muted: #666; --line: #e0e0e0; --accent: #b45309; }}
-  @media (prefers-color-scheme: dark) {{
-    :root {{ --bg: #16181d; --fg: #e8e8e8; --muted: #9a9a9a; --line: #333; --accent: #f59e0b; }}
-  }}
-  body {{ margin: 0 auto; max-width: 56rem; padding: 2rem 1.25rem 4rem;
-         background: var(--bg); color: var(--fg);
-         font-family: -apple-system, "Segoe UI", sans-serif; line-height: 1.6; }}
-  h1 {{ font-size: 1.6rem; margin-bottom: 0.25rem; }}
-  h2 {{ font-size: 1.15rem; margin-top: 2.5rem; border-bottom: 1px solid var(--line);
-       padding-bottom: 0.35rem; }}
-  table {{ border-collapse: collapse; width: 100%; margin-top: 0.75rem; }}
-  th, td {{ text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line);
-           vertical-align: top; }}
-  th {{ font-size: 0.85rem; color: var(--muted); font-weight: 600; }}
-  p.cite {{ color: var(--muted); font-size: 0.8rem; margin-top: 0.6rem; }}
-  .meta {{ color: var(--muted); font-size: 0.9rem; }}
-  .badge {{ display: inline-block; padding: 0.15rem 0.6rem; border-radius: 999px;
-           font-weight: 700; font-size: 0.85rem; background: var(--line); }}
-  pre {{ background: var(--line); padding: 0.75rem 1rem; border-radius: 0.4rem;
-        overflow-x: auto; font-size: 0.85rem; }}
-  code {{ font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }}
-  .chart {{ width: 100%; margin-top: 0.75rem; border: 1px solid var(--line); border-radius: 0.4rem; }}
-  h3 {{ font-size: 1rem; color: var(--muted); margin-top: 1.25rem; margin-bottom: 0.25rem; }}
-</style>
+{tailwind_head}
 <script>{chart_lib}</script>
 </head>
-<body>
-<h1>{ticker} -- Category 4 Technical Analysis</h1>
-<p class="meta">Yahoo Finance price data. Report generated {generated} NZT.</p>
-{sections}
-</body>
-</html>
-"""
+{page_header}{sections}
+{page_footer}"""
 
 SECTION_TITLES = [
     "Weekly Chart Read",
@@ -613,13 +594,12 @@ def _chart_block(elem_id: str, height: int, bars: list, volumes: "list | None",
         price_lines_js += f'  candleSeries.createPriceLine({{price:{support}, color:"#16a34a", lineWidth:1, lineStyle:2, title:"Support"}});\n'
     if resistance is not None:
         price_lines_js += f'  candleSeries.createPriceLine({{price:{resistance}, color:"#dc2626", lineWidth:1, lineStyle:2, title:"Resistance"}});\n'
-    return f"""<div id="{elem_id}" class="chart"></div>
+    return f"""<div id="{elem_id}" class="mt-3 w-full rounded-xl border border-slate-200"></div>
 <script>
 (function() {{
   var el = document.getElementById("{elem_id}");
-  var style = getComputedStyle(document.documentElement);
   var chart = LightweightCharts.createChart(el, {{
-    layout: {{ background: {{ color: "transparent" }}, textColor: (style.getPropertyValue("--fg") || "#1a1a1a").trim() }},
+    layout: {{ background: {{ color: "transparent" }}, textColor: "#0f172a" }},
     grid: {{ vertLines: {{ color: "rgba(128,128,128,0.15)" }}, horzLines: {{ color: "rgba(128,128,128,0.15)" }} }},
     rightPriceScale: {{ borderVisible: false }},
     timeScale: {{ borderVisible: false }},
@@ -661,8 +641,9 @@ def _html_page(report: dict) -> str:
     setup_color = {"Long": sf.PALETTE["LEAN_BULLISH"], "Short": sf.PALETTE["LEAN_BEARISH"]}.get(
         d["setup"], sf.PALETTE["LEAN_NEUTRAL"]
     )
+    setup_icon = {"Long": "↗", "Short": "↘"}.get(d["setup"], "↔")
     sec2 = (
-        f'<p><span class="badge" style="background:{setup_color}; color:#fff">{sf._esc(d["setup"])}</span></p>'
+        f'<p>{sf._pill(d["setup"], setup_color, setup_icon)}</p>'
         + sf._table2(["Metric", "Value"], [
             ("Price", _fmt(d["price"], currency)),
             ("14-Period Daily RSI", (daily_rsi_text, sf._colored_span(daily_rsi_text, sf._rsi_color(d["rsi14"])))),
@@ -723,14 +704,21 @@ def _html_page(report: dict) -> str:
     )
 
     sections_html = "".join(
-        f"<section><h2>{i}. {sf._esc(title)}</h2>{body}</section>"
+        sf._card(f"{i}. {sf._esc(title)}", body)
         for i, (title, body) in enumerate(
             zip(SECTION_TITLES, [sec1, sec2, sec3, sec4, sec5, sec6]), start=1
         )
     )
+    meta = (
+        f'<p class="text-sm text-slate-600">Yahoo Finance price data.</p>'
+        f'<p class="text-xs text-slate-500">Report generated {sf._esc(generated)} NZT.</p>'
+    )
+    page_header = sf.PAGE_HEADER.format(
+        eyebrow="Category 4 Technical Analysis", heading=sf._esc(ticker), meta=meta,
+    )
     return PAGE_TEMPLATE.format(
-        ticker=sf._esc(ticker), generated=sf._esc(generated),
-        sections=sections_html, chart_lib=_chart_library_js(),
+        ticker=sf._esc(ticker), tailwind_head=sf.TAILWIND_HEAD, chart_lib=_chart_library_js(),
+        page_header=page_header, sections=sections_html, page_footer=sf.PAGE_FOOTER,
     )
 
 

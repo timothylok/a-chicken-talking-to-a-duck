@@ -383,12 +383,39 @@ def _rsi_color(rsi: "float | None") -> "str | None":
     return PALETTE["RSI_OVERBOUGHT"]
 
 
+def _soft_bg(hex_color: str, alpha: float = 0.15) -> str:
+    # Blends a palette color with white so a badge can show colored text on
+    # a light tinted background (the watchlist-mockup pill look) without
+    # ops/palette.env needing a second "soft" color per state.
+    hex_color = hex_color.lstrip("#")
+    r, g, b = int(hex_color[0:2], 16), int(hex_color[2:4], 16), int(hex_color[4:6], 16)
+    mix = lambda c: round(c * alpha + 255 * (1 - alpha))
+    return f"#{mix(r):02x}{mix(g):02x}{mix(b):02x}"
+
+
 def _colored_span(text, color: "str | None") -> str:
     # Plain _esc(text) if color is None (e.g. no data to color) -- callers
-    # never need a separate branch for the missing-color case.
+    # never need a separate branch for the missing-color case. Rendered as a
+    # small soft-background chip (mockup's RSI-column look) rather than bare
+    # colored text.
     if color is None:
         return _esc(text)
-    return f'<span style="color:{color}; font-weight:600">{_esc(text)}</span>'
+    return (
+        f'<span class="rounded-md px-2 py-1 text-xs font-semibold tabular-nums" '
+        f'style="background:{_soft_bg(color)}; color:{color}">{_esc(text)}</span>'
+    )
+
+
+def _pill(text: str, color: str, icon: str = "") -> str:
+    # Status pill (lean/setup badges): icon + label on a soft-background
+    # rounded-full chip, colored from ops/palette.env via _soft_bg() --
+    # matches the mockup's "Lean" column treatment.
+    icon_html = f"<span>{icon}</span>" if icon else ""
+    return (
+        f'<span class="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs '
+        f'font-semibold" style="background:{_soft_bg(color)}; color:{color}">'
+        f'{icon_html}<span>{_esc(text)}</span></span>'
+    )
 
 
 def _table2(headers: list, rows: list) -> str:
@@ -405,6 +432,85 @@ def _table2(headers: list, rows: list) -> str:
         for row in rows
     )
     return f"<table>{thead}{trows}</table>"
+
+
+def _card(title_html: str, body_html: str) -> str:
+    # Section wrapper matching the watchlist-mockup's white rounded-2xl
+    # panel. title_html is inserted verbatim (callers already _esc() the
+    # parts they build from raw data); body_html renders inside
+    # .prose-report so the many bare <p>/<h3>/<ul>/<table> tags the
+    # _section_* functions already emit pick up the report's typography
+    # without every call site needing its own Tailwind classes.
+    return (
+        f'<section class="rounded-2xl border border-slate-200 bg-white shadow-panel">'
+        f'<div class="border-b border-slate-200 px-6 py-4">'
+        f'<h2 class="text-sm font-semibold text-slate-900">{title_html}</h2></div>'
+        f'<div class="prose-report px-6 py-5">{body_html}</div>'
+        f'</section>'
+    )
+
+
+# ---------------------------------------------------------------------------
+# Shared Tailwind CDN <head> boilerplate + page chrome, used by
+# stock_fundamentals.py/stock_technicals.py/stock_day_range.py's page
+# templates (imported as sf.TAILWIND_HEAD / sf.PAGE_HEADER / sf.PAGE_FOOTER).
+# Light-only, matching the watchlist-mockup design -- no CSS custom
+# properties, no @media(prefers-color-scheme) branch.
+# ---------------------------------------------------------------------------
+
+TAILWIND_HEAD = """<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        fontFamily: { sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'] },
+        colors: { ink: '#0f172a', muted: '#475569', line: '#e2e8f0' },
+        boxShadow: { panel: '0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px rgba(15, 23, 42, 0.06)' }
+      }
+    }
+  }
+</script>
+<style>
+  body { font-feature-settings: 'tnum' 1, 'ss01' 1; }
+  .prose-report { color: #334155; font-size: 0.875rem; line-height: 1.6; }
+  .prose-report > p, .prose-report > ul { margin: 0.6rem 0; }
+  .prose-report > :first-child { margin-top: 0; }
+  .prose-report > :last-child { margin-bottom: 0; }
+  .prose-report h3 { font-size: 0.75rem; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.06em; color: #64748b; margin: 1.25rem 0 0.5rem; }
+  .prose-report ul { list-style: disc; padding-left: 1.25rem; }
+  .prose-report li { margin: 0.25rem 0; }
+  .prose-report em { color: #64748b; font-style: normal; }
+  .prose-report a { color: #0f172a; text-decoration: underline; text-underline-offset: 2px; }
+  .prose-report p.cite { color: #94a3b8; font-size: 0.75rem; margin-top: 0.75rem; }
+  .prose-report p.flag { color: #dc2626; font-weight: 700; }
+  .prose-report table { width: 100%; border-collapse: collapse; margin: 0.75rem 0; font-size: 0.8125rem; }
+  .prose-report th { text-align: left; padding: 0.5rem 0.75rem; font-size: 0.7rem; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; border-bottom: 1px solid #e2e8f0; }
+  .prose-report td { padding: 0.5rem 0.75rem; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+  .prose-report tbody tr:hover { background: #f8fafc; }
+</style>"""
+
+PAGE_HEADER = """<body class="min-h-full bg-slate-50 text-ink antialiased">
+<main class="min-h-full px-4 py-8 sm:px-6 lg:px-8">
+<div class="mx-auto max-w-4xl space-y-6">
+<header class="space-y-1.5">
+  <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{eyebrow}</p>
+  <h1 class="text-2xl font-semibold tracking-tight text-slate-900">{heading}</h1>
+  {meta}
+</header>
+<div class="space-y-6">
+"""
+
+PAGE_FOOTER = """</div>
+</div>
+</main>
+</body>
+</html>
+"""
 
 
 def _cite(text: str) -> str:
@@ -962,36 +1068,10 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{ticker} -- Category 1 Fundamental Snapshot</title>
-<style>
-  :root {{ --bg: #ffffff; --fg: #1a1a1a; --muted: #666; --line: #e0e0e0; --accent: #b45309; }}
-  @media (prefers-color-scheme: dark) {{
-    :root {{ --bg: #16181d; --fg: #e8e8e8; --muted: #9a9a9a; --line: #333; --accent: #f59e0b; }}
-  }}
-  body {{ margin: 0 auto; max-width: 56rem; padding: 2rem 1.25rem 4rem;
-         background: var(--bg); color: var(--fg);
-         font-family: -apple-system, "Segoe UI", sans-serif; line-height: 1.6; }}
-  h1 {{ font-size: 1.6rem; margin-bottom: 0.25rem; }}
-  h2 {{ font-size: 1.15rem; margin-top: 2.5rem; border-bottom: 1px solid var(--line);
-       padding-bottom: 0.35rem; }}
-  h3 {{ font-size: 1rem; color: var(--muted); margin-top: 1.25rem; margin-bottom: 0.25rem; }}
-  table {{ border-collapse: collapse; width: 100%; margin-top: 0.75rem; }}
-  th, td {{ text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line);
-           vertical-align: top; }}
-  th {{ font-size: 0.85rem; color: var(--muted); font-weight: 600; }}
-  p.cite {{ color: var(--muted); font-size: 0.8rem; margin-top: 0.6rem; }}
-  p.flag {{ color: #dc2626; font-weight: 700; margin-bottom: 0.25rem; }}
-  .meta {{ color: var(--muted); font-size: 0.9rem; }}
-  ul {{ margin: 0.5rem 0; padding-left: 1.4rem; }}
-</style>
+{tailwind_head}
 </head>
-<body>
-<h1>{ticker} -- Category 1 Fundamental Snapshot</h1>
-<p class="meta">SEC EDGAR, CIK {cik}. Latest 10-K: accession {accn}, filed {filed}
-(<a href="{tenk_url}">source filing</a>).<br>Report generated {generated} NZT.</p>
-{sections}
-</body>
-</html>
-"""
+{page_header}{sections}
+{page_footer}"""
 
 SECTION_TITLES = [
     "Timeliness Flag",
@@ -1014,13 +1094,22 @@ SECTION_TITLES = [
 
 def _html_page(ticker: str, cik: str, accn: str, filed: str, tenk_url: str, section_bodies: list) -> str:
     sections_html = "".join(
-        f"<section><h2>{i}. {_esc(title)}</h2>{body}</section>"
+        _card(f"{i}. {_esc(title)}", body)
         for i, (title, body) in enumerate(zip(SECTION_TITLES, section_bodies), start=1)
     )
     generated = dt.datetime.now(NZ_TZ).strftime("%Y-%m-%d %H:%M")
+    meta = (
+        f'<p class="text-sm text-slate-600">SEC EDGAR, CIK {_esc(cik)}. Latest 10-K: accession '
+        f'{_esc(accn)}, filed {_esc(filed)} (<a class="underline hover:text-slate-900" '
+        f'href="{_esc(tenk_url)}">source filing</a>).</p>'
+        f'<p class="text-xs text-slate-500">Report generated {_esc(generated)} NZT.</p>'
+    )
+    page_header = PAGE_HEADER.format(
+        eyebrow="Category 1 Fundamental Snapshot", heading=_esc(ticker), meta=meta,
+    )
     return PAGE_TEMPLATE.format(
-        ticker=_esc(ticker), cik=_esc(cik), accn=_esc(accn), filed=_esc(filed),
-        tenk_url=_esc(tenk_url), generated=_esc(generated), sections=sections_html,
+        ticker=_esc(ticker), tailwind_head=TAILWIND_HEAD,
+        page_header=page_header, sections=sections_html, page_footer=PAGE_FOOTER,
     )
 
 
