@@ -32,7 +32,9 @@ Runs daily via the "VoiceOS Stock Day Range" scheduled task, 10:15 NZT --
 automated daily report chain, so `dashboard/data/latest.json` is fresh.
 
 Output: one self-contained HTML file per NZT day at
-StockDayRange/{date}.html (overwritten on same-day reruns).
+content/StockDayRange/{date}.html (overwritten on same-day reruns) --
+all generated reports/HTML in this project live under content/, same
+convention as Category 1/4's own output dirs.
 
 Run manually: python ops/stock_day_range.py
 """
@@ -53,7 +55,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(
 from router import _sma, _rsi  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-OUTPUT_DIR = os.path.join(ROOT, "StockDayRange")
+OUTPUT_DIR = os.path.join(ROOT, "content", "StockDayRange")
 DASHBOARD_JSON = os.path.join(ROOT, "dashboard", "data", "latest.json")
 LOG_PATH = os.path.join(ROOT, "asr", "logs", "stock_day_range.log")
 NZ_TZ = ZoneInfo("Pacific/Auckland")
