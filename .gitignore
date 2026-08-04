@@ -15,5 +15,7 @@ content/nvidia-daily/
 content/stock-fundamentals/
 # generated technical analysis reports for ops/stock_technicals.py — same reasoning
 content/stock-technicals/
+# generated daily price-range/lean synthesis for ops/stock_day_range.py — same reasoning
+StockDayRange/
 # local session log, not version controlled — see CLAUDE.md § Project Memory
 SESSIONS.md
