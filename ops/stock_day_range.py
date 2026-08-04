@@ -27,6 +27,17 @@ single-day market moves are dominated by noise no model here can resolve.
 The "1-sigma range" is a volatility-based band (price +/- 20-day realized
 daily stdev), not a forecast of where the price will land.
 
+Every run appends today's snapshot (price, lean, range) per ticker to
+asr/logs/stock_day_range_history.json. Each day's report then opens with
+an "Accuracy Check" section scoring the *previous* tracked day's lean and
+range against today's actual close -- lean direction correct or not, and
+whether the close landed inside the predicted range -- plus a cumulative
+hit-rate across the whole history so drift/inaccuracy in the deterministic
+lean rule becomes visible over time instead of silently assumed. Scoring
+is retrospective and stateless: it re-derives from consecutive same-ticker
+history entries every run rather than storing outcomes separately, same
+"one source of truth" pattern as history.jsonl elsewhere in this project.
+
 Runs daily via the "VoiceOS Stock Day Range" scheduled task, 10:15 NZT --
 15 min after "VoiceOS Risk Dashboard Daily" (10:00 NZT), the last of the
 automated daily report chain, so `dashboard/data/latest.json` is fresh.
@@ -58,6 +69,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUTPUT_DIR = os.path.join(ROOT, "content", "StockDayRange")
 DASHBOARD_JSON = os.path.join(ROOT, "dashboard", "data", "latest.json")
 LOG_PATH = os.path.join(ROOT, "asr", "logs", "stock_day_range.log")
+HISTORY_PATH = os.path.join(ROOT, "asr", "logs", "stock_day_range_history.json")
 NZ_TZ = ZoneInfo("Pacific/Auckland")
 
 WATCHLIST = [
@@ -140,6 +152,104 @@ def _technical_snapshot(ticker: str) -> "dict | None":
         "range_low": price * (1 - stdev / 100) if stdev is not None else None,
         "range_high": price * (1 + stdev / 100) if stdev is not None else None,
         "as_of": daily["dates"][-1].isoformat() if daily["dates"] and daily["dates"][-1] else None,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Accuracy history -- append-only log of daily snapshots, scored
+# retrospectively against each other (no separate "outcome" bookkeeping).
+# ---------------------------------------------------------------------------
+
+def _load_history() -> list:
+    try:
+        with open(HISTORY_PATH, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError) as exc:
+        log.warning("could not read %s: %s", HISTORY_PATH, exc)
+        return []
+
+
+def _save_history(history: list) -> None:
+    with open(HISTORY_PATH, "w", encoding="utf-8") as f:
+        json.dump(history, f, indent=2)
+
+
+def _update_history(history: list, reports: list) -> list:
+    # Drop any existing same-(ticker,date) entry first so a same-day rerun
+    # overwrites rather than duplicates -- same idempotency rationale as
+    # write_html() overwriting the day's HTML file.
+    kept = [
+        h for h in history
+        if not any(h["ticker"] == r["ticker"] and h["date"] == r["as_of"] for r in reports)
+    ]
+    new_entries = [
+        {
+            "date": r["as_of"], "ticker": r["ticker"], "price": r["price"], "lean": r["lean"],
+            "range_low": r["range_low"], "range_high": r["range_high"], "rsi14": r["rsi14"],
+        }
+        for r in reports if r.get("as_of")
+    ]
+    return kept + new_entries
+
+
+def _lean_direction(lean: str) -> "str | None":
+    if lean.startswith("Bullish"):
+        return "up"
+    if lean.startswith("Bearish"):
+        return "down"
+    return None  # plain/insufficient-history Neutral leans aren't directionally falsifiable
+
+
+def _score(prev: dict, actual_price: float) -> dict:
+    direction = _lean_direction(prev["lean"])
+    actual_direction = "up" if actual_price > prev["price"] else ("down" if actual_price < prev["price"] else "flat")
+    lean_correct = (direction == actual_direction) if direction else None
+    in_range = (
+        None if prev.get("range_low") is None or prev.get("range_high") is None
+        else prev["range_low"] <= actual_price <= prev["range_high"]
+    )
+    pct_move = (actual_price / prev["price"] - 1) * 100 if prev.get("price") else None
+    return {
+        "ticker": prev["ticker"], "predicted_date": prev["date"], "predicted_lean": prev["lean"],
+        "range_low": prev.get("range_low"), "range_high": prev.get("range_high"),
+        "baseline_price": prev["price"], "actual_price": actual_price,
+        "actual_pct_move": pct_move, "lean_correct": lean_correct, "in_range": in_range,
+    }
+
+
+def _todays_accuracy(reports: list, history: list) -> list:
+    # For each ticker in today's reports, score the most recent PRIOR
+    # history entry (if any) against today's actual close.
+    rows = []
+    for r in reports:
+        prior = [h for h in history if h["ticker"] == r["ticker"] and h["date"] < r["as_of"]]
+        if not prior:
+            continue
+        latest_prior = max(prior, key=lambda h: h["date"])
+        rows.append(_score(latest_prior, r["price"]))
+    return rows
+
+
+def _cumulative_accuracy(history: list) -> dict:
+    # Pair every consecutive same-ticker entry in the full history --
+    # entry[i] is the "prediction", entry[i+1]'s price is the "actual".
+    by_ticker: dict = {}
+    for h in history:
+        by_ticker.setdefault(h["ticker"], []).append(h)
+    lean_total = lean_correct = range_total = range_hits = 0
+    for entries in by_ticker.values():
+        entries.sort(key=lambda h: h["date"])
+        for prev, cur in zip(entries, entries[1:]):
+            scored = _score(prev, cur["price"])
+            if scored["lean_correct"] is not None:
+                lean_total += 1
+                lean_correct += int(scored["lean_correct"])
+            if scored["in_range"] is not None:
+                range_total += 1
+                range_hits += int(scored["in_range"])
+    return {
+        "lean_total": lean_total, "lean_correct": lean_correct,
+        "range_total": range_total, "range_hits": range_hits,
     }
 
 
@@ -265,12 +375,48 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
 <h1>Stock Day Range</h1>
 <p class="meta">Generated {generated} NZT.</p>
 <p class="caveat">{caveat}</p>
+<h2>Accuracy Check</h2>
+{accuracy_section}
 <h2>Overview</h2>
 {overview_table}
 {ticker_sections}
 </body>
 </html>
 """
+
+
+def _accuracy_section_html(accuracy_rows: list, cumulative: dict) -> str:
+    if cumulative["lean_total"] == 0 and cumulative["range_total"] == 0:
+        return "<p>No prior-day prediction on record yet -- accuracy tracking starts today.</p>"
+
+    lean_pct = f'{cumulative["lean_correct"]}/{cumulative["lean_total"]} ({cumulative["lean_correct"] / cumulative["lean_total"] * 100:.0f}%)' if cumulative["lean_total"] else "N/A"
+    range_pct = f'{cumulative["range_hits"]}/{cumulative["range_total"]} ({cumulative["range_hits"] / cumulative["range_total"] * 100:.0f}%)' if cumulative["range_total"] else "N/A"
+    summary = (
+        f"<p>Cumulative since tracking began: lean direction correct {sf._esc(lean_pct)} "
+        f"(Neutral leans excluded, not directionally falsifiable); actual close landed inside "
+        f"the predicted range {sf._esc(range_pct)} of tracked days. Small sample -- treat as "
+        f"provisional until this covers several weeks.</p>"
+    )
+    if not accuracy_rows:
+        return summary + "<p>No trackable prior-day prediction for today's tickers (first day tracked for each, or a gap in the log).</p>"
+
+    rows = [
+        (
+            row["ticker"],
+            row["predicted_lean"],
+            f'{st._fmt(row["range_low"])} - {st._fmt(row["range_high"])}',
+            st._fmt(row["actual_price"]),
+            st._fmt(row["actual_pct_move"], "%"),
+            "N/A" if row["lean_correct"] is None else ("Correct" if row["lean_correct"] else "Wrong"),
+            "N/A" if row["in_range"] is None else ("In range" if row["in_range"] else "Outside range"),
+        )
+        for row in accuracy_rows
+    ]
+    table = sf._table(
+        ["Ticker", "Predicted lean (prior day)", "Predicted range", "Actual close", "Actual move", "Direction", "Range"],
+        rows,
+    )
+    return summary + table
 
 
 def _overview_table(reports: list) -> str:
@@ -287,8 +433,9 @@ def _overview_table(reports: list) -> str:
     return sf._table2(["Ticker", "Price", "Lean", "RSI(14)", "~1-sigma range"], rows)
 
 
-def _html_page(reports: list, date_str: str, generated: str) -> str:
+def _html_page(reports: list, date_str: str, generated: str, accuracy_rows: list, cumulative: dict) -> str:
     overview_table = _overview_table(reports)
+    accuracy_section = _accuracy_section_html(accuracy_rows, cumulative)
 
     sections = []
     for r in reports:
@@ -315,20 +462,21 @@ def _html_page(reports: list, date_str: str, generated: str) -> str:
 
     return PAGE_TEMPLATE.format(
         date=sf._esc(date_str), generated=sf._esc(generated), caveat=sf._esc(CAVEAT),
-        overview_table=overview_table, ticker_sections="".join(sections),
+        accuracy_section=accuracy_section, overview_table=overview_table, ticker_sections="".join(sections),
     )
 
 
-def write_html(reports: list, now: dt.datetime) -> str:
+def write_html(reports: list, now: dt.datetime, accuracy_rows: list, cumulative: dict) -> str:
     date_str = now.strftime("%Y-%m-%d")
     out_path = os.path.join(OUTPUT_DIR, f"{date_str}.html")
     with open(out_path, "w", encoding="utf-8") as f:
-        f.write(_html_page(reports, date_str, now.strftime("%Y-%m-%d %H:%M")))
+        f.write(_html_page(reports, date_str, now.strftime("%Y-%m-%d %H:%M"), accuracy_rows, cumulative))
     return out_path
 
 
 def run() -> int:
     dashboard = _load_dashboard_snapshot()
+    history = _load_history()
     now = dt.datetime.now(NZ_TZ)
     reports = []
     for ticker in WATCHLIST:
@@ -344,7 +492,20 @@ def run() -> int:
     if not reports:
         log.error("no tickers produced a report; not writing HTML")
         return 0
-    out_path = write_html(reports, now)
+
+    accuracy_rows = _todays_accuracy(reports, history)
+    for row in accuracy_rows:
+        log.info(
+            "%s: prior lean=%s -> actual %s (%s), range %s",
+            row["ticker"], row["predicted_lean"],
+            st._fmt(row["actual_price"]), st._fmt(row["actual_pct_move"], "%"),
+            "in range" if row["in_range"] else ("outside range" if row["in_range"] is not None else "N/A"),
+        )
+    history = _update_history(history, reports)
+    _save_history(history)
+    cumulative = _cumulative_accuracy(history)
+
+    out_path = write_html(reports, now, accuracy_rows, cumulative)
     log.info("wrote %d/%d tickers to %s", len(reports), len(WATCHLIST), out_path)
     return len(reports)
 
