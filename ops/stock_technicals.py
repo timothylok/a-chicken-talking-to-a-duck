@@ -645,22 +645,27 @@ def _html_page(report: dict) -> str:
     currency = f" {report['currency']}" if report.get("currency") else ""
     w, d, v, rs, e = report["weekly"], report["daily"], report["volume"], report["rs"], report["earnings"]
 
-    sec1 = sf._table(["Metric", "Value"], [
+    weekly_rsi_text = _fmt(w["rsi14w"], digits=1)
+    sec1 = sf._table2(["Metric", "Value"], [
         ("Weekly Close", _fmt(w["close"], currency)),
         ("50-Week EMA", _fmt(w["ema50w"], currency)),
         ("200-Week EMA", _fmt(w["ema200w"], currency)),
-        ("14-Period Weekly RSI", _fmt(w["rsi14w"], digits=1)),
+        ("14-Period Weekly RSI", (weekly_rsi_text, sf._colored_span(weekly_rsi_text, sf._rsi_color(w["rsi14w"])))),
         ("52-Week High", _fmt(w["high52w"], currency)),
         ("52-Week Low", _fmt(w["low52w"], currency)),
         ("Weekly Support", _fmt(w["support"], currency)),
         ("Weekly Resistance", _fmt(w["resistance"], currency)),
     ]) + _text_html(w["read"])
 
+    daily_rsi_text = _fmt(d["rsi14"], digits=1)
+    setup_color = {"Long": sf.PALETTE["LEAN_BULLISH"], "Short": sf.PALETTE["LEAN_BEARISH"]}.get(
+        d["setup"], sf.PALETTE["LEAN_NEUTRAL"]
+    )
     sec2 = (
-        f'<p><span class="badge">{sf._esc(d["setup"])}</span></p>'
-        + sf._table(["Metric", "Value"], [
+        f'<p><span class="badge" style="background:{setup_color}; color:#fff">{sf._esc(d["setup"])}</span></p>'
+        + sf._table2(["Metric", "Value"], [
             ("Price", _fmt(d["price"], currency)),
-            ("14-Period Daily RSI", _fmt(d["rsi14"], digits=1)),
+            ("14-Period Daily RSI", (daily_rsi_text, sf._colored_span(daily_rsi_text, sf._rsi_color(d["rsi14"])))),
             ("50-Day SMA", _fmt(d["sma50"], currency)),
             ("200-Day SMA", _fmt(d["sma200"], currency)),
             ("Daily Support", _fmt(d["support"], currency)),

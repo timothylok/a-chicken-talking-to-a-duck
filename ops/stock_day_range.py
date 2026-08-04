@@ -161,6 +161,25 @@ def _lean(price: float, sma50: "float | None", sma200: "float | None", rsi: "flo
     return "Neutral -- mixed trend"
 
 
+def _lean_color(lean: str) -> str:
+    # "Bearish (oversold -- bounce risk)" gets the same red as plain
+    # "Bearish" -- ops/palette.env only defines one bearish color, unlike
+    # the bullish side which has a distinct pullback-risk shade.
+    if lean.startswith("Bullish (overbought"):
+        return sf.PALETTE["LEAN_BULLISH_PULLBACK"]
+    if lean.startswith("Bullish"):
+        return sf.PALETTE["LEAN_BULLISH"]
+    if lean.startswith("Bearish"):
+        return sf.PALETTE["LEAN_BEARISH"]
+    if "insufficient" in lean.lower():
+        return sf.PALETTE["LEAN_INSUFFICIENT"]
+    return sf.PALETTE["LEAN_NEUTRAL"]
+
+
+def _badge(text: str, color: str) -> str:
+    return f'<span class="badge" style="background:{color}; color:#fff">{sf._esc(text)}</span>'
+
+
 # ---------------------------------------------------------------------------
 # LLM narration -- numbers are already fixed above; this only explains them.
 # ---------------------------------------------------------------------------
@@ -255,21 +274,17 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
 
 
 def _overview_table(reports: list) -> str:
-    # Not sf._table() -- that escapes every cell, which would double-escape
-    # the badge <span> markup built here. Ticker/price/RSI/range are still
-    # escaped individually since they're plain values, not markup.
-    head = "<tr><th>Ticker</th><th>Price</th><th>Lean</th><th>RSI(14)</th><th>~1-sigma range</th></tr>"
-    rows = "".join(
-        "<tr>"
-        f"<td>{sf._esc(r['ticker'])}</td>"
-        f"<td>{sf._esc(st._fmt(r['price']))}</td>"
-        f'<td><span class="badge">{sf._esc(r["lean"])}</span></td>'
-        f"<td>{sf._esc(st._fmt(r['rsi14'], digits=1))}</td>"
-        f"<td>{sf._esc(st._fmt(r['range_low']))} - {sf._esc(st._fmt(r['range_high']))}</td>"
-        "</tr>"
+    rows = [
+        (
+            r["ticker"],
+            st._fmt(r["price"]),
+            (r["lean"], _badge(r["lean"], _lean_color(r["lean"]))),
+            (st._fmt(r["rsi14"], digits=1), sf._colored_span(st._fmt(r["rsi14"], digits=1), sf._rsi_color(r["rsi14"]))),
+            f'{st._fmt(r["range_low"])} - {st._fmt(r["range_high"])}',
+        )
         for r in reports
-    )
-    return f"<table>{head}{rows}</table>"
+    ]
+    return sf._table2(["Ticker", "Price", "Lean", "RSI(14)", "~1-sigma range"], rows)
 
 
 def _html_page(reports: list, date_str: str, generated: str) -> str:
@@ -277,12 +292,13 @@ def _html_page(reports: list, date_str: str, generated: str) -> str:
 
     sections = []
     for r in reports:
-        detail_table = sf._table(["Metric", "Value"], [
+        rsi_text = st._fmt(r["rsi14"], digits=1)
+        detail_table = sf._table2(["Metric", "Value"], [
             ("Price", st._fmt(r["price"])),
             ("As of", r.get("as_of") or "N/A"),
             ("50-day SMA", st._fmt(r["sma50"])),
             ("200-day SMA", st._fmt(r["sma200"])),
-            ("14-day RSI", st._fmt(r["rsi14"], digits=1)),
+            ("14-day RSI", (rsi_text, sf._colored_span(rsi_text, sf._rsi_color(r["rsi14"])))),
             ("Support", st._fmt(r["support"])),
             ("Resistance", st._fmt(r["resistance"])),
             ("20-day realized daily volatility", st._fmt(r["daily_stdev_pct"], "%")),
@@ -292,7 +308,7 @@ def _html_page(reports: list, date_str: str, generated: str) -> str:
             f"<p>{sf._esc(line.strip())}</p>" for line in r["narrative"].split("\n") if line.strip()
         ) or "<p>N/A</p>"
         sections.append(
-            f'<section><h2>{sf._esc(r["ticker"])} -- <span class="badge">{sf._esc(r["lean"])}</span></h2>'
+            f'<section><h2>{sf._esc(r["ticker"])} -- {_badge(r["lean"], _lean_color(r["lean"]))}</h2>'
             f'{detail_table}{narrative_html}'
             f'<p class="cite">Fundamental context: {sf._esc(r["context"])}</p></section>'
         )

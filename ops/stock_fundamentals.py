@@ -80,6 +80,36 @@ OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "lfm2.5")
 SEC_UA = "voice-ecosystem stock-fundamentals research (timlok@gmail.com)"
 SEC_DELAY = 0.2  # SEC asks for <=10 req/sec; well under that.
 
+PALETTE_ENV = os.path.join(ROOT, "ops", "palette.env")
+# Fallback only -- ops/palette.env is the source of truth. Kept in sync so a
+# missing/corrupt file degrades gracefully instead of crashing report
+# generation, same "never guess, but never crash either" posture as the rest
+# of this module's SEC-gap handling.
+_DEFAULT_PALETTE = {
+    "LEAN_BULLISH": "#15803d", "LEAN_BULLISH_PULLBACK": "#d97706",
+    "LEAN_NEUTRAL": "#64748b", "LEAN_BEARISH": "#dc2626", "LEAN_INSUFFICIENT": "#94a3b8",
+    "RSI_OVERSOLD": "#2563eb", "RSI_NEUTRAL": "#6b7280",
+    "RSI_STRONG": "#16a34a", "RSI_OVERBOUGHT": "#f59e0b",
+}
+
+
+def load_palette() -> dict:
+    palette = dict(_DEFAULT_PALETTE)
+    try:
+        with open(PALETTE_ENV, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                palette[key.strip()] = value.strip()
+    except OSError:
+        pass
+    return palette
+
+
+PALETTE = load_palette()
+
 os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 logging.basicConfig(
@@ -332,6 +362,46 @@ def _table(headers: list, rows: list) -> str:
     thead = "<tr>" + "".join(f"<th>{_esc(h)}</th>" for h in headers) + "</tr>"
     trows = "".join(
         "<tr>" + "".join(f"<td>{_esc(c)}</td>" for c in row) + "</tr>"
+        for row in rows
+    )
+    return f"<table>{thead}{trows}</table>"
+
+
+def _rsi_color(rsi: "float | None") -> "str | None":
+    # Conventional 30/50/70 RSI bands -- oversold/neutral/strong/overbought,
+    # matching the 4 RSI_* colors in ops/palette.env. Shared by
+    # stock_technicals.py and stock_day_range.py so both reports band RSI
+    # identically.
+    if rsi is None:
+        return None
+    if rsi < 30:
+        return PALETTE["RSI_OVERSOLD"]
+    if rsi < 50:
+        return PALETTE["RSI_NEUTRAL"]
+    if rsi < 70:
+        return PALETTE["RSI_STRONG"]
+    return PALETTE["RSI_OVERBOUGHT"]
+
+
+def _colored_span(text, color: "str | None") -> str:
+    # Plain _esc(text) if color is None (e.g. no data to color) -- callers
+    # never need a separate branch for the missing-color case.
+    if color is None:
+        return _esc(text)
+    return f'<span style="color:{color}; font-weight:600">{_esc(text)}</span>'
+
+
+def _table2(headers: list, rows: list) -> str:
+    # Like _table(), but a cell may be a (text, html) tuple to carry
+    # pre-built markup (e.g. _colored_span output) verbatim -- every other
+    # plain-value cell still goes through _esc() as normal. Avoids the
+    # double-escaping bug a raw _table() call would hit if fed markup
+    # directly (hit once already in stock_day_range.py's overview table).
+    def render(cell):
+        return cell[1] if isinstance(cell, tuple) else _esc(cell)
+    thead = "<tr>" + "".join(f"<th>{_esc(h)}</th>" for h in headers) + "</tr>"
+    trows = "".join(
+        "<tr>" + "".join(f"<td>{render(c)}</td>" for c in row) + "</tr>"
         for row in rows
     )
     return f"<table>{thead}{trows}</table>"
