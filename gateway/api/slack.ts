@@ -10,6 +10,12 @@ const COMMAND_TIMEOUT_MS = 250_000;
 // Same replay bound as /api/voice; Slack sends its timestamp in unix seconds.
 const REPLAY_WINDOW_MS = 5 * 60_000;
 
+// Fixed, not derived from the inbound request's Host header: Slack's HMAC
+// signature covers only the timestamp+body, not Host/URL, so a spoofed Host
+// on an otherwise-valid signed request must never steer where the
+// VOICE_GATEWAY_KEY-bearing callback below gets sent.
+const GATEWAY_ORIGIN = process.env.GATEWAY_ORIGIN || "https://a-chicken-talking-to-a-duck.vercel.app";
+
 function signatureValid(request: Request, rawBody: string): boolean {
   const secret = process.env.SLACK_SIGNING_SECRET;
   const ts = request.headers.get("x-slack-request-timestamp");
@@ -128,14 +134,13 @@ function channelLimited(channel: string): boolean {
 async function runCommand(
   text: string,
   channel: string,
-  origin: string,
   eventTs: string,
 ): Promise<void> {
   let reply: string;
   let imageB64: string | null = null;
   let imageTitle = "image";
   try {
-    const resp = await fetch(`${origin}/api/voice?mode=command`, {
+    const resp = await fetch(`${GATEWAY_ORIGIN}/api/voice?mode=command`, {
       method: "POST",
       headers: {
         authorization: `Bearer ${process.env.VOICE_GATEWAY_KEY}`,
@@ -217,7 +222,7 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   waitUntil(
-    runCommand(text, channel, new URL(request.url).origin, String(event.event_ts ?? Date.now())),
+    runCommand(text, channel, String(event.event_ts ?? Date.now())),
   );
   return new Response("ok");
 }
