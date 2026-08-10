@@ -26,6 +26,20 @@ https://pricespy.co.nz/product.php?p=5241360).
 Uses the thecolab-ai nz-pricewatch skill's CLI directly (no login, no
 account, public PriceSpy product pages only).
 
+Also watches Trade Me marketplace search results: PRICEWATCH_TRADEME_SEARCHES
+env var, comma-separated "term|min_price" pairs (default:
+"Nintendo Switch 2|400"). Unlike PriceSpy's stable product pages, individual
+Trade Me listings expire in days-to-weeks, so a fixed listing id isn't a
+durable thing to watch -- each run re-searches the term fresh and tracks the
+cheapest current buy-now listing's price, alerting when that cheapest price
+drops day over day. min_price is enforced client-side, not passed as a
+server-side filter: Trade Me's search API silently ignores price_min/price_max
+on this endpoint (confirmed live 2026-08-10), and without a floor the
+"cheapest match" for a console search is reliably a stray accessory
+(joystick, case, charger) miscategorized under the same category path, not
+the console. Uses the thecolab-ai trademe-nz skill's CLI (no login, public
+search only).
+
 Run manually: python ops/pricewatch.py
 """
 
@@ -41,8 +55,23 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LOG_PATH = os.path.join(ROOT, "asr", "logs", "pricewatch.log")
 STATE_PATH = os.path.join(ROOT, "asr", "logs", "pricewatch_state.json")
 CLI = "D:/ai/thecolab-skills/skills/nz-pricewatch/scripts/cli.py"
+TRADEME_CLI = "D:/ai/thecolab-skills/skills/trademe-nz/scripts/cli.py"
 PRODUCTS = [p.strip() for p in os.environ.get("PRICEWATCH_PRODUCTS", "13779039,13101596,5774154,5848136,5241360").split(",") if p.strip()]
 NZ_TZ = ZoneInfo("Pacific/Auckland")
+
+
+def _parse_trademe_searches(raw: str) -> list[tuple[str, float]]:
+    searches = []
+    for entry in raw.split(","):
+        entry = entry.strip()
+        if not entry:
+            continue
+        term, _, min_price = entry.partition("|")
+        searches.append((term.strip(), float(min_price) if min_price.strip() else 0.0))
+    return searches
+
+
+TRADEME_SEARCHES = _parse_trademe_searches(os.environ.get("PRICEWATCH_TRADEME_SEARCHES", "Nintendo Switch 2|400"))
 sys.path.insert(0, os.path.join(ROOT, "ops"))
 
 logging.basicConfig(
@@ -52,12 +81,12 @@ logging.basicConfig(
 log = logging.getLogger("pricewatch")
 
 
-def _run_skill(*args: str, timeout: int = 30) -> dict:
+def _run_skill(cli: str, *args: str, timeout: int = 30) -> dict:
     # PYTHONIOENCODING forces the child's stdout to UTF-8 -- under a
     # scheduled task it can default to cp1252, same trap asr/router.py's
     # own _run_skill() guards against for the voice-command skill CLIs.
     out = subprocess.run(
-        [sys.executable, CLI, *args],
+        [sys.executable, cli, *args],
         capture_output=True, text=True, encoding="utf-8", timeout=timeout,
         env={**os.environ, "PYTHONIOENCODING": "utf-8"},
     )
@@ -77,6 +106,26 @@ def _save_state(state: dict) -> None:
         json.dump(state, f, ensure_ascii=False, indent=2)
 
 
+def _check_and_alert(notify, state: dict, today: str, key: str, title: str, price: float, url: str) -> None:
+    prev = state.get(key)
+    prev_price = prev.get("price") if prev else None
+    prev_date = prev.get("date") if prev else None
+
+    if prev_price is not None and prev_date != today and price < prev_price:
+        line = f"{title} 平咗：${prev_price:.2f} → ${price:.2f}\n{url}"
+        sent = notify("價錢監察", line, priority=3)
+        log.info("%s: drop $%.2f -> $%.2f, alert %s", title, prev_price, price,
+                  "sent" if sent else "NOT sent")
+    else:
+        log.info("%s: current $%.2f, last recorded $%s -- no alert", title, price,
+                  f"{prev_price:.2f}" if prev_price is not None else "n/a (first run)")
+
+    # Only record once per day so a same-day rerun (manual test, retry)
+    # doesn't overwrite tomorrow's "yesterday" baseline with today's price.
+    if prev_date != today:
+        state[key] = {"date": today, "price": price, "title": title}
+
+
 def main() -> None:
     from notify import notify
 
@@ -85,7 +134,7 @@ def main() -> None:
 
     for product_id in PRODUCTS:
         try:
-            data = _run_skill("product", product_id, "--json")
+            data = _run_skill(CLI, "product", product_id, "--json")
         except Exception:
             log.exception("%s: fetch failed", product_id)
             continue
@@ -96,23 +145,25 @@ def main() -> None:
             log.warning("%s: no current_lowest_price in response", product_id)
             continue
 
-        prev = state.get(product_id)
-        prev_price = prev.get("price") if prev else None
-        prev_date = prev.get("date") if prev else None
+        _check_and_alert(notify, state, today, product_id, title, price, data.get("url", ""))
 
-        if prev_price is not None and prev_date != today and price < prev_price:
-            line = f"{title} 平咗：${prev_price:.2f} → ${price:.2f}\n{data.get('url', '')}"
-            sent = notify("價錢監察", line, priority=3)
-            log.info("%s: drop $%.2f -> $%.2f, alert %s", title, prev_price, price,
-                      "sent" if sent else "NOT sent")
-        else:
-            log.info("%s: current $%.2f, last recorded $%s -- no alert", title, price,
-                      f"{prev_price:.2f}" if prev_price is not None else "n/a (first run)")
+    for query, min_price in TRADEME_SEARCHES:
+        key = f"trademe:{query}"
+        try:
+            data = _run_skill(TRADEME_CLI, "search", query, "--type", "marketplace", "--limit", "20", "--json")
+        except Exception:
+            log.exception("trademe %s: fetch failed", query)
+            continue
 
-        # Only record once per day so a same-day rerun (manual test, retry)
-        # doesn't overwrite tomorrow's "yesterday" baseline with today's price.
-        if prev_date != today:
-            state[product_id] = {"date": today, "price": price, "title": title}
+        listings = [l for l in data.get("listings", [])
+                    if l.get("buy_now_price") is not None and l["buy_now_price"] >= min_price]
+        if not listings:
+            log.warning("trademe %s: no buy-now listings >= $%.2f found", query, min_price)
+            continue
+        cheapest = min(listings, key=lambda l: l["buy_now_price"])
+
+        title = f"Trade Me：{query}（{cheapest['title']}）"
+        _check_and_alert(notify, state, today, key, title, cheapest["buy_now_price"], cheapest.get("url", ""))
 
     _save_state(state)
 
