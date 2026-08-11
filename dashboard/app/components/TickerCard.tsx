@@ -11,7 +11,10 @@ export default function TickerCard({ row }: { row: TickerRow }) {
           <TrafficLight light={row.compositeLight} /> {row.composite != null ? `${row.composite}/10` : "N/A"}
         </span>
       </div>
-      <p className="coverage">{row.coverage} available</p>
+      <p className="coverage">
+        {row.coverage} available
+        {row.stale && <span className="stale">stale — {row.date} data</span>}
+      </p>
       <p className="summary">{row.summary}</p>
       <div className="kpi-list">
         {KPI_ORDER.map(([key, name]) => (

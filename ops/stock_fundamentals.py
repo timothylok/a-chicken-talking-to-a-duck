@@ -112,11 +112,17 @@ PALETTE = load_palette()
 
 os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
-logging.basicConfig(
-    filename=LOG_PATH, level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(message)s", encoding="utf-8",
-)
+# A dedicated non-propagating logger, not logging.basicConfig() -- basicConfig
+# attaches its handler to the ROOT logger, so every propagating logger in any
+# module that imports this one (asr/router.py's "router" logger, pulled in via
+# the Category 4/6 scripts) ended up writing into stock_fundamentals.log too.
+# Same pattern every other Category script already uses.
 log = logging.getLogger("stock_fundamentals")
+log.propagate = False
+log.setLevel(logging.INFO)
+_handler = logging.FileHandler(LOG_PATH, encoding="utf-8")
+_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+log.addHandler(_handler)
 
 DEFAULT_WATCHLIST = os.environ.get(
     "STOCK_WATCHLIST", "AAPL,MSFT,NVDA,TSLA,GOOGL,AMZN,META,AON,SPCX"
@@ -176,10 +182,44 @@ DILUTED_EPS_TAGS = ["EarningsPerShareDiluted"]  # unit "USD/shares", not "USD"
 # SEC EDGAR fetch helpers
 # ---------------------------------------------------------------------------
 
+RETRY_ATTEMPTS = 3
+RETRY_BACKOFF = 2.0  # seconds before the first retry, doubled each time
+
+
+def urlopen_retry(req: urllib.request.Request, timeout: int,
+                  attempts: int = RETRY_ATTEMPTS) -> bytes:
+    """urlopen + read, retrying transient network/TLS/5xx failures.
+
+    Shared by every ops/stock_*.py external fetch. Single-shot urlopen lost
+    whole reports in practice: connection timeouts (WinError 10060) dropped
+    tickers from the published dashboard on 4 of 7 days, and one TLS
+    interception blip (CERTIFICATE_VERIFY_FAILED) zeroed an entire Category 4
+    run. A 4xx is a real answer from the server, so it is raised immediately
+    rather than hammered; only 429/5xx and socket/TLS faults are retried.
+    """
+    delay = RETRY_BACKOFF
+    for attempt in range(1, attempts + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return resp.read()
+        except urllib.error.HTTPError as exc:
+            if exc.code not in (429, 500, 502, 503, 504) or attempt == attempts:
+                raise
+            reason = f"HTTP {exc.code}"
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            if attempt == attempts:
+                raise
+            reason = str(exc)
+        log.warning("fetch failed (%s), retrying in %.0fs [%d/%d]: %s",
+                    reason, delay, attempt, attempts - 1, req.full_url)
+        time.sleep(delay)
+        delay *= 2
+    raise RuntimeError("unreachable")  # loop always returns or raises
+
+
 def _sec_get(url: str) -> bytes:
     req = urllib.request.Request(url, headers={"User-Agent": SEC_UA})
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        data = resp.read()
+    data = urlopen_retry(req, timeout=30)
     time.sleep(SEC_DELAY)
     return data
 
@@ -267,8 +307,7 @@ def _current_price(ticker: str) -> "float | None":
     url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range=5d&interval=1d"
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     try:
-        with urllib.request.urlopen(req, timeout=20) as resp:
-            payload = json.loads(resp.read())
+        payload = json.loads(urlopen_retry(req, timeout=20))
     except Exception as exc:
         log.warning("%s: current price fetch failed: %s", ticker, exc)
         return None

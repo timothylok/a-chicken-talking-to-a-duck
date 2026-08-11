@@ -368,9 +368,8 @@ def _extract_income_figures(text: str) -> dict:
             # adjusted-basis consensus would fabricate a ~32% "miss" out of
             # a real ~1% beat). Scoped tight (300 chars after the GAAP
             # match, same table); absent for filers with no separate
-            # adjusted metric (AAPL/MSFT/GOOGL/AMZN/META don't report one
-            # here), so eps_adjusted stays unset and beat/miss falls back
-            # to GAAP, unchanged from before.
+            # adjusted metric (AAPL/GOOGL/AMZN/META don't report one here),
+            # so eps_adjusted stays unset and beat/miss falls back to GAAP.
             am = re.search(
                 r"Adjusted\s+(?:diluted\s+)?(?:EPS|earnings\s+per\s+share)\s*\(Non-GAAP\)\s+" + _NUM + r"\s+" + _NUM,
                 text[m_abs_end:m_abs_end + 300],
@@ -378,6 +377,24 @@ def _extract_income_figures(text: str) -> dict:
             if am:
                 aa, ab = float(am.group(1).replace(",", "")), float(am.group(2).replace(",", ""))
                 out["eps_adjusted"] = aa if _column_order_current_first(text, order_pos) else ab
+            else:
+                # MSFT states its non-GAAP EPS in prose rather than a table
+                # ("Diluted earnings per share was $4.81 and increased 32% on
+                # a GAAP basis, and was $4.74 and increased 23% on a non-GAAP
+                # basis", confirmed live 2026-08-11) -- the table pattern
+                # above never matched it, so MSFT was silently compared on
+                # GAAP. The same release repeats the line for the full fiscal
+                # year, so the GAAP figure in the match must equal the
+                # already-extracted quarterly eps_cur before the adjusted one
+                # is trusted.
+                pm = re.search(
+                    r"[Dd]iluted\s+earnings\s+per\s+share\s+was\s+\$?" + _NUM +
+                    r"[^.]{0,80}?on\s+a\s+GAAP\s+basis,?\s+and\s+was\s+\$?" + _NUM +
+                    r"[^.]{0,60}?on\s+a\s+non-GAAP\s+basis",
+                    text,
+                )
+                if pm and abs(float(pm.group(1).replace(",", "")) - cur) < 0.005:
+                    out["eps_adjusted"] = float(pm.group(2).replace(",", ""))
     if out.get("revenue_cur") is not None and out.get("revenue_prior"):
         out["revenue_yoy"] = (out["revenue_cur"] - out["revenue_prior"]) / abs(out["revenue_prior"]) * 100
     if out.get("eps_cur") is not None and out.get("eps_prior"):
@@ -473,7 +490,16 @@ def _prior_filing(history: dict, ticker: str) -> "dict | None":
 
 
 def _append_history(history: dict, ticker: str, entry: dict) -> None:
-    history.setdefault(ticker, {}).setdefault("filings", []).append(entry)
+    # Replace in place when this accession is already recorded. A blind append
+    # left two rows for the same filing whenever one was reprocessed (a manual
+    # re-run after a fix, which is exactly when the newer row is the correct
+    # one) -- TSLA and GOOGL both carried duplicates.
+    filings = history.setdefault(ticker, {}).setdefault("filings", [])
+    for i, existing in enumerate(filings):
+        if existing.get("accn") == entry.get("accn"):
+            filings[i] = entry
+            return
+    filings.append(entry)
 
 
 # ---------------------------------------------------------------------------
@@ -538,14 +564,23 @@ def _section8_summary(ticker: str, ex99_text: str, figures: dict, accn: str, fil
     return f"{header}\n\n{reply}\n\n*Source: 8-K EX-99.1, accession {accn}, filed {filed} ({url})*"
 
 
+def _consensus_basis_eps(figures: dict) -> "float | None":
+    """The EPS to compare against Street consensus.
+
+    Prefer the non-GAAP adjusted figure when a filer reports one -- Street
+    consensus is virtually always built on it, not GAAP (see the
+    extraction-side comment in _extract_income_figures for the AON evidence).
+    GAAP actual is still surfaced alongside, never hidden. Shared by the
+    beat/miss section and the persisted history entry so the two can't drift
+    onto different bases -- they did, and Category 6's KPI 2 reads the history
+    file, so it was scoring a GAAP actual against an adjusted consensus.
+    """
+    return figures.get("eps_adjusted", figures.get("eps_cur"))
+
+
 def _section9_beat_miss(figures: dict, consensus: "dict | None") -> str:
     lines = []
-    # Prefer the non-GAAP adjusted figure for the consensus comparison when
-    # a filer reports one -- Street consensus is virtually always built on
-    # it, not GAAP (see the extraction-side comment in
-    # _extract_income_figures for the AON evidence). GAAP actual is still
-    # surfaced in the same line, never hidden.
-    compare_eps = figures.get("eps_adjusted", figures.get("eps_cur"))
+    compare_eps = _consensus_basis_eps(figures)
     if compare_eps is not None and consensus and consensus.get("eps_forecast") is not None:
         diff = compare_eps - consensus["eps_forecast"]
         pct = diff / abs(consensus["eps_forecast"]) * 100 if consensus["eps_forecast"] else None
@@ -672,15 +707,19 @@ def build_earnings_report(ticker: str, cik: str, subs: dict, trigger: dict, hist
     guidance_excerpt = None
     if sec11 and not sec11.startswith("N/A"):
         guidance_excerpt = sec11
+    # Must be the consensus-comparable basis, not raw GAAP -- this is what
+    # Category 6's KPI 2 divides by the consensus to get a surprise %.
+    eps_actual = _consensus_basis_eps(figures)
     _append_history(history, ticker, {
         "accn": trigger["accn"], "filed": trigger["filed"],
         "guidance_text": guidance_excerpt,
-        "eps_actual": figures.get("eps_cur"), "eps_consensus": consensus.get("eps_forecast") if consensus else None,
+        "eps_actual": eps_actual, "eps_consensus": consensus.get("eps_forecast") if consensus else None,
+        "eps_gaap": figures.get("eps_cur"),
     })
 
     return {
         "ticker": ticker, "accn": trigger["accn"], "filed": trigger["filed"],
-        "eps_actual": figures.get("eps_cur"), "eps_consensus": consensus.get("eps_forecast") if consensus else None,
+        "eps_actual": eps_actual, "eps_consensus": consensus.get("eps_forecast") if consensus else None,
         "revenue_yoy": figures.get("revenue_yoy"),
         "results_summary": sec8, "beat_miss": sec9, "guidance": sec11,
         "segments": sec13, "capital_return": sec14,
@@ -836,7 +875,62 @@ def poll_and_generate() -> int:
     return written
 
 
+def backfill_history() -> int:
+    """Re-extract the EPS figures for every filing already in the history file.
+
+    Entries captured before the adjusted-EPS basis fix stored a GAAP actual
+    against an adjusted-basis consensus, which Category 6's KPI 2 then read as
+    a huge phantom beat or miss (AMZN +214%, GOOGL +216%, AON -31.6%). Reruns
+    only the deterministic extraction -- no LLM calls, no Notion writes -- and
+    leaves the narrated guidance_text in place. Also collapses duplicate rows
+    for the same accession left behind by the old blind-append behaviour.
+    """
+    history = _load_json(EARNINGS_HISTORY, {})
+    changed = 0
+    for ticker, node in history.items():
+        seen = {}
+        for entry in node.get("filings", []):
+            accn = entry.get("accn")
+            try:
+                cik = sf._cik_for_ticker(ticker)
+                ex99_doc = _exhibit_doc(cik, accn) if cik else None
+                ex99_text = sf._fetch_text(sf._filing_url(cik, accn, ex99_doc)) if ex99_doc else ""
+                if not ex99_text:
+                    raise RuntimeError("could not fetch EX-99.1")
+                figures = _extract_income_figures(ex99_text)
+                consensus = _nasdaq_eps_forecast(ticker, dt.date.fromisoformat(entry["filed"]))
+            except Exception as exc:
+                log.warning("%s %s: backfill failed, left unchanged: %s", ticker, accn, exc)
+                seen.setdefault(accn, entry)
+                continue
+            before = (entry.get("eps_actual"), entry.get("eps_consensus"))
+            entry["eps_actual"] = _consensus_basis_eps(figures)
+            entry["eps_gaap"] = figures.get("eps_cur")
+            # Nasdaq's earnings calendar only serves a rolling recent window,
+            # so a backfill of an older filing legitimately finds no consensus
+            # today. Keep whatever was captured at the time rather than
+            # destroying a good figure on a failed re-lookup.
+            fresh_consensus = consensus.get("eps_forecast") if consensus else None
+            if fresh_consensus is not None:
+                entry["eps_consensus"] = fresh_consensus
+            elif entry.get("eps_consensus") is not None:
+                log.info("%s %s: consensus no longer served by Nasdaq, keeping recorded %s",
+                         ticker, accn, entry["eps_consensus"])
+            after = (entry["eps_actual"], entry["eps_consensus"])
+            if before != after:
+                changed += 1
+                log.info("%s %s: EPS %s -> %s", ticker, accn, before, after)
+            seen[accn] = entry  # last write wins, dropping duplicate rows
+        node["filings"] = list(seen.values())
+    _save_json(EARNINGS_HISTORY, history)
+    log.info("backfill complete: %d entr(ies) corrected", changed)
+    return changed
+
+
 def main() -> None:
+    if len(sys.argv) >= 2 and sys.argv[1] == "--backfill-history":
+        print(f"corrected {backfill_history()} entries in {EARNINGS_HISTORY}")
+        return
     if len(sys.argv) >= 2 and sys.argv[1] == "--setup":
         cfg = load_config()
         if not cfg or not cfg.get("api_key") or not cfg.get("database_id"):

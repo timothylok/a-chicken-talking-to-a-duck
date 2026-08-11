@@ -305,8 +305,7 @@ def _treasury_10yr_yield(as_of: "dt.date | None" = None) -> "float | None":
                f"&field_tdr_date_value_month={year_month}&page&_format=csv")
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                lines = resp.read().decode("utf-8").splitlines()
+            lines = sf.urlopen_retry(req, timeout=15).decode("utf-8").splitlines()
         except Exception as exc:
             log.warning("treasury fetch failed for %s: %s", year_month, exc)
             continue
@@ -328,8 +327,7 @@ def _treasury_10yr_yield(as_of: "dt.date | None" = None) -> "float | None":
 def _historical_prices(ticker: str, range_: str = "5y", interval: str = "1mo") -> list:
     url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range={range_}&interval={interval}"
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=20) as resp:
-        payload = json.loads(resp.read())
+    payload = json.loads(sf.urlopen_retry(req, timeout=20))
     result = (payload.get("chart", {}).get("result") or [None])[0]
     if not result:
         return []
@@ -347,8 +345,7 @@ def _historical_prices(ticker: str, range_: str = "5y", interval: str = "1mo") -
 def _current_price(ticker: str) -> "float | None":
     url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range=5d&interval=1d"
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=20) as resp:
-        payload = json.loads(resp.read())
+    payload = json.loads(sf.urlopen_retry(req, timeout=20))
     result = (payload.get("chart", {}).get("result") or [None])[0]
     if not result:
         return None

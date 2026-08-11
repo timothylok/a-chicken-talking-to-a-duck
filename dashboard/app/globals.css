@@ -101,6 +101,11 @@ h1 {
   margin: 0 0 0.75rem;
 }
 
+.stale {
+  color: var(--accent);
+  margin-left: 0.5rem;
+}
+
 .summary {
   font-size: 0.85rem;
   color: var(--muted);

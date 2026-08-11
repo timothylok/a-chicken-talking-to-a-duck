@@ -559,6 +559,9 @@ def run() -> int:
             log.error("%s: report failed: %s", ticker, exc)
     if not reports:
         log.error("no tickers produced a report; not writing HTML")
+        from notify import notify
+        notify("股票報告失敗", f"Stock day range: 0/{len(WATCHLIST)} tickers, "
+                               "check asr/logs/stock_day_range.log", priority=4)
         return 0
 
     accuracy_rows = _todays_accuracy(reports, history)

@@ -108,8 +108,7 @@ def _fetch_series(ticker: str, range_: str, interval: str) -> dict:
         CHART_URL.format(ticker=urllib.parse.quote(ticker, safe=""), range=range_, interval=interval),
         headers={"User-Agent": "Mozilla/5.0"},
     )
-    with urllib.request.urlopen(req, timeout=20) as resp:
-        payload = json.loads(resp.read())
+    payload = json.loads(sf.urlopen_retry(req, timeout=20))
     result = (payload.get("chart") or {}).get("result")
     if not result:
         raise ValueError(f"no chart data for {ticker}")
@@ -873,26 +872,45 @@ def run() -> int:
         spy_daily = {"closes": []}
     now = dt.datetime.now(NZ_TZ)
     written = 0
+    unchanged = 0
+    failed = 0
     for ticker in WATCHLIST:
         try:
             report = build_report(ticker, spy_daily)
             if not report:
+                failed += 1
                 continue
             html_path = write_html(report)
-            if html_path:
-                log.info("%s: wrote HTML report to %s", ticker, html_path)
-            else:
-                log.info("%s: no new trading data since last report; skipped HTML write", ticker)
+            if not html_path:
+                # No new trading bar since the last run (weekend, holiday, or a
+                # same-day re-run). The HTML for that date is already on disk;
+                # posting to Notion regardless appended a duplicate page per
+                # ticker every non-trading day, so skip the write entirely.
+                log.info("%s: no new trading data since last report; skipped", ticker)
+                unchanged += 1
+                continue
+            log.info("%s: wrote HTML report to %s", ticker, html_path)
             if notion_ready:
                 _notion("POST", "/pages", {
                     "parent": {"database_id": cfg["technicals_database_id"]},
                     "properties": _page_properties(report, now),
                 }, cfg["api_key"])
-                written += 1
                 log.info("%s: wrote technical analysis report", ticker)
+            written += 1
         except Exception as exc:
+            failed += 1
             log.error("%s: technicals report failed: %s", ticker, exc)
-    log.info("wrote %d/%d tickers", written, len(WATCHLIST))
+    # Counts reports actually generated, not Notion POSTs -- the old counter
+    # incremented per Notion write, so a weekend run that produced no new
+    # analysis at all still logged a reassuring "9/9".
+    log.info("wrote %d/%d tickers (%d unchanged, %d failed)",
+             written, len(WATCHLIST), unchanged, failed)
+    if written == 0 and unchanged == 0:
+        # Every ticker failed -- distinct from "nothing new to do", which is
+        # the normal weekend outcome and must stay silent.
+        from notify import notify
+        notify("股票報告失敗", f"Category 4 technicals: 0/{len(WATCHLIST)} tickers, "
+                               "check asr/logs/stock_technicals.log", priority=4)
     return written
 
 

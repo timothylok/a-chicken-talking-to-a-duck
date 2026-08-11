@@ -251,14 +251,41 @@ def _kpi_fundamental_health(bundle: "dict | None") -> dict:
 def _kpi_earnings_quality(ticker: str) -> dict:
     history = _load_json(se.EARNINGS_HISTORY, {})
     filings = history.get(ticker, {}).get("filings", [])
-    usable = [
+    recorded = [
         f for f in filings
         if f.get("eps_actual") is not None and f.get("eps_consensus")
     ][-8:]
-    if not usable:
+    if not recorded:
         return _kpi_na("no earnings-history entries yet (asr/logs/earnings_history.json)")
+
+    # A surprise beyond +/-100% is never a real beat for a mega-cap -- it means
+    # the recorded actual and the Street consensus are on different bases.
+    # Filers that publish a non-GAAP EPS are handled upstream (stock_earnings.py's
+    # _consensus_basis_eps); the ones left are filers that publish only GAAP
+    # while carrying a huge one-off investment gain the Street excludes and
+    # never restates per share (GOOGL Q2-26: GAAP $9.11 includes a disclosed
+    # $6.26/share equity-securities gain, against a $2.88 consensus; AMZN
+    # Q2-26: $53.4bn of non-operating other income, quantified only pre-tax
+    # and in dollars, so no comparable per-share figure exists at all).
+    # Scoring those as +200% beats put two fake Greens on the live dashboard.
+    # Dropped from the stability spread too, not just the headline surprise --
+    # one such quarter would otherwise dominate the standard deviation. N/A
+    # with the reason is the honest answer, the same house rule the price
+    # helpers follow: return None rather than a guessed number.
+    def _surprise(f):
+        return (f["eps_actual"] - f["eps_consensus"]) / abs(f["eps_consensus"]) * 100
+
+    usable = [f for f in recorded if abs(_surprise(f)) <= 100]
+    if not usable:
+        latest = recorded[-1]
+        return _kpi_na(
+            f"latest actual (EPS {latest['eps_actual']:.2f}) is not comparable to the "
+            f"{latest['eps_consensus']:.2f} consensus -- a {_surprise(latest):+.0f}% gap means "
+            "a GAAP-vs-adjusted basis mismatch, most likely a one-off investment gain "
+            "the filer never restated per share"
+        )
     latest = usable[-1]
-    surprise_pct = (latest["eps_actual"] - latest["eps_consensus"]) / abs(latest["eps_consensus"]) * 100
+    surprise_pct = _surprise(latest)
     base_score = _lerp_score(surprise_pct, -5, 0.2, 5, 1.0)
     base_score = 0.7 if -2 <= surprise_pct <= 2 else base_score
 
@@ -839,10 +866,6 @@ def write_local_snapshot_rows(rows: list) -> None:
     log.info("wrote %d row(s) to %s", len(rows), DASHBOARD_DATA_PATH)
 
 
-def write_local_snapshot(reports: list) -> None:
-    write_local_snapshot_rows([_to_ticker_row(r) for r in reports])
-
-
 def poll_and_generate() -> int:
     cfg = load_config()
     notion_ready = bool(cfg and cfg.get("api_key") and cfg.get("risk_dashboard_database_id"))
@@ -862,8 +885,26 @@ def poll_and_generate() -> int:
         except Exception as exc:
             log.error("%s: dashboard report failed: %s", ticker, exc)
 
-    write_local_snapshot(reports)
+    # Merge onto the previous snapshot rather than overwriting it -- the same
+    # thing the --tickers path below already does. Writing only this run's
+    # successes deleted any ticker whose single Yahoo fetch timed out from the
+    # published dashboard for the whole day (NVDA on 3 separate days in one
+    # week). A carried-forward row is marked stale so the UI can say so.
+    fresh = {row["ticker"]: row for row in (_to_ticker_row(r) for r in reports)}
+    merged = []
+    for row in _load_json(DASHBOARD_DATA_PATH, []):
+        if row["ticker"] not in fresh and row["ticker"] in WATCHLIST:
+            row["stale"] = True
+            merged.append(row)
+            log.warning("%s: no fresh report, carrying forward %s snapshot as stale",
+                        row["ticker"], row.get("date"))
+    merged.extend(fresh.values())
+    write_local_snapshot_rows(merged)
     log.info("wrote %d report(s)", written)
+    if written == 0:
+        from notify import notify
+        notify("股票報告失敗", f"Category 6 dashboard: 0/{len(WATCHLIST)} tickers, "
+                               "check asr/logs/stock_risk_dashboard.log", priority=4)
     return written
 
 

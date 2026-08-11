@@ -29,4 +29,7 @@ export interface TickerRow {
   kpis: Record<string, Kpi>;
   summary: string;
   generatedAt: string;
+  // Set when the daily run could not fetch this ticker and the previous
+  // snapshot was carried forward instead of dropping it off the dashboard.
+  stale?: boolean;
 }
