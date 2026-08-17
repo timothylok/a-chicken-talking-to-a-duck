@@ -208,8 +208,11 @@ def _check_history(rules: list, state: dict) -> None:
     ]
     if not os.path.exists(HISTORY):
         return
-    if state["cursor"] > os.path.getsize(HISTORY):  # truncated/rotated
-        state["cursor"] = 0
+    size = os.path.getsize(HISTORY)
+    if state["cursor"] > size:  # truncated/rotated (e.g. the nightly prune)
+        # Resume at end-of-file, not 0: rewinding would replay every past entry
+        # and re-fire history rules on all of them. Same reasoning as first run.
+        state["cursor"] = size
     with open(HISTORY, "rb") as f:
         f.seek(state["cursor"])
         raw = f.read()

@@ -9,6 +9,10 @@ history.jsonl is rewritten atomically, and only within the region the Notion
 sync's byte-offset cursor has already passed — the cursor is then shifted by
 the bytes removed, so nothing is ever double-synced or skipped. If the
 service appends mid-prune, the run aborts and retries tomorrow.
+
+workflows.py keeps its own independent cursor over the same file, so it is
+shifted here too: left alone it would see cursor > filesize, read that as a
+rotation, and replay the whole history (a burst of duplicate alerts).
 """
 
 import datetime as dt
@@ -22,6 +26,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LOGS = os.path.join(ROOT, "asr", "logs")
 HISTORY = os.path.join(LOGS, "history.jsonl")
 CURSOR = os.path.join(LOGS, "notion_sync.cursor")
+WF_STATE = os.path.join(LOGS, "workflows_state.json")
 LOG_PATH = os.path.join(LOGS, "prune.log")
 
 CHAT_DAYS = 30
@@ -34,6 +39,30 @@ logging.basicConfig(
 log = logging.getLogger("prune")
 
 
+def _shift_workflows_cursor(dropped_spans: list) -> None:
+    """Move workflows.py's cursor back past the lines this run removed.
+
+    Read-modify-write, because the file also holds last_fired and workflows.py
+    rewrites it every minute. Its cursor is independent of the Notion one and
+    may sit behind it, so only bytes removed *before* the cursor are subtracted.
+    """
+    try:
+        with open(WF_STATE, encoding="utf-8") as f:
+            state = json.load(f)
+        cursor = int(state["cursor"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return  # unconfigured or mid-write: workflows.py re-seeds at EOF itself
+    shifted = cursor - sum(n for end, n in dropped_spans if end <= cursor)
+    if shifted == cursor:
+        return
+    state["cursor"] = shifted
+    tmp = WF_STATE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(state, f)
+    os.replace(tmp, WF_STATE)
+    log.info("workflows cursor: %d -> %d", cursor, shifted)
+
+
 def prune_history() -> None:
     if not os.path.exists(HISTORY):
         return
@@ -44,6 +73,7 @@ def prune_history() -> None:
     cutoff = dt.datetime.now().astimezone() - dt.timedelta(days=CHAT_DAYS)
     size = os.path.getsize(HISTORY)
     kept, removed_bytes, dropped = [], 0, 0
+    dropped_spans = []  # (end offset, length) of each removed line
     pos = 0
     with open(HISTORY, "rb") as f:
         for line in f:
@@ -60,6 +90,7 @@ def prune_history() -> None:
             if drop:
                 removed_bytes += len(line)
                 dropped += 1
+                dropped_spans.append((end, len(line)))
             else:
                 kept.append(line)
             pos = end
@@ -76,6 +107,7 @@ def prune_history() -> None:
     if os.path.exists(CURSOR):
         with open(CURSOR, "w", encoding="ascii") as f:
             f.write(str(cursor - removed_bytes))
+    _shift_workflows_cursor(dropped_spans)
     log.info(
         "history: dropped %d chat entries older than %d days (%d bytes)",
         dropped, CHAT_DAYS, removed_bytes,
