@@ -1914,7 +1914,28 @@ def _pause_english(text: str) -> str:
     return re.sub(r"(?<=[A-Za-z'])[ ](?=[A-Za-z'])", "，", text)
 
 
+# The public web chat is the only unauthenticated channel, and the only one
+# whose volume isn't bounded by a human speaking. The gateway's 10/min per-IP
+# limit is per-instance and per-IP, so it bounds neither a spread-out burst
+# nor a proxy pool; cap concurrent public work here instead, where every
+# channel converges. Non-blocking on purpose: a visitor is told to retry
+# rather than holding a 240 s gateway function open, and voice/Slack never
+# queue behind public traffic on the one GPU.
+WEB_CONCURRENCY = 2
+_web_slots = threading.BoundedSemaphore(WEB_CONCURRENCY)
+
+
 def _execute(command_id: str, source: str = "voice", lang: str = "yue") -> dict:
+    if source == "web" and not _web_slots.acquire(blocking=False):
+        log.info("web slot busy, declined %s", command_id)
+        # command=None keeps a throttled public request out of Notion
+        # (ops/notion_sync.py mirrors any entry with a command) — otherwise a
+        # flood would spam the database the limit exists to protect.
+        return {
+            "command": None, "status": "busy",
+            "reply": ("而家好忙，等陣再試" if lang != "en"
+                      else "Busy right now — try again in a moment."),
+        }
     try:
         if source == "web" and command_id in WEB_COMMANDS:
             out = COMMANDS[command_id]["run"](lang=lang)
@@ -1937,6 +1958,9 @@ def _execute(command_id: str, source: str = "voice", lang: str = "yue") -> dict:
     except Exception as exc:
         log.error("command %s failed: %s", command_id, exc)
         return {"command": command_id, "status": "error", "reply": "command failed"}
+    finally:
+        if source == "web":
+            _web_slots.release()
 
 
 def route(text: str, source: str = "voice", lang: str = "yue") -> dict:
