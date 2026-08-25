@@ -15,11 +15,15 @@ Products: PRICEWATCH_PRODUCTS env var, comma-separated PriceSpy product ids
 (default: 13101596 "Nintendo Switch 2" +
 5774154 "Corsair Vengeance LPX White DDR4 3200MHz 2x16GB" +
 5848136 "Kingston Fury Beast Black DDR4 3200MHz 2x16GB" +
-5241360 "G.Skill Ripjaws V Black DDR4 3600MHz 2x16GB",
+5241360 "G.Skill Ripjaws V Black DDR4 3600MHz 2x16GB" +
+15436948 "Pokemon Pokopia (Switch 2)" +
+14576211 "The Legend of Zelda: Tears of the Kingdom (Switch 2)",
 https://pricespy.co.nz/product.php?p=13101596 /
 https://pricespy.co.nz/product.php?p=5774154 /
 https://pricespy.co.nz/product.php?p=5848136 /
-https://pricespy.co.nz/product.php?p=5241360).
+https://pricespy.co.nz/product.php?p=5241360 /
+https://pricespy.co.nz/product.php?p=15436948 /
+https://pricespy.co.nz/product.php?p=14576211).
 
 Uses the thecolab-ai nz-pricewatch skill's CLI directly (no login, no
 account, public PriceSpy product pages only).
@@ -54,7 +58,7 @@ LOG_PATH = os.path.join(ROOT, "asr", "logs", "pricewatch.log")
 STATE_PATH = os.path.join(ROOT, "asr", "logs", "pricewatch_state.json")
 CLI = "D:/ai/thecolab-skills/skills/nz-pricewatch/scripts/cli.py"
 TRADEME_CLI = "D:/ai/thecolab-skills/skills/trademe-nz/scripts/cli.py"
-PRODUCTS = [p.strip() for p in os.environ.get("PRICEWATCH_PRODUCTS", "13101596,5774154,5848136,5241360").split(",") if p.strip()]
+PRODUCTS = [p.strip() for p in os.environ.get("PRICEWATCH_PRODUCTS", "13101596,5774154,5848136,5241360,15436948,14576211").split(",") if p.strip()]
 NZ_TZ = ZoneInfo("Pacific/Auckland")
 
 
