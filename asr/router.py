@@ -950,6 +950,10 @@ def _weather_compare(lang: str = "yue") -> str:
 REMINDER_PREFIXES = ("提醒我", "提我", "remindme", "reminderme")
 
 
+def _mostly_cjk(text: str) -> bool:
+    return sum("一" <= c <= "鿿" for c in text) * 2 >= len(text)
+
+
 def _snap_weekday(text: str, due: "dt.datetime", now: "dt.datetime") -> "dt.datetime":
     # gemma3:4b resolves weekday names off-by-one even with the prompt
     # calendar (2026-07-18 benchmark: 禮拜五 → Saturday's date, 6/6 runs), so
@@ -1014,6 +1018,21 @@ def _extract_reminder(text: str) -> tuple[str, "dt.datetime | None"]:
     title = str(parsed.get("title") or "").strip()[:100]
     if not title:
         raise ValueError("no title extracted")
+    # Given an unintelligible subject, gemma3 answers with a few-shot example
+    # from the prompt instead of failing (2026-08-27: 提我今朝十點半針舊 ->
+    # 買牛奶, a reminder the user never asked for; the bare-提我 case is caught
+    # earlier in _create_reminder). A real title is lifted from the utterance,
+    # so require most of its characters to appear there. Fuzzy rather than
+    # substring: the model legitimately drops particles (買啲牛奶 -> 買牛奶).
+    # Only comparable within one script — the model translates an English
+    # utterance into a Cantonese title (real case: "remind me to leave home
+    # at 6PM" -> 去家), which shares no characters with what was said.
+    subject = _normalize(title)
+    heard = _normalize(text)
+    if subject and _mostly_cjk(subject) == _mostly_cjk(heard):
+        grounded = sum(c in heard for c in subject) / len(subject)
+        if grounded < 0.5:
+            raise ValueError(f"title {title!r} not grounded in {text!r}")
     due = None
     if parsed.get("due"):
         due = dt.datetime.strptime(str(parsed["due"]), "%Y-%m-%d %H:%M").replace(tzinfo=NZ_TZ)
