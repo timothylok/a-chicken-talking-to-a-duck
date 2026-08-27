@@ -1629,6 +1629,22 @@ CANCEL_PHRASES = {"取消", "cancel"}
 # Single-user system: one pending confirmation at a time.
 _pending = {"command": None, "expires": 0.0}
 
+# Whisper homophone repairs, applied to the transcript before routing. The
+# raw text is what gets logged and stored, so what was actually heard stays
+# visible; only the routed copy is corrected. Keys must be non-words —
+# 針就/針九 sound the same but also appear inside legitimate sentences
+# (打針就好). 2026-08-27: 針灸 came back as 針舊, and the reminder extractor,
+# given a meaningless title, parroted a few-shot example instead.
+_HOMOPHONES = {"針舊": "針灸", "針炙": "針灸"}
+_HOMOPHONE_RE = re.compile("|".join(_HOMOPHONES))
+
+
+def _fix_homophones(text: str) -> str:
+    fixed = _HOMOPHONE_RE.sub(lambda m: _HOMOPHONES[m.group()], text)
+    if fixed != text:
+        log.info("homophone fix: %r -> %r", text, fixed)
+    return fixed
+
 
 def _normalize(text: str) -> str:
     # Keep word chars and CJK; drop spaces and the punctuation Whisper appends.
@@ -1964,6 +1980,7 @@ def _execute(command_id: str, source: str = "voice", lang: str = "yue") -> dict:
 
 
 def route(text: str, source: str = "voice", lang: str = "yue") -> dict:
+    text = _fix_homophones(text)
     phrase = _normalize(text)
     if not phrase:
         return {"command": None, "status": "no_match", "reply": "nothing heard"}
