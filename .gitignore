@@ -7,7 +7,8 @@ ops/notion.json
 # ntfy topic for ops/notify.py — the topic IS the credential, never commit
 ops/ntfy.json
 # third-party skills junctioned from D:\ai\thecolab-skills (not ours to vendor)
-.claude/skills/
+.claude/skills/*
+!.claude/skills/stock-reports/
 .vercel
 # generated draft reports/social posts for ops/nvidia_daily.py — personal drafts, not source
 content/nvidia-daily/
