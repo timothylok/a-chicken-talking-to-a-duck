@@ -1376,7 +1376,7 @@ def _morning_briefing() -> str:
     # Compose existing sections; a failed source drops out instead of
     # killing the whole briefing.
     sections = []
-    for fn in (_weather_today, _briefing_bins, _milk_drop_line, _news_headlines):
+    for fn in (_weather_today, _briefing_agenda, _briefing_bins, _milk_drop_line, _news_headlines):
         try:
             part = fn()
             if isinstance(part, tuple):  # runners that also return history data
@@ -1467,6 +1467,18 @@ def _schedule_today() -> "str | tuple[str, dict]":
     if stale:
         reply = "行程資料可能唔係最新。" + reply
     return reply, {"count": len(items), "items": items}
+
+
+def _briefing_agenda() -> str:
+    # Agenda line only when the sync is set up, fresh, and non-empty — a
+    # briefing shouldn't carry "今日冇行程安排" or a staleness warning.
+    loaded = _agenda_items()
+    if not loaded:
+        return ""
+    items, stale = loaded
+    if stale or not items:
+        return ""
+    return f"今日有{len(items)}個安排：" + "，".join(items)
 
 
 COMMANDS = {
