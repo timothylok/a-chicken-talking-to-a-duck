@@ -6,6 +6,8 @@ asr/cache/
 ops/notion.json
 # ntfy topic for ops/notify.py — the topic IS the credential, never commit
 ops/ntfy.json
+# local env for ops/ scripts — holds the secret Google iCal URL, never commit
+.env
 # third-party skills junctioned from D:\ai\thecolab-skills (not ours to vendor)
 .claude/skills/*
 !.claude/skills/stock-reports/

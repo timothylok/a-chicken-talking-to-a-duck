@@ -38,6 +38,7 @@ DESCRIPTIONS = {
     "MORNING_BRIEFING": "一次過講晒：今日天氣、嚟緊嘅巴士、收垃圾提醒（今日或聽日先講）同三條新聞",
     "QUOTE_OF_DAY": "隨機講一句周星馳電影金句",
     "MOVIE_QUOTE": "隨機講一句港產片對白，會講埋戲名同角色",
+    "SCHEDULE_TODAY": "讀出你Google日曆今日嘅安排：幾點、咩事，冇嘢就話你知冇安排",
     "CREATE_REMINDER": "喺你部iPhone加提醒事項：講「提我」加內容同時間（例：提我聽日朝早九點買牛奶）",
     "STOCK_ANALYSIS": "分析股票代號嘅現價、技術指標（RSI、平均線）同AI睇法：講「分析股票」加埋代號（例：分析股票 AAPL）——AI意見僅供參考，唔係投資建議",
     "PINE_INDICATOR": "本機AI生成TradingView Pine Script v5指標代碼（淨係Slack或者文字介面用得）：講「pine indicator:」加埋想要嘅指標邏輯——AI生成代碼未經TradingView編譯器驗證，只係草稿",
@@ -53,7 +54,7 @@ DESCRIPTIONS = {
 CATEGORIES = [
     ("天氣出行", ["WEATHER_TODAY", "WEATHER_COMPARE", "JACKET_CHECK", "BUS_TIMES", "TIDE_TIMES"]),
     ("生活資訊", ["FUEL_PRICES", "BIN_DAY", "MILK_PRICES", "MORTGAGE_RATES", "STOCK_ANALYSIS", "PINE_INDICATOR", "PINE_STRATEGY", "EARTHQUAKES", "NEWS_HEADLINES"]),
-    ("日程提醒", ["MORNING_BRIEFING", "CREATE_REMINDER"]),
+    ("日程提醒", ["MORNING_BRIEFING", "SCHEDULE_TODAY", "CREATE_REMINDER"]),
     ("玩吓", ["QUOTE_OF_DAY", "MOVIE_QUOTE", "GENERATE_IMAGE"]),
     ("系統", ["SYSTEM_STATUS", "LIST_COMMANDS", "RESTART_ASR", "TRIGGER_DEPLOY"]),
 ]

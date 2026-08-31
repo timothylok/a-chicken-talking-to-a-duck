@@ -1427,6 +1427,48 @@ WEB_LABELS = {
     "LIST_COMMANDS": {"yue": "有咩指令", "en": "list commands"},
 }
 
+# Today's calendar agenda. ops/calendar_sync.py fetches the secret Google iCal
+# feed as the logged-in user every 15 min and writes this file (titles + times
+# only); the command only ever reads it, so the ASR service never holds the
+# feed URL. Personal data — deliberately not in WEB_COMMANDS.
+CALENDAR_CACHE = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "cache", "calendar.json")
+
+
+def _agenda_items() -> "tuple[list[str], bool] | None":
+    """Today's spoken agenda items and a staleness flag; None = not set up."""
+    try:
+        with open(CALENDAR_CACHE, encoding="utf-8") as f:
+            cache = json.load(f)
+    except (OSError, ValueError):
+        return None
+    now = dt.datetime.now(NZ_TZ)
+    stale = now - dt.datetime.fromisoformat(cache["fetched_at"]) > dt.timedelta(minutes=30)
+    today = now.date().isoformat()
+    items = []
+    for ev in cache.get("events", []):
+        if ev.get("all_day"):
+            # ISO dates compare lexicographically; end date is exclusive.
+            if ev["start"] <= today < ev["end"]:
+                items.append(f"全日{ev['title']}")
+        else:
+            start = dt.datetime.fromisoformat(ev["start"]).astimezone(NZ_TZ)
+            if start.date() == now.date():
+                items.append(f"{_speak_time(f'{start.hour}:{start.minute:02d}')}{ev['title']}")
+    return items, stale
+
+
+def _schedule_today() -> "str | tuple[str, dict]":
+    loaded = _agenda_items()
+    if loaded is None:
+        return "行程功能未接通"
+    items, stale = loaded
+    reply = f"今日有{len(items)}個安排：" + "，".join(items) if items else "今日冇行程安排"
+    if stale:
+        reply = "行程資料可能唔係最新。" + reply
+    return reply, {"count": len(items), "items": items}
+
+
 COMMANDS = {
     "SYSTEM_STATUS": {
         "phrases": [
@@ -1585,6 +1627,17 @@ COMMANDS = {
         ],
         "destructive": False,
         "run": _movie_quote,
+    },
+    "SCHEDULE_TODAY": {
+        "phrases": [
+            "今日行程", "行程", "今日有咩安排", "有咩安排", "今日有乜安排",
+            "今日日程", "日程", "今日有咩會", "今日開唔開會",
+            "今日有什麼安排", "今日有什么安排", "今日安排",
+            "schedule", "today's schedule", "my schedule", "agenda",
+            "what's on today", "calendar",
+        ],
+        "destructive": False,
+        "run": _schedule_today,
     },
     "CREATE_REMINDER": {
         # Matched by prefix in route(), not exact phrase — listed here so it
