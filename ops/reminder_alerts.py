@@ -48,8 +48,10 @@ def _load_state() -> dict:
 def _scan_history(state: dict, now: dt.datetime) -> None:
     if not os.path.exists(HISTORY):
         return
-    if state["offset"] > os.path.getsize(HISTORY):  # truncated/rotated
-        state["offset"] = 0
+    if state["offset"] > os.path.getsize(HISTORY):  # truncated/rotated (e.g. the nightly prune)
+        # Resume at end-of-file, not 0: rewinding would replay every past
+        # CREATE_REMINDER entry and re-queue (and re-send) old reminders.
+        state["offset"] = os.path.getsize(HISTORY)
     with open(HISTORY, "rb") as f:
         f.seek(state["offset"])
         raw = f.read()

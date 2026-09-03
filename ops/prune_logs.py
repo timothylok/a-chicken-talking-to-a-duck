@@ -10,9 +10,10 @@ sync's byte-offset cursor has already passed — the cursor is then shifted by
 the bytes removed, so nothing is ever double-synced or skipped. If the
 service appends mid-prune, the run aborts and retries tomorrow.
 
-workflows.py keeps its own independent cursor over the same file, so it is
-shifted here too: left alone it would see cursor > filesize, read that as a
-rotation, and replay the whole history (a burst of duplicate alerts).
+workflows.py and reminder_alerts.py each keep their own independent cursor
+over the same file, so both are shifted here too: left alone, either would
+see cursor > filesize, read that as a rotation, and replay the whole history
+(a burst of duplicate alerts).
 """
 
 import datetime as dt
@@ -27,6 +28,7 @@ LOGS = os.path.join(ROOT, "asr", "logs")
 HISTORY = os.path.join(LOGS, "history.jsonl")
 CURSOR = os.path.join(LOGS, "notion_sync.cursor")
 WF_STATE = os.path.join(LOGS, "workflows_state.json")
+REM_STATE = os.path.join(LOGS, "reminder_alerts.json")
 LOG_PATH = os.path.join(LOGS, "prune.log")
 
 CHAT_DAYS = 30
@@ -61,6 +63,30 @@ def _shift_workflows_cursor(dropped_spans: list) -> None:
         json.dump(state, f)
     os.replace(tmp, WF_STATE)
     log.info("workflows cursor: %d -> %d", cursor, shifted)
+
+
+def _shift_reminder_cursor(dropped_spans: list) -> None:
+    """Move reminder_alerts.py's cursor back past the lines this run removed.
+
+    Same reasoning as _shift_workflows_cursor: its offset is independent of
+    the Notion one and may sit behind it, so only bytes removed *before* the
+    offset are subtracted.
+    """
+    try:
+        with open(REM_STATE, encoding="utf-8") as f:
+            state = json.load(f)
+        offset = int(state["offset"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return  # unconfigured or mid-write: reminder_alerts.py re-seeds at EOF itself
+    shifted = offset - sum(n for end, n in dropped_spans if end <= offset)
+    if shifted == offset:
+        return
+    state["offset"] = shifted
+    tmp = REM_STATE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(state, f, ensure_ascii=False)
+    os.replace(tmp, REM_STATE)
+    log.info("reminder_alerts cursor: %d -> %d", offset, shifted)
 
 
 def prune_history() -> None:
@@ -108,6 +134,7 @@ def prune_history() -> None:
         with open(CURSOR, "w", encoding="ascii") as f:
             f.write(str(cursor - removed_bytes))
     _shift_workflows_cursor(dropped_spans)
+    _shift_reminder_cursor(dropped_spans)
     log.info(
         "history: dropped %d chat entries older than %d days (%d bytes)",
         dropped, CHAT_DAYS, removed_bytes,
