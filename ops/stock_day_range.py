@@ -578,6 +578,7 @@ def run() -> int:
 
     out_path = write_html(reports, now, accuracy_rows, cumulative)
     log.info("wrote %d/%d tickers to %s", len(reports), len(WATCHLIST), out_path)
+    sf.alert_if_narration_dead("Stock day range", "stock_day_range.log")
     return len(reports)
 
 

@@ -259,10 +259,15 @@ def _generate(prompt: str, num_predict: int = 500) -> str:
         f"{sf.OLLAMA_URL}/api/chat", data=payload,
         headers={"Content-Type": "application/json"},
     )
-    with urllib.request.urlopen(req, timeout=120) as resp:
-        reply = json.loads(resp.read()).get("message", {}).get("content", "").strip()
-    if not reply:
-        raise RuntimeError("model returned empty content")
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            reply = json.loads(resp.read()).get("message", {}).get("content", "").strip()
+        if not reply:
+            raise RuntimeError("model returned empty content")
+    except Exception:
+        sf.llm_record(False)
+        raise
+    sf.llm_record(True)
     return reply
 
 
@@ -911,6 +916,7 @@ def run() -> int:
         from notify import notify
         notify("股票報告失敗", f"Category 4 technicals: 0/{len(WATCHLIST)} tickers, "
                                "check asr/logs/stock_technicals.log", priority=4)
+    sf.alert_if_narration_dead("Category 4 technicals", "stock_technicals.log")
     return written
 
 

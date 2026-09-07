@@ -998,6 +998,35 @@ OWNERSHIP_PROMPT = (
 )
 
 
+# ---------------------------------------------------------------------------
+# Narration health -- a wedged Ollama is invisible one call at a time: every
+# narration failure degrades a single section and the run still reports
+# success. It stayed wedged 2026-09-02..07 (llama-server evicted a model and
+# never recovered) and five days of Category 4/6 and day-range reports
+# published with no narrative at all, unalerted. The daily jobs record each
+# call here and alert once at the end of a run if most of them failed.
+# ---------------------------------------------------------------------------
+
+_llm_attempts = 0
+_llm_failures = 0
+
+
+def llm_record(ok: bool) -> None:
+    global _llm_attempts, _llm_failures
+    _llm_attempts += 1
+    if not ok:
+        _llm_failures += 1
+
+
+def alert_if_narration_dead(job: str, log_name: str) -> None:
+    """Push one ntfy alert if at least half this run's narration calls failed."""
+    if _llm_attempts and _llm_failures * 2 >= _llm_attempts:
+        from notify import notify
+        notify("股票報告降級",
+               f"{job}: {_llm_failures}/{_llm_attempts} narration calls failed -- "
+               f"check the Ollama service and asr/logs/{log_name}", priority=4)
+
+
 def _ollama_generate(prompt: str, num_predict: int = 1500) -> str:
     # lfm2.5 is also a hybrid reasoning model, but unlike qwen3:8b its
     # "think": false doesn't suppress reasoning -- it just dumps <think>
