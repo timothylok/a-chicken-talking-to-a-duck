@@ -13,13 +13,11 @@ every morning) -- our own daily observation is always the source of truth.
 
 Products: PRICEWATCH_PRODUCTS env var, comma-separated PriceSpy product ids
 (default: 13101596 "Nintendo Switch 2" +
-5774154 "Corsair Vengeance LPX White DDR4 3200MHz 2x16GB" +
 5848136 "Kingston Fury Beast Black DDR4 3200MHz 2x16GB" +
 5241360 "G.Skill Ripjaws V Black DDR4 3600MHz 2x16GB" +
 15436948 "Pokemon Pokopia (Switch 2)" +
 14576211 "The Legend of Zelda: Tears of the Kingdom (Switch 2)",
 https://pricespy.co.nz/product.php?p=13101596 /
-https://pricespy.co.nz/product.php?p=5774154 /
 https://pricespy.co.nz/product.php?p=5848136 /
 https://pricespy.co.nz/product.php?p=5241360 /
 https://pricespy.co.nz/product.php?p=15436948 /
@@ -34,13 +32,18 @@ env var, comma-separated "term|min_price" pairs (default:
 Trade Me listings expire in days-to-weeks, so a fixed listing id isn't a
 durable thing to watch -- each run re-searches the term fresh and tracks the
 cheapest current buy-now listing's price, alerting when that cheapest price
-drops day over day. min_price is enforced client-side, not passed as a
-server-side filter: Trade Me's search API silently ignores price_min/price_max
-on this endpoint (confirmed live 2026-08-10), and without a floor the
-"cheapest match" for a console search is reliably a stray accessory
-(joystick, case, charger) miscategorized under the same category path, not
-the console. Uses the thecolab-ai trademe-nz skill's CLI (no login, public
-search only).
+drops day over day. A candidate listing must clear min_price AND contain
+every word of the search term in its title: the floor alone kept picking a
+different product entirely (2026-09-08, a Pokemon Eevee Switch 1 console
+answering a "Nintendo Switch 2" watch). min_price is enforced client-side,
+not passed as a server-side filter: Trade Me's search API silently ignores
+price_min/price_max on this endpoint (confirmed live 2026-08-10), and without
+a floor the "cheapest match" for a console search is reliably a stray
+accessory (joystick, case, charger) miscategorized under the same category
+path, not the console. Uses the thecolab-ai trademe-nz skill's CLI (no login,
+public search only).
+
+A drop must be at least PRICEWATCH_MIN_DROP_PCT (default 1%) to alert.
 
 Run manually: python ops/pricewatch.py
 """
@@ -49,6 +52,7 @@ import datetime as dt
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 from zoneinfo import ZoneInfo
@@ -58,7 +62,7 @@ LOG_PATH = os.path.join(ROOT, "asr", "logs", "pricewatch.log")
 STATE_PATH = os.path.join(ROOT, "asr", "logs", "pricewatch_state.json")
 CLI = "D:/ai/thecolab-skills/skills/nz-pricewatch/scripts/cli.py"
 TRADEME_CLI = "D:/ai/thecolab-skills/skills/trademe-nz/scripts/cli.py"
-PRODUCTS = [p.strip() for p in os.environ.get("PRICEWATCH_PRODUCTS", "13101596,5774154,5848136,5241360,15436948,14576211").split(",") if p.strip()]
+PRODUCTS = [p.strip() for p in os.environ.get("PRICEWATCH_PRODUCTS", "13101596,5848136,5241360,15436948,14576211").split(",") if p.strip()]
 NZ_TZ = ZoneInfo("Pacific/Auckland")
 
 
@@ -74,6 +78,8 @@ def _parse_trademe_searches(raw: str) -> list[tuple[str, float]]:
 
 
 TRADEME_SEARCHES = _parse_trademe_searches(os.environ.get("PRICEWATCH_TRADEME_SEARCHES", "Nintendo Switch 2|400"))
+# Minimum day-over-day fall, in percent, before an alert is worth sending.
+MIN_DROP_PCT = float(os.environ.get("PRICEWATCH_MIN_DROP_PCT", "1"))
 sys.path.insert(0, os.path.join(ROOT, "ops"))
 
 logging.basicConfig(
@@ -92,7 +98,40 @@ def _run_skill(cli: str, *args: str, timeout: int = 30) -> dict:
         capture_output=True, text=True, encoding="utf-8", timeout=timeout,
         env={**os.environ, "PYTHONIOENCODING": "utf-8"},
     )
-    return json.loads(out.stdout)
+    # Surface what the CLI actually said. Left unchecked, a non-zero exit
+    # reached json.loads("") and logged 15 lines of JSONDecodeError traceback
+    # that never mentioned the real cause (2026-09-06, a delisted product id).
+    stderr = (out.stderr or "").strip()[-400:]
+    if out.returncode != 0:
+        raise RuntimeError(f"{os.path.basename(cli)} exited {out.returncode}: {stderr}")
+    try:
+        return json.loads(out.stdout)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(f"{os.path.basename(cli)} gave unparseable output ({exc}); stderr: {stderr}") from exc
+
+
+def _lowest_available_price(data: dict) -> float | None:
+    # PriceSpy's own current_lowest_price counts out-of-stock offers, so a
+    # dead listing that keeps flickering on and off the page reads as a
+    # repeated price drop (Kingston Fury 2026-09-06: a $299 OutOfStock offer
+    # vanished for a day and came back, alerting a $470.35 -> $299 "drop"
+    # that never existed). Only OutOfStock is excluded, not everything that
+    # isn't InStock -- some merchants report Unknown and are still buyable.
+    prices = [o["price"] for o in data.get("offers", [])
+              if o.get("price") is not None and o.get("stock_status") != "OutOfStock"]
+    return min(prices) if prices else None
+
+
+def _matches_query(title: str, query: str) -> bool:
+    # The min_price floor alone was letting the wrong product through: on
+    # 2026-09-08 the cheapest "Nintendo Switch 2" listing over $400 was a
+    # Pokemon Let's Go Eevee *Switch 1* console at $623.99, and the day
+    # before it was a Switch Lite -- two unrelated listings compared to each
+    # other as if the difference were a price move. Require every word of the
+    # search term in the listing title. The floor still does the accessory
+    # filtering, since cases and screen protectors name the console too.
+    words = set(re.findall(r"\w+", title.lower()))
+    return all(word in words for word in re.findall(r"\w+", query.lower()))
 
 
 def _load_state() -> dict:
@@ -104,8 +143,14 @@ def _load_state() -> dict:
 
 
 def _save_state(state: dict) -> None:
-    with open(STATE_PATH, "w", encoding="utf-8") as f:
+    # Write-then-rename. A half-written file is invalid JSON, which
+    # _load_state's ValueError guard swallows into an empty dict -- every
+    # baseline silently resets to "first run" and a day of alerts is lost
+    # with nothing but INFO lines to show for it.
+    tmp = STATE_PATH + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, STATE_PATH)
 
 
 def _check_and_alert(notify, state: dict, today: str, key: str, title: str, price: float, url: str) -> None:
@@ -113,7 +158,12 @@ def _check_and_alert(notify, state: dict, today: str, key: str, title: str, pric
     prev_price = prev.get("price") if prev else None
     prev_date = prev.get("date") if prev else None
 
-    if prev_price is not None and prev_date != today and price < prev_price:
+    # A minimum drop keeps rounding noise off the phone -- any strictly-lower
+    # price used to page, so Kingston moving $470.35 -> $470.01 was an alert.
+    # Tradeoff: the baseline moves every day, so a slow drift down in
+    # sub-threshold steps never trips it. Worth it against daily cent-level
+    # noise on half the watchlist.
+    if prev_price is not None and prev_date != today and price <= prev_price * (1 - MIN_DROP_PCT / 100):
         line = f"{title} 平咗：${prev_price:.2f} → ${price:.2f}\n{url}"
         sent = notify("價錢監察", line, priority=3)
         log.info("%s: drop $%.2f -> $%.2f, alert %s", title, prev_price, price,
@@ -134,40 +184,49 @@ def main() -> None:
     state = _load_state()
     today = dt.datetime.now(NZ_TZ).date().isoformat()
 
+    # Every observation is persisted as it is made. Saving once at the end
+    # meant a malformed payload or a crash in a later item discarded the whole
+    # run's baselines *after* its alerts had already gone out, so the next day
+    # re-alerted the same drop against a stale baseline -- precisely the
+    # milk_watch failure this module was built to avoid.
     for product_id in PRODUCTS:
         try:
             data = _run_skill(CLI, "product", product_id, "--json")
+            price = _lowest_available_price(data)
+            title = data.get("title", product_id)
+            if price is None:
+                log.warning("%s: no in-stock offer in response", product_id)
+                continue
+            _check_and_alert(notify, state, today, product_id, title, price, data.get("url", ""))
         except Exception:
-            log.exception("%s: fetch failed", product_id)
-            continue
-
-        price = data.get("current_lowest_price")
-        title = data.get("title", product_id)
-        if price is None:
-            log.warning("%s: no current_lowest_price in response", product_id)
-            continue
-
-        _check_and_alert(notify, state, today, product_id, title, price, data.get("url", ""))
+            log.exception("%s: check failed", product_id)
+        finally:
+            _save_state(state)
 
     for query, min_price in TRADEME_SEARCHES:
         key = f"trademe:{query}"
         try:
-            data = _run_skill(TRADEME_CLI, "search", query, "--type", "marketplace", "--limit", "20", "--json")
+            # 100, not 20: the API returns its own relevance order, so the
+            # cheapest of the first 20 was never the cheapest match -- and the
+            # set reshuffled daily as new listings posted, moving the baseline
+            # on its own. Sorting by price instead doesn't help; the cheapest
+            # results are all $2 screen protectors.
+            data = _run_skill(TRADEME_CLI, "search", query, "--type", "marketplace", "--limit", "100", "--json", timeout=60)
+            listings = [l for l in data.get("listings", [])
+                        if l.get("buy_now_price") is not None
+                        and l["buy_now_price"] >= min_price
+                        and _matches_query(str(l.get("title", "")), query)]
+            if not listings:
+                log.warning("trademe %s: no matching buy-now listings >= $%.2f found", query, min_price)
+                continue
+            cheapest = min(listings, key=lambda l: l["buy_now_price"])
+
+            title = f"Trade Me：{query}（{cheapest['title']}）"
+            _check_and_alert(notify, state, today, key, title, cheapest["buy_now_price"], cheapest.get("url", ""))
         except Exception:
-            log.exception("trademe %s: fetch failed", query)
-            continue
-
-        listings = [l for l in data.get("listings", [])
-                    if l.get("buy_now_price") is not None and l["buy_now_price"] >= min_price]
-        if not listings:
-            log.warning("trademe %s: no buy-now listings >= $%.2f found", query, min_price)
-            continue
-        cheapest = min(listings, key=lambda l: l["buy_now_price"])
-
-        title = f"Trade Me：{query}（{cheapest['title']}）"
-        _check_and_alert(notify, state, today, key, title, cheapest["buy_now_price"], cheapest.get("url", ""))
-
-    _save_state(state)
+            log.exception("trademe %s: check failed", query)
+        finally:
+            _save_state(state)
 
 
 if __name__ == "__main__":
