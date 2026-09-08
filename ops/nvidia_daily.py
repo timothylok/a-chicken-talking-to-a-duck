@@ -227,6 +227,25 @@ def _ollama_generate(prompt: str, num_predict: int) -> str:
         return json.loads(resp.read()).get("message", {}).get("content", "")
 
 
+_alerted = False
+
+
+def _alert(reason: str, priority: int = 4) -> None:
+    # Nothing else watches this job. The 2026-09-02..07 Ollama wedge killed
+    # four consecutive runs ("ollama digest generation failed") with no push
+    # and no report written, and it went unnoticed until a scheduled-task
+    # audit six days later. Same shape as the stock jobs' zero-write alerts.
+    # One push per broken run: an all-feeds-down run that then also hits a
+    # dead Ollama is still one thing to go and look at.
+    global _alerted
+    if _alerted:
+        log.info("further failure, alert already sent: %s", reason)
+        return
+    _alerted = True
+    from notify import notify
+    notify("NVIDIA報告失敗", f"{reason} -- check asr/logs/nvidia_daily.log", priority=priority)
+
+
 def main() -> None:
     now = dt.datetime.now(NZ_TZ)
     report_date = now.strftime("%Y-%m-%d")
@@ -235,8 +254,15 @@ def main() -> None:
     try:
         headlines = collect_headlines()
         log.info("collected %d headlines", len(headlines))
+        if not headlines:
+            # collect_headlines() logs each feed failure and returns what it
+            # has, so an empty list means every feed failed. The digest prompt
+            # falls back to "(no headlines collected)" and the model writes a
+            # report about nothing, which is worse than no report.
+            _alert("no headlines collected -- every RSS feed failed")
     except Exception:
         log.exception("headline collection failed")
+        _alert("headline collection failed")
         return
 
     date_label = now.strftime("%d %B %Y")
@@ -245,9 +271,11 @@ def main() -> None:
         digest = _ollama_generate(digest_prompt, num_predict=2200)
     except Exception:
         log.exception("ollama digest generation failed")
+        _alert("digest generation failed (Ollama)")
         return
     if not digest.strip():
         log.error("ollama returned an empty digest")
+        _alert("Ollama returned an empty digest")
         return
 
     content_prompt = CONTENT_PROMPT.format(date=date_label, digest=digest)
@@ -255,6 +283,8 @@ def main() -> None:
         content = _ollama_generate(content_prompt, num_predict=2200)
     except Exception:
         log.exception("ollama content generation failed")
+        # The digest still ships, so this is a degraded run, not a lost one.
+        _alert("content generation failed; digest-only report written", priority=3)
         content = "(content generation failed — see nvidia_daily.log; digest above is still usable)"
 
     header = f"<!-- generated {now.isoformat()} | {len(headlines)} headlines | model {OLLAMA_MODEL} -->\n\n"
