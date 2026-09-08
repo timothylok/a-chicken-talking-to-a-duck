@@ -261,11 +261,10 @@ Rotate immediately if the phone is lost or the key may have leaked; otherwise ye
 
 ### Hardening checklist
 
-Findings from the 2026-07-11 design review. 15 of 17 are closed — the full checklist
+Findings from the 2026-07-11 design review. 16 of 17 are closed — the full checklist
 with its dated implementation notes lives in `SECURITY.md` § Hardening checklist. Still open:
 
-- [ ] **Keep secrets and audio out of logs.** *(Mostly done 2026-07-16 — see SECURITY.md. Remaining: audit Vercel/Cloudflare logs for Authorization headers.)*
-- [ ] **Benchmark latency on real hardware before locking model size.** Target <3 s end-to-end; `large` on CPU is unusable. Watch the gateway function timeout on long transcriptions.
+- [ ] **Benchmark latency on real hardware before locking model size.** Target <3 s end-to-end; `large` on CPU is unusable. Watch the gateway function timeout on long transcriptions. *(Note: the "before locking model size" framing is moot — the model was locked 2026-07-15 on routing accuracy. What's left is confirming the <3 s target.)*
 
 ---
 

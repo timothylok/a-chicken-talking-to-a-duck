@@ -198,6 +198,48 @@ Notion sync's byte-offset cursor has already passed, shifting the cursor by
 the bytes removed — nothing is double-synced or lost. If the service appends
 mid-prune, the run aborts and retries the next day.
 
+## Log header audit (2026-09-09)
+
+Closes the last open item on the hardening checklist: *are `Authorization`
+headers or audio bodies reaching Vercel, Cloudflare, or local logs?* Answer:
+no, on every surface that could be inspected.
+
+**Code paths.** The gateway has 8 `console.error` calls (all in
+`gateway/api/slack.ts`); every one logs a Slack API error code or an HTTP
+status, none logs a header, body, or env value. `gateway/api/voice.ts` reads
+`authorization` (line 65) and sets `CF-Access-Client-Id/Secret` (lines 123-124)
+but never logs either. No logging call in `asr/*.py` touches a header or token.
+
+**Vercel.** Runtime-log retention on this plan is 1 hour, so a retrospective
+audit is not possible by construction — the evidence has to be generated. A
+probe request was sent to production carrying a canary value in the
+`Authorization` header (wrong key, so it 401s at `keyMatches` and writes
+nothing to `history.jsonl` or Notion). The only line Vercel recorded was:
+
+    POST /api/voice 0 [info/serverless]  dep=dpl_7zxJNDbeSd287azYpU9eU3FmZkrM
+
+No headers, no body. Full-text searches for the canary value and for `Bearer`
+over the same window returned nothing. Vercel records request metadata
+(method, path, status, duration, deployment), not request headers.
+
+**Cloudflare.** `logs/cloudflared.log` covers the whole life of the system
+(2026-07-11 → 2026-09-08, ~2 MB) at `level=info` with zero `DBG` lines. Zero
+matches for `authorization`, `bearer`, `cf-access`, `client-secret`, `token=`
+or `key=`. Note that raising cloudflared's log level to `debug` would change
+this — leave it at info.
+
+**Local.** `asr/logs/service.log`, the rest of `asr/logs/`, and the 16 MB
+`logs/ollama.log` are all clean on the same patterns. Audio capture
+(`ASR_CAPTURE_DIR`, `asr/server.py:97`) is opt-in, is **not** set in the live
+`VoiceASR` service environment, and no capture directory or audio file exists
+on disk.
+
+**Limit of this audit.** Cloudflare Access's own dashboard-side authentication
+log could not be inspected from here. It records the service token's *client
+ID* on each auth event by design; the client *secret* is never logged. Transcripts
+in `history.jsonl` are deliberate and governed by § Transcript retention — they
+are not a finding.
+
 ## Hardening checklist (2026-07-11 design review)
 
 Moved here from `CLAUDE.md` on 2026-08-27: 15 of 17 items are closed, so this is a
@@ -220,7 +262,7 @@ Findings from the 2026-07-11 design review, in priority order. Check items off a
 - [x] **Key hygiene.** *(Done 2026-07-15: timing-safe compare was already in `gateway/api/voice.ts`; added required `X-Timestamp` header (ISO 8601, ±5 min) to bound replay; rotation procedure documented under Security model. Shortcut must send the new header — see `iphone-shortcut.md` step 2.)* Never share the iOS Shortcut containing the key via iCloud.
 - [x] **Isolate ASR from agent credentials.** *(Done 2026-07-16: VoiceASR runs as virtual account `NT SERVICE\VoiceASR` via `ops/harden_voiceasr.ps1`; deny ACEs on `ops/notion.json`, `ops/ntfy.json`, `gateway/.env`; grocer cache + TMP redirected to `asr/cache`. See SECURITY.md — incl. the Authenticated Users residual risk.)* ASR service runs under a low-privilege account/container; agent credentials (Notion, Vercel hooks, quant jobs) live in a separate process the ASR service cannot read.
 - [x] **File handling safety.** *(Audited 2026-07-16 — satisfied by design, no changes needed: client filenames never read (server uses `upload.read()` only; gateway forwards raw bytes); decoding is in-memory BytesIO→PyAV, no ffmpeg CLI, no shell; `_run_skill` subprocesses use arg lists with owner-set/int-validated values; size+content-type validated at both hops, duration capped before inference. See SECURITY.md.)* Never use client-supplied filenames in paths or shell commands (path traversal / command injection via ffmpeg); validate audio before decoding.
-- [ ] **Keep secrets and audio out of logs.** *(Mostly done 2026-07-16: benchmark audio capture removed and deleted; transcript retention decided and enforced — chat 30 d, rotated logs 90 d, commands forever, via "VoiceOS Log Prune" daily task + `ops/prune_logs.py`; see SECURITY.md. Remaining: audit Vercel/Cloudflare logs for Authorization headers.)* Authorization headers and audio bodies must not appear in Vercel, Cloudflare, or local logs; decide deliberately where transcripts are stored and for how long.
+- [x] **Keep secrets and audio out of logs.** *(First pass 2026-07-16: benchmark audio capture removed and deleted; transcript retention decided and enforced — chat 30 d, rotated logs 90 d, commands forever, via "VoiceOS Log Prune" daily task + `ops/prune_logs.py`. Closed 2026-09-09 by the Vercel/Cloudflare header audit — see § Log header audit below.)* Authorization headers and audio bodies must not appear in Vercel, Cloudflare, or local logs; decide deliberately where transcripts are stored and for how long.
 
 #### Reliability / usability
 
