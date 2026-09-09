@@ -261,10 +261,14 @@ Rotate immediately if the phone is lost or the key may have leaked; otherwise ye
 
 ### Hardening checklist
 
-Findings from the 2026-07-11 design review. 16 of 17 are closed — the full checklist
-with its dated implementation notes lives in `SECURITY.md` § Hardening checklist. Still open:
+All 17 findings from the 2026-07-11 design review are closed — the full checklist
+with its dated implementation notes lives in `SECURITY.md` § Hardening checklist.
 
-- [ ] **Benchmark latency on real hardware before locking model size.** Target <3 s end-to-end; `large` on CPU is unusable. Watch the gateway function timeout on long transcriptions. *(Note: the "before locking model size" framing is moot — the model was locked 2026-07-15 on routing accuracy. What's left is confirming the <3 s target.)*
+Measured latency (2026-09-09, `SECURITY.md` § Latency benchmark): a warm matched
+voice command is ~2.1 s end-to-end (~1.9 s ASR + ~0.2 s router), inside the <3 s
+target. The Cloudflare tunnel adds nothing measurable. Cold Vercel starts (~3.5 s)
+and 7 s utterances (~3.3 s) exceed it; the chat fallback is 17-32 s because it is
+local LLM generation, which the <3 s target never covered.
 
 ---
 

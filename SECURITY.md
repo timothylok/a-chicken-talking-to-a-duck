@@ -240,6 +240,43 @@ ID* on each auth event by design; the client *secret* is never logged. Transcrip
 in `history.jsonl` are deliberate and governed by § Transcript retention — they
 are not a finding.
 
+## Latency benchmark (2026-09-09)
+
+Closes the last hardening item. Measured per hop so the budget is attributable,
+not just a single end-to-end number. Test clips were **synthesised locally**
+(Windows SAPI -> ffmpeg AAC/m4a mono 44.1 kHz, matching what iOS sends) at 2.0 s
+and 7.2 s, since the real captured clips were deleted in 2026-07-16 per the
+retention rules. Content is English, which is irrelevant to timing — Whisper
+cost tracks audio duration, not language — but it does mean these numbers
+measure the *pipeline*, not Cantonese accuracy (that is `ops/asr_bench.py`'s
+job). Each clip carried unique metadata so the gateway's 60 s body-hash dedupe
+could not 409 the repeats.
+
+| Hop | 2.0 s clip | 7.2 s clip |
+|---|---|---|
+| A. ASR direct (`localhost:9000`) | 1.25-1.48 s | 1.49-2.77 s |
+| B. + Cloudflare tunnel | 1.18-1.51 s | 1.67-1.78 s |
+| C. + Vercel gateway (full path) | 1.93 s warm, 2.79-3.52 s cold | 2.45-3.30 s |
+| Router only (matched command) | 0.21 s | — |
+| Chat fallback (Ollama, unmatched) | 16.9-32.3 s | — |
+
+**The tunnel is free.** Hop B is indistinguishable from hop A — TLS handshake is
+~0.04 s on a reused connection and ASR compute dominates. Cloudflare is not
+where latency goes, so don't optimise it.
+
+**Verdict: the <3 s target holds for the normal case and not the edges.** A warm
+matched voice command is ~1.93 s of transcription plus ~0.21 s of routing,
+about **2.1 s end-to-end**. Two things break it: a cold Vercel function adds
+roughly 0.9-1.6 s (first two runs were 2.79 s and 3.52 s before settling), and a
+7 s utterance costs ~3.3 s. Both are tolerable; neither is worth engineering
+away for a personal system.
+
+**The real outlier is the chat fallback at 17-32 s**, 6-10x over target. That is
+local LLM generation, not the ASR path, and the <3 s target was only ever about
+command routing — but it is the number a user actually feels when speech does
+not match a command, so it is the one to attack if latency ever becomes a
+complaint. A first cold ASR request also costs ~2.5 s against ~1.3 s warm.
+
 ## Hardening checklist (2026-07-11 design review)
 
 Moved here from `CLAUDE.md` on 2026-08-27: 15 of 17 items are closed, so this is a
@@ -270,5 +307,5 @@ Findings from the 2026-07-11 design review, in priority order. Check items off a
 - [x] **Health check + external uptime ping** so silent failure (sleep, Windows Update reboot, dead tunnel) gets noticed. *(Done 2026-07-12: `ops/heartbeat.ps1` via "VoiceOS Heartbeat" scheduled task every 10 min → healthchecks.io, 30-min period; /fail ping with reason on detected failure.)*
 - [x] **User feedback channel.** Push or spoken confirmation of success/failure — never silent execution. *(Done 2026-07-12: shortcut speaks the router's `reply`, with an error branch for failures.)*
 - [x] **Idempotency keys at the gateway** so double-taps/retries don't run a command twice. *(Done 2026-07-15: SHA-256 body dedupe in `gateway/api/voice.ts` — identical bytes within 60 s get 409; per-instance best-effort like the rate limit. Catches network retries; two separate recordings are two commands by design.)*
-- [ ] **Benchmark latency on real hardware before locking model size.** Target <3 s end-to-end; `large` on CPU is unusable. Watch the gateway function timeout on long transcriptions.
+- [x] **Benchmark latency on real hardware.** *(Done 2026-09-09 — see § Latency benchmark below. Warm matched command ~2.1 s end-to-end, inside the <3 s target; cold Vercel start and long utterances exceed it. The "before locking model size" framing was already moot: the model was locked 2026-07-15 on routing accuracy.)*
 - [x] **Validate Cantonese accuracy early.** *(Done 2026-07-15: capture mode + `ops/asr_bench.py` benchmark on 12 real phone clips; switched production to the `JackyHoCL/whisper-small-cantonese-yue-english-ct2` fine-tune — 100% vs 58% command routing, 3× faster. faster-whisper decodes iOS `audio/mp4` directly, no conversion needed. SenseVoice not needed unless the fine-tune regresses in daily use.)*
