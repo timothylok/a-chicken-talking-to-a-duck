@@ -483,7 +483,7 @@ def _movie_quote(lang: str = "yue") -> str:
     return f"《{pick['movie']}》，{pick['character']}話：{pick['quote']}"
 
 
-# Slack-only image generation (asr/image_gen.py subprocess, LCM on CPU).
+# Slack-only image generation (asr/image_gen.py subprocess, sd-turbo on CPU).
 # Like CREATE_REMINDER, matched by prefix in route(): the prompt is free
 # text, but it is only ever a subprocess argument and file content — never
 # a command. Slack-only because the reply channel must be able to show an
@@ -505,7 +505,7 @@ _CJK_RE = re.compile(r"[一-鿿]")
 
 
 def _translate_image_prompt(prompt: str) -> str:
-    # SD1.5's CLIP text encoder only understands English — a Cantonese
+    # sd-turbo's OpenCLIP text encoder only understands English — a Cantonese
     # prompt renders as a random pretty picture (observed: 一隻太空貓 drew a
     # girl's portrait). gemma translates as data only, same guard as the
     # headline translation; any failure falls back to the raw prompt.
