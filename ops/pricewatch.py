@@ -43,18 +43,32 @@ accessory (joystick, case, charger) miscategorized under the same category
 path, not the console. Uses the thecolab-ai trademe-nz skill's CLI (no login,
 public search only).
 
+Also watches plain retailer product URLs: PRICEWATCH_URLS env var,
+comma-separated (default: the same Aberlour 12YO at The Bottle-O Glenfield and
+Super Liquor, so a drop at either shop pages). These are shops PriceSpy does not
+index -- it covers electronics, not spirits -- so there is no skill CLI to lean
+on and the page is read directly. Only schema.org product data is parsed, never
+visible page text: both encodings of it (JSON-LD for The Bottle-O, microdata
+<meta itemprop> tags for Super Liquor) are machine-readable contracts a shop
+publishes for Google Shopping, so they carry name, price, currency *and*
+availability, and they move far less often than the surrounding markup. A page
+that stops publishing either is reported as a failure rather than guessed at.
+
 A drop must be at least PRICEWATCH_MIN_DROP_PCT (default 1%) to alert.
 
 Run manually: python ops/pricewatch.py
 """
 
 import datetime as dt
+import html
 import json
 import logging
 import os
 import re
 import subprocess
 import sys
+import urllib.parse
+import urllib.request
 from zoneinfo import ZoneInfo
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -78,6 +92,11 @@ def _parse_trademe_searches(raw: str) -> list[tuple[str, float]]:
 
 
 TRADEME_SEARCHES = _parse_trademe_searches(os.environ.get("PRICEWATCH_TRADEME_SEARCHES", "Nintendo Switch 2|400"))
+DEFAULT_URLS = (
+    "https://glenfield.shop.thebottleo.co.nz/lines/aberlour-12-year-old-double-cask-matured-700ml,"
+    "https://www.superliquor.co.nz/aberlour-12yo-double-cask-matured-single-malt-700ml"
+)
+URLS = [u.strip() for u in os.environ.get("PRICEWATCH_URLS", DEFAULT_URLS).split(",") if u.strip()]
 # Minimum day-over-day fall, in percent, before an alert is worth sending.
 MIN_DROP_PCT = float(os.environ.get("PRICEWATCH_MIN_DROP_PCT", "1"))
 sys.path.insert(0, os.path.join(ROOT, "ops"))
@@ -120,6 +139,67 @@ def _lowest_available_price(data: dict) -> float | None:
     prices = [o["price"] for o in data.get("offers", [])
               if o.get("price") is not None and o.get("stock_status") != "OutOfStock"]
     return min(prices) if prices else None
+
+
+def _schema_nodes(doc):
+    # schema.org data nests freely -- a bare object, a list, or wrapped in
+    # "@graph" -- so walk the whole document rather than guessing a shape.
+    if isinstance(doc, dict):
+        yield doc
+        for value in doc.values():
+            yield from _schema_nodes(value)
+    elif isinstance(doc, list):
+        for value in doc:
+            yield from _schema_nodes(value)
+
+
+def _first_meta(page: str, prop: str) -> str | None:
+    # First match wins: Super Liquor emits itemprop="name" twice, the product
+    # first and the brand ("Aberlour") second, so taking the last would name
+    # every watch after its distillery.
+    m = re.search(
+        rf'<meta[^>]+itemprop=["\']{prop}["\'][^>]+content=["\']([^"\']*)["\']',
+        page, re.I)
+    return html.unescape(m.group(1)).strip() if m else None
+
+
+def _scrape_schema_offer(url: str, timeout: int = 30) -> tuple[str, float, bool]:
+    """(title, price, in_stock) from a product page's schema.org data."""
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        page = resp.read().decode("utf-8", "replace")
+
+    title = price = availability = None
+    for block in re.findall(
+            r'<script[^>]+application/ld\+json[^>]*>(.*?)</script>', page, re.S):
+        try:
+            doc = json.loads(block.strip())
+        except ValueError:
+            continue  # one malformed block must not sink the others
+        for node in _schema_nodes(doc):
+            if not isinstance(node, dict) or node.get("@type") != "Product":
+                continue
+            title = title or node.get("name")
+            for offer in _schema_nodes(node.get("offers")):
+                if isinstance(offer, dict) and offer.get("price") is not None:
+                    price = float(offer["price"])
+                    availability = str(offer.get("availability", ""))
+                    break
+
+    if price is None:  # microdata fallback (Super Liquor publishes no JSON-LD)
+        raw = _first_meta(page, "price")
+        if raw is not None:
+            price = float(raw)
+            title = title or _first_meta(page, "name")
+            availability = _first_meta(page, "availability") or ""
+
+    if price is None:
+        raise RuntimeError("no schema.org price on page (markup changed?)")
+    # Availability arrives as a URL, http or https, sometimes bare. Treat only
+    # an explicit OutOfStock as unavailable, matching _lowest_available_price:
+    # some shops publish Unknown or nothing at all and are still buyable.
+    in_stock = availability.rstrip("/").rsplit("/", 1)[-1].lower() != "outofstock"
+    return html.unescape(title or url), price, in_stock
 
 
 def _matches_query(title: str, query: str) -> bool:
@@ -225,6 +305,26 @@ def main() -> None:
             _check_and_alert(notify, state, today, key, title, cheapest["buy_now_price"], cheapest.get("url", ""))
         except Exception:
             log.exception("trademe %s: check failed", query)
+        finally:
+            _save_state(state)
+
+    for url in URLS:
+        try:
+            title, price, in_stock = _scrape_schema_offer(url)
+            if not in_stock:
+                # Same rule as PriceSpy's OutOfStock offers: an unbuyable price
+                # is not a price. Skipping also freezes the baseline, so coming
+                # back in stock at the old price is not read as a drop.
+                log.info("%s: out of stock, skipped", title)
+                continue
+            # Two shops can sell the same bottle at the same price, so the host
+            # is part of the title -- otherwise the ntfy alert cannot say which
+            # one moved.
+            shop = urllib.parse.urlparse(url).hostname or url
+            _check_and_alert(notify, state, today, url,
+                             f"{title}（{shop}）", price, url)
+        except Exception:
+            log.exception("%s: check failed", url)
         finally:
             _save_state(state)
 
