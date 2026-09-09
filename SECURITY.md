@@ -271,17 +271,20 @@ roughly 0.9-1.6 s (first two runs were 2.79 s and 3.52 s before settling), and a
 7 s utterance costs ~3.3 s. Both are tolerable; neither is worth engineering
 away for a personal system.
 
-**The real outlier is the chat fallback at 17-32 s**, 6-10x over target. That is
-local LLM generation, not the ASR path, and the <3 s target was only ever about
-command routing — but it is the number a user actually feels when speech does
-not match a command, so it is the one to attack if latency ever becomes a
-complaint. A first cold ASR request also costs ~2.5 s against ~1.3 s warm.
+**The real outlier is the chat fallback**, and measuring it found a fault, not
+just a slow path: uncapped generation meant an open-ended question could run 420
+tokens / 31.3 s on a *warm* model and blow the old 30 s timeout, so a good answer
+came back as "chat engine unavailable" (one real occurrence in `service.log`
+2026-09-09). Capping the reply at 160 tokens with a last-complete-sentence trim,
+and raising the timeout to 60 s for the cold-reload case, put the worst of five
+test prompts at **14.5 s**. That is still 5x the <3 s target because it is local
+LLM generation, which the target only ever covered for command routing. A first
+cold ASR request also costs ~2.5 s against ~1.3 s warm.
 
 ## Hardening checklist (2026-07-11 design review)
 
-Moved here from `CLAUDE.md` on 2026-08-27: 15 of 17 items are closed, so this is a
-record rather than live guidance. The two still-open items are also tracked in
-`CLAUDE.md` § Hardening checklist, which is where they get worked.
+Moved here from `CLAUDE.md` on 2026-08-27: all 17 items are closed as of
+2026-09-09, so this is a record rather than live guidance.
 
 ### Hardening checklist
 

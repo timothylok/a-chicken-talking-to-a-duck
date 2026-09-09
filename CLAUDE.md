@@ -267,8 +267,9 @@ with its dated implementation notes lives in `SECURITY.md` § Hardening checklis
 Measured latency (2026-09-09, `SECURITY.md` § Latency benchmark): a warm matched
 voice command is ~2.1 s end-to-end (~1.9 s ASR + ~0.2 s router), inside the <3 s
 target. The Cloudflare tunnel adds nothing measurable. Cold Vercel starts (~3.5 s)
-and 7 s utterances (~3.3 s) exceed it; the chat fallback is 17-32 s because it is
-local LLM generation, which the <3 s target never covered.
+and 7 s utterances (~3.3 s) exceed it; the chat fallback is ~15 s worst case
+because it is local LLM generation, which the <3 s target never covered — it was
+17-32 s *and intermittently timing out* until the 2026-09-09 reply cap.
 
 ---
 
