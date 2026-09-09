@@ -46,6 +46,18 @@ OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "gemma3:4b")
 # 30 s timeout ("chat engine unavailable" in production). Defaulted back
 # to gemma3:4b; only worth revisiting on hardware with more VRAM headroom.
 OLLAMA_CHAT_MODEL = os.environ.get("OLLAMA_CHAT_MODEL", "gemma3:4b")
+# Cap the chat reply's length. Uncapped, an open question ("點解香港人咁鍾意飲奶茶
+# 呀，同我講吓歷史") ran 420 tokens / 31.3 s on a *warm* model and blew the 30 s
+# timeout below, turning a good answer into "chat engine unavailable"
+# (reproduced 2026-09-09; one real occurrence in service.log). ~160 tokens is
+# 2-4 spoken sentences, which is as much as anyone wants read aloud anyway, and
+# bounds generation to about 10 s at the ~17 tok/s this box manages.
+OLLAMA_CHAT_MAX_TOKENS = int(os.environ.get("OLLAMA_CHAT_MAX_TOKENS", "160"))
+# Cold path: OLLAMA_MAX_LOADED_MODELS=1 (needed on a 4 GB card) means any other
+# model -- a stock report's qwen3:8b, the reminder extractor -- evicts this one,
+# so the next chat pays a 13.7 s reload plus ~7 s of uncached prompt eval on top
+# of generation. Measured 27 s cold end to end, which left no headroom at 30 s.
+OLLAMA_CHAT_TIMEOUT = int(os.environ.get("OLLAMA_CHAT_TIMEOUT", "60"))
 OLLAMA_SYSTEM_PROMPT = """\
 你而家唔係一個 AI 助手。你係「周星馳」，係一個穿越咗去平行時空嘅喜劇之王，你嘅靈魂融合晒你演過嘅所有角色——由《賭聖》左頌星、《逃學威龍》周星星、《審死官》宋世傑、《鹿鼎記》韋小寶、《國產凌凌漆》凌凌漆，到《西遊記》至尊寶，全部一鑊過炒埋一碟。
 
@@ -1887,6 +1899,7 @@ def _ollama_fallback(text: str) -> dict:
         ],
         "stream": False,
         "keep_alive": "24h",
+        "options": {"num_predict": OLLAMA_CHAT_MAX_TOKENS},
     }).encode()
     req = urllib.request.Request(
         f"{OLLAMA_URL}/api/chat",
@@ -1894,13 +1907,24 @@ def _ollama_fallback(text: str) -> dict:
         headers={"Content-Type": "application/json"},
     )
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            reply = json.loads(resp.read()).get("message", {}).get("content", "")
+        with urllib.request.urlopen(req, timeout=OLLAMA_CHAT_TIMEOUT) as resp:
+            body = json.loads(resp.read())
+        reply = body.get("message", {}).get("content", "")
+        truncated = body.get("done_reason") == "length"
     except Exception as exc:
         log.error("ollama fallback failed: %s", exc)
         return {"command": None, "status": "chat_error", "reply": "chat engine unavailable"}
     # Thinking models (qwen3, deepseek-r1) wrap reasoning in <think> tags.
     reply = re.sub(r"<think>.*?</think>", "", reply, flags=re.S).strip()
+    # The cap stops mid-word, which TTS then reads out as a sentence that just
+    # dies. Fall back to the last finished sentence; if not even one finished,
+    # keep what there is rather than saying nothing.
+    if truncated:
+        # Greedy to the *last* terminator, keeping any closer that follows it so
+        # a reply ending 「…！」 doesn't lose its bracket.
+        m = re.search(r"^.*[。！？!?…][」』）)\"']*", reply, re.S)
+        if m:
+            reply = m.group(0)
     # The persona demands parenthetical stage directions and gemma3:4b keeps
     # emitting them despite the prompt's ban; TTS would read them aloud, so
     # strip them code-side (same approach as _snap_weekday).
