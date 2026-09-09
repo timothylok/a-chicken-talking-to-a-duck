@@ -1,4 +1,4 @@
-"""Image generation CLI: prompt -> PNG via sd-turbo on CPU.
+"""Image generation CLI: prompt -> PNG via DreamShaper 8 LCM on CPU.
 
 Run as a subprocess by the GENERATE_IMAGE command (asr/router.py). CPU-only
 by design: the 4 GB GPU is fully committed to Whisper plus the pinned
@@ -6,19 +6,25 @@ gemma3:4b, and loading a diffusion model there evicts them (chat and the
 morning briefing pay a cold reload). Distilled few-step models are what make
 CPU inference fit the Slack reply window at all.
 
-sd-turbo at 4 steps replaced LCM Dreamshaper v7 at 6 steps (benchmarked on
-this box 2026-09-09): 19.6 s vs 26-34 s per image, and noticeably more
-coherent on compositional prompts — LCM rendered "a cat in a spacesuit" as a
-cat's head on a jumble of suit parts. LCM held a small edge on single-subject
-detail, so this is a trade, not a clean win. sd-turbo is distilled without
-classifier-free guidance, hence guidance_scale=0.0; raising it degrades output.
+Model history, all benchmarked on this box 2026-09-09. LCM Dreamshaper v7 at
+6 steps -> sd-turbo at 4 -> here. sd-turbo was faster but its SD 2.1 base has
+weak style defaults and, being distilled without classifier-free guidance
+(guidance_scale must be 0.0), nothing pulls it back on-prompt: "a cat on the
+moon eating Mooncake" came out as a needle-felted textile cat. DreamShaper 8
+LCM keeps Dreamshaper's subject quality at ~21 s/image, near sd-turbo's ~20 s.
+
+**LCMScheduler is mandatory** — `from_pretrained` gives this repo a plain
+StableDiffusionPipeline on PNDMScheduler, and LCM weights under PNDM at 4
+steps produce etched noise. guidance_scale stays at 1.0: above 1.0 diffusers
+switches on real classifier-free guidance, which doubles UNet passes per step
+(36 s -> 58 s at 8 steps) for no gain on an LCM.
 """
 
 import argparse
 import os
 import sys
 
-MODEL = "stabilityai/sd-turbo"
+MODEL = "Lykon/dreamshaper-8-lcm"
 
 
 def _cached_snapshot() -> str | None:
@@ -64,16 +70,18 @@ def main() -> int:
             return 1
 
     import torch  # noqa: E402 (heavy imports after the offline env is set)
-    from diffusers import AutoPipelineForText2Image
+    from diffusers import AutoPipelineForText2Image, LCMScheduler
 
     # safety_checker off: it blanks anything it rejects to pure black, which
     # this CLI then saved and reported as success — a black square with a
     # "畫好喇" reply. Private single-user Slack bot, and dropping it also frees
-    # ~1.2 GB of RAM per run.
+    # ~1.2 GB of RAM per run (it is not even downloaded).
     pipe = AutoPipelineForText2Image.from_pretrained(
         source, torch_dtype=torch.float32,
         safety_checker=None, requires_safety_checker=False,
     )
+    # Not optional — see the module docstring. The repo ships PNDM.
+    pipe.scheduler = LCMScheduler.from_config(pipe.scheduler.config)
     pipe.to("cpu")
     pipe.set_progress_bar_config(disable=True)
     if args.warmup:
@@ -81,7 +89,7 @@ def main() -> int:
         return 0
 
     image = pipe(
-        prompt=args.prompt, num_inference_steps=4, guidance_scale=0.0,
+        prompt=args.prompt, num_inference_steps=4, guidance_scale=1.0,
         height=512, width=512,
     ).images[0]
     # An all-zero frame is a failed generation, not a picture — belt and braces
