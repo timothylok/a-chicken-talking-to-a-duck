@@ -1,0 +1,81 @@
+name: CI
+
+# There is no dev branch -- work lands directly on main -- so main gets the
+# full run rather than the reduced one a dev-branch workflow would use.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Deliberately absent: any deploy step. Vercel already deploys the gateway from
+# main via its own Git integration, and ops/deploy_dashboard.py publishes the
+# dashboard daily through the CLI. A deploy job here would be a second path to
+# production for the same commit.
+#
+# Also absent: ESLint and Prettier (not configured -- adding them means adopting
+# a style config that flags existing code, which is formatting, not correctness).
+
+jobs:
+  gateway:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20 # matches @types/node ^20
+          cache: npm
+          cache-dependency-path: gateway/package-lock.json
+      - run: npm ci
+        working-directory: gateway
+      - run: npm run typecheck
+        working-directory: gateway
+
+  dashboard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+      - run: npm ci
+        working-directory: dashboard
+      - run: npm run typecheck
+        working-directory: dashboard
+      # dashboard/data/ is gitignored, so latest.json is absent here.
+      # app/lib/data.ts returns [] when it can't be read, so the build
+      # succeeds against an empty dashboard -- still a real build check.
+      - run: npm run build
+        working-directory: dashboard
+
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12" # matches C:\Program Files\Python312
+      # asr/.venv is gitignored, so there is no vendored tree to walk here.
+      - name: Syntax-check every module
+        run: python -m compileall -q asr ops
+      # router.py and the ops modules are stdlib-only at module level, so this
+      # needs no venv, no torch and no CUDA. asr/server.py (faster_whisper,
+      # fastapi) and ops/calendar_sync.py (icalendar) are excluded for that
+      # reason -- compileall above still covers their syntax.
+      - name: Pure-logic assertions
+        run: python tests/pure_logic.py
+
+  generated-files:
+    # ops/githooks/pre-commit regenerates these two from COMMANDS, but only on
+    # a clone where core.hooksPath is set. Without this job they drift silently
+    # on any machine missing that config, or after a --no-verify commit.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python ops/generate_homepage.py
+      - name: CLAUDE.md and index.html must match asr/router.py
+        run: git diff --exit-code CLAUDE.md gateway/public/index.html
