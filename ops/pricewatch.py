@@ -233,21 +233,45 @@ def _save_state(state: dict) -> None:
     os.replace(tmp, STATE_PATH)
 
 
-def _check_and_alert(notify, state: dict, today: str, key: str, title: str, price: float, url: str) -> None:
+def _check_and_alert(notify, state: dict, today: str, key: str, title: str, price: float, url: str,
+                     identity: "str | None" = None) -> None:
     prev = state.get(key)
     prev_price = prev.get("price") if prev else None
     prev_date = prev.get("date") if prev else None
+    prev_identity = prev.get("identity") if prev else None
 
-    # A minimum drop keeps rounding noise off the phone -- any strictly-lower
-    # price used to page, so Kingston moving $470.35 -> $470.01 was an alert.
-    # Tradeoff: the baseline moves every day, so a slow drift down in
-    # sub-threshold steps never trips it. Worth it against daily cent-level
-    # noise on half the watchlist.
+    # A PriceSpy product id or a retailer URL names one item, so yesterday's
+    # price is the same item's price and a fall really is a price drop. A Trade
+    # Me *search* doesn't: its cheapest match is usually a different auction
+    # each day, so the two prices belong to unrelated items. Comparing them
+    # reported "平咗" for a fall nobody's price took -- $859.00 -> $840.00 on
+    # 2026-09-10 was "Nintendo Switch 2 Console + AfterPay" against a different
+    # listing entirely. Callers that can't guarantee identity pass one, and a
+    # changed identity is still worth knowing about (a cheaper listing appeared)
+    # but is reported as that, not as a price cut. A watch with no recorded
+    # identity yet re-baselines once, silently, rather than trusting a baseline
+    # whose item is unknown.
+    same_item = identity is None or identity == prev_identity
+
     if prev_price is not None and prev_date != today and price <= prev_price * (1 - MIN_DROP_PCT / 100):
-        line = f"{title} 平咗：${prev_price:.2f} → ${price:.2f}\n{url}"
-        sent = notify("價錢監察", line, priority=3)
-        log.info("%s: drop $%.2f -> $%.2f, alert %s", title, prev_price, price,
-                  "sent" if sent else "NOT sent")
+        # A minimum drop keeps rounding noise off the phone -- any strictly-lower
+        # price used to page, so Kingston moving $470.35 -> $470.01 was an alert.
+        # Tradeoff: the baseline moves every day, so a slow drift down in
+        # sub-threshold steps never trips it. Worth it against daily cent-level
+        # noise on half the watchlist.
+        if same_item:
+            line = f"{title} 平咗：${prev_price:.2f} → ${price:.2f}\n{url}"
+            sent = notify("價錢監察", line, priority=3)
+            log.info("%s: drop $%.2f -> $%.2f, alert %s", title, prev_price, price,
+                      "sent" if sent else "NOT sent")
+        elif prev_identity is not None:
+            line = f"{title} 有新平嘅盤：${prev_price:.2f} → ${price:.2f}\n{url}"
+            sent = notify("價錢監察", line, priority=3)
+            log.info("%s: cheaper listing %s -> %s, $%.2f -> $%.2f, alert %s", title,
+                      prev_identity, identity, prev_price, price, "sent" if sent else "NOT sent")
+        else:
+            log.info("%s: current $%.2f, last recorded $%.2f but no listing identity -- "
+                     "re-baselined, no alert", title, price, prev_price)
     else:
         log.info("%s: current $%.2f, last recorded $%s -- no alert", title, price,
                   f"{prev_price:.2f}" if prev_price is not None else "n/a (first run)")
@@ -255,7 +279,10 @@ def _check_and_alert(notify, state: dict, today: str, key: str, title: str, pric
     # Only record once per day so a same-day rerun (manual test, retry)
     # doesn't overwrite tomorrow's "yesterday" baseline with today's price.
     if prev_date != today:
-        state[key] = {"date": today, "price": price, "title": title}
+        entry = {"date": today, "price": price, "title": title}
+        if identity is not None:
+            entry["identity"] = identity
+        state[key] = entry
 
 
 def main() -> None:
@@ -302,7 +329,8 @@ def main() -> None:
             cheapest = min(listings, key=lambda l: l["buy_now_price"])
 
             title = f"Trade Me：{query}（{cheapest['title']}）"
-            _check_and_alert(notify, state, today, key, title, cheapest["buy_now_price"], cheapest.get("url", ""))
+            _check_and_alert(notify, state, today, key, title, cheapest["buy_now_price"],
+                             cheapest.get("url", ""), identity=str(cheapest.get("listing_id")))
         except Exception:
             log.exception("trademe %s: check failed", query)
         finally:
