@@ -29,6 +29,7 @@ DASHBOARD_DIR = os.path.join(ROOT, "dashboard")
 LOG_PATH = os.path.join(ROOT, "asr", "logs", "deploy_dashboard.log")
 
 log = logging.getLogger("deploy_dashboard")
+os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
 log.setLevel(logging.INFO)
 log.propagate = False
 if not log.handlers:

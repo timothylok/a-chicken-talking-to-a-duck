@@ -34,6 +34,7 @@ LOG_PATH = os.path.join(LOGS, "prune.log")
 CHAT_DAYS = 30
 ROTATED_LOG_DAYS = 90
 
+os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
 logging.basicConfig(
     filename=LOG_PATH, level=logging.INFO,
     format="%(asctime)s %(levelname)s %(message)s", encoding="utf-8",

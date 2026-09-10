@@ -101,6 +101,7 @@ URLS = [u.strip() for u in os.environ.get("PRICEWATCH_URLS", DEFAULT_URLS).split
 MIN_DROP_PCT = float(os.environ.get("PRICEWATCH_MIN_DROP_PCT", "1"))
 sys.path.insert(0, os.path.join(ROOT, "ops"))
 
+os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
 logging.basicConfig(
     filename=LOG_PATH, level=logging.INFO,
     format="%(asctime)s %(levelname)s %(message)s", encoding="utf-8",

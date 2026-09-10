@@ -26,6 +26,7 @@ STATE_PATH = os.path.join(ROOT, "asr", "logs", "milk_watch_state.json")
 sys.path.insert(0, os.path.join(ROOT, "asr"))
 sys.path.insert(0, os.path.join(ROOT, "ops"))
 
+os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
 logging.basicConfig(
     filename=LOG_PATH, level=logging.INFO,
     format="%(asctime)s %(levelname)s %(message)s", encoding="utf-8",
