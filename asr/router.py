@@ -718,6 +718,29 @@ def _mask_names(title: str) -> tuple[str, dict[str, str]]:
     return masked, names
 
 
+# Anything outside ASCII, accented Latin (Māori macrons — Whangārei, Ōtaki),
+# general/CJK/fullwidth punctuation and CJK ideographs. The "no English at all"
+# rule below pushes gemma3:4b off the English token for a word whose Chinese it
+# doesn't hold well, and the next-likeliest non-English token can land in a
+# different language's script entirely: "turbine" came back as the Bengali
+# transliteration টার্বাইন (twice in four tries when reproduced), "shrimp" as
+# Korean 새우, "176" in Arabic-Indic digits ١٧٦. Correct translations, wrong
+# language, and iOS TTS reads them as noise. Kana (U+3040-30FF) is excluded
+# deliberately while CJK punctuation (U+3000-303F, including the 【】 the
+# placeholders use) is kept.
+_FOREIGN_SCRIPT = re.compile(
+    "[^"
+    "\u0020-\u007E"   # ASCII
+    "\u00A0-\u024F"   # Latin-1 + Latin Extended-A/B (Maori macrons)
+    "\u2000-\u206F"   # general punctuation (dashes, quotes, ellipsis)
+    "\u3000-\u303F"   # CJK punctuation, incl. the placeholder brackets
+    "\u3400-\u4DBF"   # CJK Extension A
+    "\u4E00-\u9FFF"   # CJK Unified Ideographs
+    "\uFF00-\uFFEF"   # fullwidth forms
+    "]"
+)
+
+
 def _translate_headline(title: str) -> str:
     # iOS TTS reads English headlines poorly mid-Cantonese, so translate them
     # locally; person and place names stay in English (translating them makes
@@ -756,12 +779,30 @@ def _translate_headline(title: str) -> str:
         # The model drifts to half-width/spaced brackets — normalize back.
         return re.sub(r"[\[【（(]\s*(\d)\s*[\]】）)]", r"【\1】", line)
 
-    line = ask("")
-    if any(ph not in line for ph in names):
-        log.warning("translation dropped placeholders in %r; retrying", line)
-        line = ask("\n記住：" + "、".join(names) + "呢啲代號一定要出現喺譯文入面")
+    # Both checks run on the masked line, before the English names go back in.
+    def _fault(line: str) -> "tuple[str, str] | None":
         if any(ph not in line for ph in names):
-            raise ValueError(f"placeholders lost: {line!r}")
+            return "placeholders lost", (
+                "\n記住：" + "、".join(names) + "呢啲代號一定要出現喺譯文入面"
+            )
+        stray = _FOREIGN_SCRIPT.findall(line)
+        if stray:
+            return f"wrong script {''.join(sorted(set(stray)))!r}", (
+                "\n記住：譯文淨係准用中文字，唔准夾雜韓文、日文、印度文、"
+                "孟加拉文、阿拉伯文或者任何其他文字。"
+            )
+        return None
+
+    line = ask("")
+    fault = _fault(line)
+    if fault:
+        log.warning("translation %s in %r; retrying", fault[0], line)
+        line = ask(fault[1])
+        fault = _fault(line)
+        if fault:
+            # Skipped rather than spoken: a headline in the wrong script reads
+            # as noise through TTS, and two of three headlines still land.
+            raise ValueError(f"{fault[0]}: {line!r}")
     for placeholder, name in names.items():
         line = line.replace(placeholder, name)
     # The model occasionally invents an extra 【N】 — drop any left over.
@@ -2032,10 +2073,29 @@ def _localize_places(text: str) -> str:
     return re.sub(r"(?<=[一-鿿])\s+(?=[一-鿿])", "", text)
 
 
+# A "roman word" for pausing purposes: English plus the accented Latin that
+# Māori place names use, so Taupō and Whakatāne are broken the same way
+# Southland is -- the macron letters aren't in A-Za-z, so leaving them out
+# silently exempted exactly the names that need the pause most.
+_ROMAN = "A-Za-z'À-ɏ"
+
+
 def _pause_english(text: str) -> str:
-    # iOS TTS reading a Chinese sentence runs adjacent English words together;
-    # a Chinese comma between them forces a clear pause.
-    return re.sub(r"(?<=[A-Za-z'])[ ](?=[A-Za-z'])", "，", text)
+    # iOS TTS reading a Chinese sentence runs adjacent roman words together;
+    # a Chinese comma between them forces a clear pause. Splitting *between*
+    # words is what mangles a multi-word place name, so the commands that
+    # carry them (news, quakes, briefing) opt out via pause_english=False.
+    return re.sub(rf"(?<=[{_ROMAN}])[ ](?=[{_ROMAN}])", "，", text)
+
+
+def _pause_before_chinese(text: str) -> str:
+    # TTS also runs a roman word straight into the Chinese that follows it --
+    # "Facebook頁", "Lyttelton Port事發" come out slurred. Unlike the rule
+    # above, this never splits a name, so it applies to every spoken reply,
+    # including the pause_english=False ones that exist to protect names.
+    # Any existing separator already supplies the break, so only a bare
+    # roman-to-Chinese boundary is touched.
+    return re.sub(rf"(?<=[{_ROMAN}])[ ]*(?=[一-鿿])", "，", text)
 
 
 # The public web chat is the only unauthenticated channel, and the only one
@@ -2074,6 +2134,7 @@ def _execute(command_id: str, source: str = "voice", lang: str = "yue") -> dict:
             reply = _localize_places(reply)
             if COMMANDS[command_id].get("pause_english", True):
                 reply = _pause_english(reply)
+            reply = _pause_before_chinese(reply)
         log.info("command %s reply: %r", command_id, reply)
         result = {"command": command_id, "status": "executed", "reply": reply}
         if data is not None:
