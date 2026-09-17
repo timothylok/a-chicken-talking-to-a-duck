@@ -76,7 +76,7 @@ LOG_PATH = os.path.join(ROOT, "asr", "logs", "pricewatch.log")
 STATE_PATH = os.path.join(ROOT, "asr", "logs", "pricewatch_state.json")
 CLI = "D:/ai/thecolab-skills/skills/nz-pricewatch/scripts/cli.py"
 TRADEME_CLI = "D:/ai/thecolab-skills/skills/trademe-nz/scripts/cli.py"
-PRODUCTS = [p.strip() for p in os.environ.get("PRICEWATCH_PRODUCTS", "13101596,5848136,5241360,15436948,14576211").split(",") if p.strip()]
+PRODUCTS = [p.strip() for p in os.environ.get("PRICEWATCH_PRODUCTS", "13101596,5848136,5241360,15436948,14576211,14908596").split(",") if p.strip()]
 NZ_TZ = ZoneInfo("Pacific/Auckland")
 
 
