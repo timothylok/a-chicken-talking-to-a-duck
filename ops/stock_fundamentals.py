@@ -6,22 +6,22 @@ Defaults to STOCK_WATCHLIST (same env var as stock_daily.py) minus SPCX,
 which is excluded here: it's the SpaceX-linked ticker, not a traditional
 SEC reporting company, so it has no 10-K/proxy filings to pull from.
 
-15-section report (Timeliness Flag through Red/Yellow/Green Flags), all
+16-section report (Timeliness Flag through Red/Yellow/Green Flags), all
 anchored to one company's latest 10-K accession:
-  1. Timeliness Flag        9. Insider Ownership & Share Structure
-  2. Business in Plain English   10. Risk Factor Highlights
-  3. Key Financials          11. Durability & Moat Notes
-  4. Segment Revenue Breakdown   12. Forward Watchlist
-  5. Margin Trajectory       13. Quality of Earnings
-  6. Balance Sheet Health    14. Valuation Snapshot
-  7. Capital Allocation      15. Red/Yellow/Green Flags
-  8. Share Count Trend
+  1. Timeliness Flag         9. Insider Ownership & Share Structure
+  2. Business in Plain English  10. Management Incentives
+  3. Key Financials            11. Risk Factor Highlights
+  4. Segment Revenue Breakdown 12. Durability & Moat Notes
+  5. Margin Trajectory         13. Forward Watchlist
+  6. Balance Sheet Health      14. Quality of Earnings
+  7. Capital Allocation        15. Valuation Snapshot
+  8. Share Count Trend         16. Red/Yellow/Green Flags
 
-10 of 15 sections are fully deterministic Python (XBRL numbers + a little
+10 of 16 sections are fully deterministic Python (XBRL numbers + a little
 live market data) -- no LLM, no hallucination risk on the figures
-themselves. Only 5 sections need local-LLM synthesis grounded in filing
-text: Business (2), Risk Factor Highlights (10), Durability & Moat (11),
-Forward Watchlist (12), Insider Ownership (9).
+themselves. Only 6 sections need local-LLM synthesis grounded in filing
+text: Business (2), Insider Ownership (9), Management Incentives (10),
+Risk Factor Highlights (11), Durability & Moat (12), Forward Watchlist (13).
 
 Pipeline per ticker:
   1. SEC EDGAR company_tickers.json -> CIK
@@ -155,6 +155,7 @@ CAPEX_TAGS = [
 REPURCHASE_TAGS = [
     "PaymentsForRepurchaseOfCommonStock",
     "PaymentsForRepurchaseOfCommonStockAndPreferredStock",
+    "PaymentsForRepurchaseOfEquity",
 ]
 DIVIDEND_TAGS = ["PaymentsOfDividends", "PaymentsOfDividendsCommonStock"]
 ACQUISITION_TAGS = ["PaymentsToAcquireBusinessesNetOfCashAcquired"]
@@ -176,6 +177,29 @@ STOCKHOLDERS_EQUITY_TAGS = ["StockholdersEquity"]
 CURRENT_ASSETS_TAGS = ["AssetsCurrent"]
 CURRENT_LIABILITIES_TAGS = ["LiabilitiesCurrent"]
 DILUTED_EPS_TAGS = ["EarningsPerShareDiluted"]  # unit "USD/shares", not "USD"
+DILUTED_SHARES_TAGS = ["WeightedAverageNumberOfDilutedSharesOutstanding"]
+REPURCHASE_VALUE_TAGS = [
+    "StockRepurchasedAndRetiredDuringPeriodValue",
+    "TreasuryStockValueAcquiredCostMethod",
+    "StockRepurchasedDuringPeriodValue",
+]
+REPURCHASE_SHARES_TAGS = [
+    "StockRepurchasedAndRetiredDuringPeriodShares",
+    "TreasuryStockSharesAcquired",
+    "StockRepurchasedDuringPeriodShares",
+]
+RD_TAGS = ["ResearchAndDevelopmentExpense"]
+DA_TAGS = [
+    "DepreciationDepletionAndAmortization",
+    "DepreciationAmortizationAndAccretionNet",
+    "DepreciationAndAmortization",
+    "Depreciation",
+]
+TAX_EXPENSE_TAGS = ["IncomeTaxExpenseBenefit"]
+PRETAX_INCOME_TAGS = [
+    "IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+    "IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -337,6 +361,53 @@ def _xbrl_series(facts: dict, tags: list, accn: str, unit: str = "USD") -> "tupl
             by_end[i["end"]] = i
         return tag, sorted(by_end.values(), key=lambda i: i["end"])
     return None, []
+
+
+def _xbrl_annual_history(facts: dict, tags: list, unit: str = "USD", n: int = 5) -> "tuple[str | None, list]":
+    # _xbrl_series above is scoped to ONE accession, which only yields the
+    # fiscal years that filing happens to present. For multi-year trends
+    # (capital allocation, ROIC) pull the tag's full fact array across all
+    # filings instead: form=="10-K" only (10-Q quarter-ends are not fiscal
+    # years), deduped by "end" keeping the most-recently-filed value so a
+    # restatement wins, ascending, last n.
+    # Tag preference is by RECENCY, not by position in `tags`. Filers
+    # abandon tags: TSLA and AON both still carry
+    # DepreciationDepletionAndAmortization, but stopped populating it after
+    # 2017 in favour of DepreciationAndAmortization. Taking the first tag
+    # with any data at all silently paired 2017 D&A with 2025 capex and
+    # produced an 11x "reinvestment ratio" -- found live, 2026-09-19.
+    best = (None, [])
+    for tag in tags:
+        node = facts.get("facts", {}).get("us-gaap", {}).get(tag)
+        if not node:
+            continue
+        arr = node.get("units", {}).get(unit)
+        if not arr:
+            continue
+        by_end = {}
+        for item in arr:
+            if item.get("form") != "10-K":
+                continue
+            # For DURATION facts, "end" alone does not identify a period: AON
+            # tags a single since-2012 cumulative buyback ($26.2bn over
+            # 174.9m shares) carrying the same end date as its CY2025 annual
+            # fact ($1.0bn over 2.7m shares). Deduping on end alone mixed the
+            # cumulative value with the annual share count and implied an
+            # $810/share repurchase price against a ~$300 stock. Keep only
+            # ~one-fiscal-year durations; instants (no start) pass through.
+            if item.get("start"):
+                span = (dt.date.fromisoformat(item["end"]) - dt.date.fromisoformat(item["start"])).days
+                if not 300 <= span <= 400:
+                    continue
+            existing = by_end.get(item["end"])
+            if not existing or item.get("filed", "") >= existing.get("filed", ""):
+                by_end[item["end"]] = item
+        if not by_end:
+            continue
+        series = sorted(by_end.values(), key=lambda i: i["end"])
+        if not best[1] or series[-1]["end"] > best[1][-1]["end"]:
+            best = (tag, series)
+    return best[0], best[1][-n:]
 
 
 def _fcf_series(ocf: list, capex: list) -> list:
@@ -783,7 +854,9 @@ def _section_balance_sheet(cash, sti, debt, equity, cur_assets, cur_liab, accn: 
 
 
 def _section_capital_allocation(ocf, capex, repurchases, dividends, acquisitions,
-                                 market_cap: "float | None", accn: str, filed: str) -> str:
+                                 market_cap: "float | None", accn: str, filed: str,
+                                 facts: dict, current_price: "float | None",
+                                 shares_out: "float | None") -> str:
     def latest(series):
         return series[-1]["val"] if series else None
 
@@ -810,7 +883,178 @@ def _section_capital_allocation(ocf, capex, repurchases, dividends, acquisitions
         html += f"<p>Return yield (buybacks + dividends / market cap): {yield_pct:.1f}%.</p>"
     else:
         html += "<p>Return yield: N/A (needs both buybacks/dividends and a current market cap).</p>"
+    html += _capital_allocation_scorecard(facts, current_price, shares_out)
     html += _cite(f"SEC EDGAR XBRL company facts, 10-K accession {accn}, filed {filed}")
+    return html
+
+
+# --- Capital allocation scorecard (prompt 48) -------------------------------
+# Five graded components, each 0-2, averaged into an A-F letter. Every
+# component is deterministic XBRL arithmetic; the LLM never sees this.
+# Components that can't be computed are skipped, not scored 0 -- a filer
+# that simply doesn't tag R&D must not be marked down for it. Fewer than
+# 3 available components means no grade at all rather than a grade resting
+# on one number.
+
+_GRADE_BANDS = [(1.7, "A"), (1.3, "B"), (0.9, "C"), (0.5, "D")]
+
+
+def _aligned(*series: list) -> bool:
+    # Every series must end in the same fiscal year before their values may
+    # be divided by one another. Guards the cross-era pairing described in
+    # _xbrl_annual_history: a filer that stopped tagging one input years ago
+    # must yield N/A, never a ratio spanning two different decades.
+    ends = [dt.date.fromisoformat(x[-1]["end"]) for x in series if x]
+    if len(ends) != len(series):
+        return False
+    return (max(ends) - min(ends)).days <= 120
+
+
+def _grade_letter(avg: float) -> str:
+    for cutoff, letter in _GRADE_BANDS:
+        if avg >= cutoff:
+            return letter
+    return "F"
+
+
+def _pct_change(series: list) -> "float | None":
+    if len(series) < 2 or not series[0]["val"]:
+        return None
+    return (series[-1]["val"] - series[0]["val"]) / abs(series[0]["val"])
+
+
+def _capital_allocation_scorecard(facts: dict, current_price: "float | None",
+                                  shares_out: "float | None") -> str:
+    rows, scores = [], []
+
+    def add(name, detail, score):
+        rows.append([name, detail, "N/A" if score is None else f"{score}/2"])
+        if score is not None:
+            scores.append(score)
+
+    _, capex_h = _xbrl_annual_history(facts, CAPEX_TAGS)
+    _, da_h = _xbrl_annual_history(facts, DA_TAGS)
+    if capex_h and da_h and da_h[-1]["val"] and _aligned(capex_h, da_h):
+        ratio = abs(capex_h[-1]["val"]) / abs(da_h[-1]["val"])
+        add("Organic reinvestment (capex / D&A)", f"{ratio:.2f}x",
+            2 if ratio >= 1.2 else 1 if ratio >= 0.8 else 0)
+    else:
+        add("Organic reinvestment (capex / D&A)",
+            "N/A -- capex or D&A not tagged, or their latest tagged fiscal years differ", None)
+
+    _, rd_h = _xbrl_annual_history(facts, RD_TAGS)
+    _, rev_h = _xbrl_annual_history(facts, REVENUE_TAGS)
+    rd_growth, rev_growth = _pct_change(rd_h), _pct_change(rev_h)
+    if rd_growth is not None and rev_growth is not None and _aligned(rd_h, rev_h):
+        gap = rd_growth - rev_growth
+        add("R&D trend vs revenue trend",
+            f"R&D {rd_growth * 100:+.0f}% vs revenue {rev_growth * 100:+.0f}% over {len(rd_h)} FYs",
+            2 if gap >= 0 else 1 if gap >= -0.10 else 0)
+    else:
+        add("R&D trend vs revenue trend", "N/A -- R&D not tagged (common outside tech/pharma)", None)
+
+    # Average repurchase price, two ways. Preferred: the filer's own paired
+    # value/share repurchase tags, which give the price exactly. Fallback:
+    # cumulative spend divided by the fall in diluted share count -- that
+    # denominator is NET of issuance, so it understates shares bought and
+    # therefore overstates the price. The fallback is conservative by
+    # construction: it can make good buybacks look mediocre, never the
+    # reverse. Both paths are labelled so the two are never confused.
+    _, rep_val_h = _xbrl_annual_history(facts, REPURCHASE_VALUE_TAGS)
+    _, rep_sh_h = _xbrl_annual_history(facts, REPURCHASE_SHARES_TAGS, unit="shares")
+    _, rep_h = _xbrl_annual_history(facts, REPURCHASE_TAGS)
+    _, sh_h = _xbrl_annual_history(facts, DILUTED_SHARES_TAGS, unit="shares")
+
+    avg_price, basis = None, None
+    if rep_val_h and rep_sh_h:
+        # Sum only the fiscal years BOTH tags cover. AON tags a 2023
+        # repurchase value but no 2023 share count, so summing each series
+        # whole divided 3 years of spend by 2 years of shares and implied
+        # $810/share against a ~$300 stock.
+        val_by_end = {i["end"]: abs(i["val"]) for i in rep_val_h}
+        sh_by_end = {i["end"]: abs(i["val"]) for i in rep_sh_h}
+        common = sorted(set(val_by_end) & set(sh_by_end))
+        shares_bought = sum(sh_by_end[e] for e in common)
+        if common and shares_bought > 0:
+            avg_price = sum(val_by_end[e] for e in common) / shares_bought
+            basis = "reported repurchase value/shares over %d FY%s" % (len(common), "" if len(common) == 1 else "s")
+    if avg_price is None and rep_h and len(sh_h) >= 2 and _aligned(rep_h, sh_h):
+        retired = sh_h[0]["val"] - sh_h[-1]["val"]
+        if retired > 0:
+            avg_price = sum(abs(i["val"]) for i in rep_h) / retired
+            basis = "implied from spend / fall in diluted shares, an upper bound (net of issuance)"
+
+    if avg_price is None:
+        add("Buyback execution (avg repurchase price vs today)",
+            "N/A -- no aligned repurchase tags, or diluted share count rose over the "
+            "period so issuance outpaced buybacks", None)
+    elif current_price and avg_price > current_price * 2.5 and basis and basis.startswith("implied"):
+        # Not a verdict on execution: it means issuance (stock comp, or shares
+        # issued for an acquisition) swamped the retirement, leaving a
+        # denominator too small to divide by. Seen live on MSFT.
+        add("Buyback execution (avg repurchase price vs today)",
+            f"N/A -- implied {_fmt_usd(avg_price)}/sh exceeds 2.5x the "
+            f"{_fmt_usd(current_price)} price, so issuance offset most of the buyback "
+            f"and no meaningful average can be implied", None)
+    elif current_price:
+        disc = (current_price - avg_price) / avg_price
+        add("Buyback execution (avg repurchase price vs today)",
+            f"{_fmt_usd(avg_price)}/sh vs {_fmt_usd(current_price)} today "
+            f"({disc * 100:+.0f}%) -- {basis}",
+            2 if disc >= 0.15 else 1 if disc >= -0.05 else 0)
+    else:
+        add("Buyback execution (avg repurchase price vs today)",
+            "N/A -- no current price to compare against", None)
+
+    _, div_h = _xbrl_annual_history(facts, DIVIDEND_TAGS)
+    _, ocf_h = _xbrl_annual_history(facts, OCF_TAGS)
+    if div_h and ocf_h and capex_h and _aligned(div_h, ocf_h, capex_h):
+        fcf = ocf_h[-1]["val"] - abs(capex_h[-1]["val"])
+        if fcf > 0:
+            payout = abs(div_h[-1]["val"]) / fcf
+            add("Dividend sustainability (dividends / FCF)", f"{payout * 100:.0f}% of FCF",
+                2 if payout <= 0.50 else 1 if payout <= 0.80 else 0)
+        else:
+            add("Dividend sustainability (dividends / FCF)",
+                "dividends paid against negative free cash flow", 0)
+    else:
+        add("Dividend sustainability (dividends / FCF)",
+            "N/A -- no dividends tagged (may mean none paid), or the inputs' latest "
+            "tagged fiscal years differ", None)
+
+    # ROIC = NOPAT / (total debt + equity - cash), latest FY. The effective
+    # tax rate is taken from the same year rather than assumed.
+    _, oi_h = _xbrl_annual_history(facts, OPERATING_INCOME_TAGS)
+    _, tax_h = _xbrl_annual_history(facts, TAX_EXPENSE_TAGS)
+    _, pre_h = _xbrl_annual_history(facts, PRETAX_INCOME_TAGS)
+    _, eq_h = _xbrl_annual_history(facts, STOCKHOLDERS_EQUITY_TAGS)
+    _, cash_h = _xbrl_annual_history(facts, CASH_TAGS)
+    _, debt_h = _xbrl_annual_history(facts, LONGTERM_DEBT_COMBINED_TAGS)
+    roic = None
+    if oi_h and eq_h and pre_h and tax_h and pre_h[-1]["val"] and _aligned(oi_h, eq_h, pre_h, tax_h):
+        tax_rate = min(max(tax_h[-1]["val"] / pre_h[-1]["val"], 0.0), 0.50)
+        nopat = oi_h[-1]["val"] * (1 - tax_rate)
+        invested = (eq_h[-1]["val"] + (debt_h[-1]["val"] if debt_h else 0)
+                    - (cash_h[-1]["val"] if cash_h else 0))
+        if invested > 0:
+            roic = nopat / invested
+    if roic is not None:
+        add("Return on invested capital (latest FY)", f"{roic * 100:.1f}%",
+            2 if roic >= 0.15 else 1 if roic >= 0.08 else 0)
+    else:
+        add("Return on invested capital (latest FY)",
+            "N/A -- needs operating income, tax rate and positive invested capital", None)
+
+    html = "<h4>Capital Allocation Scorecard</h4>"
+    html += _table(["Component", "Measure", "Score"], rows)
+    if len(scores) >= 3:
+        avg = sum(scores) / len(scores)
+        html += (f"<p><strong>Overall grade: {_grade_letter(avg)}</strong> "
+                 f"({avg:.2f}/2 across {len(scores)} of 5 components; "
+                 f"unavailable components are skipped, not scored zero).</p>")
+    else:
+        html += (f"<p><strong>Overall grade: not assigned</strong> -- only {len(scores)} "
+                 f"of 5 components could be computed, too few to grade on.</p>")
     return html
 
 
@@ -986,6 +1230,21 @@ FORWARD_WATCHLIST_PROMPT = (
     "200 words.\n\n---\n{excerpt}\n---"
 )
 
+INCENTIVES_PROMPT = (
+    "You are reading the Compensation Discussion and Analysis from {ticker}'s "
+    "proxy statement (accession {accn}, filed {filed}).\n\n{excerpt}\n\n"
+    "Using ONLY this text, answer in four short bullets:\n"
+    "1. Which metrics management is actually paid on (name them).\n"
+    "2. Roughly how much of total pay is performance-based versus time-based, "
+    "if the text says.\n"
+    "3. Whether the metrics reward long-term shareholder value or short-term "
+    "results, and why.\n"
+    "4. Anything the text shows about how demanding the targets are.\n"
+    "If the text does not support a point, write 'not disclosed in this excerpt' "
+    "for that bullet rather than guessing. Do not invent figures. Under 220 words."
+)
+
+
 OWNERSHIP_PROMPT = (
     "Below is an excerpt from {ticker}'s SEC filings (EDGAR accession "
     "{accn}, filed {filed}). Using ONLY this text, report: (1) whether the "
@@ -1126,6 +1385,61 @@ def _section_ownership(ticker: str, tenk_text: str, tenk_accn: str, tenk_filed: 
     return html + _cite(f"{source}, accession {cite_accn}, filed {cite_filed}"), flagged
 
 
+_COMP_TERMS = re.compile(
+    r"base salary|annual (cash )?incentive|long[- ]term incentive|equity award|"
+    r"restricted stock|performance[- ]based|RSU|target bonus|payout|vesting|"
+    r"total shareholder return",
+    re.I,
+)
+
+
+def _extract_compensation_text(proxy_text: str, window: int = 6000) -> "str | None":
+    # _extract_section's largest-gap rule de-TOCs a 10-K well, but not a
+    # proxy: the CD&A heading also appears in the table of contents and in
+    # cross-references ("see Compensation Discussion and Analysis beginning
+    # on page 38"), and on AAPL/AON the gap rule picked those over the real
+    # section. Score each candidate window by how densely it uses actual
+    # compensation vocabulary instead -- a TOC line and a cross-reference
+    # both score near zero. The window is not guaranteed to be the CD&A
+    # narrative proper (on some filers it lands on the award tables), which
+    # is why INCENTIVES_PROMPT is written to answer only from what the
+    # excerpt supports and to say so when it does not.
+    best_score, best_text = 0, None
+    for m in re.finditer(r"Compensation\s*Discussion\s*and\s*Analysis", proxy_text, re.I):
+        chunk = proxy_text[m.start():m.start() + window]
+        score = len(_COMP_TERMS.findall(chunk))
+        if score > best_score:
+            best_score, best_text = score, chunk
+    if best_score >= 3:
+        return best_text
+    # No usable CD&A heading -- fall back to the densest incentive language
+    # anywhere in the proxy.
+    return _keyword_window(proxy_text, r"performance[- ]based|annual\s*incentive|long[- ]term\s*incentive")
+
+
+def _section_management_incentives(ticker: str, proxy_text: "str | None",
+                                   proxy_accn: "str | None", proxy_filed: "str | None") -> str:
+    # Prompt 47. Grounded entirely in the DEF 14A that _section_ownership
+    # already fetches -- no extra network call. Proxy-only by design: the
+    # 10-K does not carry a Compensation Discussion & Analysis, and guessing
+    # a pay structure from anywhere else would be inventing it.
+    if not proxy_text:
+        return ("<p>N/A -- no DEF 14A proxy statement available for this filer, and "
+                "executive compensation structure is only disclosed there.</p>")
+    excerpt = _extract_compensation_text(proxy_text)
+    if not excerpt:
+        return ("<p>N/A -- could not locate a Compensation Discussion &amp; Analysis section "
+                "in the proxy text.</p>" + _cite(f"proxy (DEF 14A), accession {proxy_accn}, filed {proxy_filed}"))
+    try:
+        reply = _ollama_generate(INCENTIVES_PROMPT.format(
+            ticker=ticker, accn=proxy_accn, filed=proxy_filed, excerpt=excerpt[:6000]))
+    except Exception as exc:
+        log.warning("%s: incentives analysis failed: %s", ticker, exc)
+        return f"<p>N/A -- local LLM analysis failed ({_esc(exc)}).</p>"
+    html, _ = _llm_html(reply)
+    return html + _cite(f"proxy (DEF 14A), accession {proxy_accn}, filed {proxy_filed}")
+
+
 # ---------------------------------------------------------------------------
 # HTML page template
 # ---------------------------------------------------------------------------
@@ -1151,6 +1465,7 @@ SECTION_TITLES = [
     "Capital Allocation",
     "Share Count Trend",
     "Insider Ownership & Share Structure",
+    "Management Incentives",
     "Risk Factor Highlights",
     "Durability & Moat Notes",
     "Forward Watchlist",
@@ -1253,9 +1568,11 @@ def build_report(ticker: str) -> "str | None":
     sec4 = _section_segment_breakdown(product_segments, geo_segments, accn, filed)
     sec5, margin_bps = _section_margins(rev, gp, oi, ni)
     sec6, leverage, net_cash = _section_balance_sheet(cash, sti, debt, equity, cur_assets, cur_liab, accn, filed)
-    sec7 = _section_capital_allocation(ocf, capex, repurchases, dividends, acquisitions, market_cap, accn, filed)
+    sec7 = _section_capital_allocation(ocf, capex, repurchases, dividends, acquisitions,
+                                       market_cap, accn, filed, facts, current_price, shares_out)
     sec8 = _section_share_count_trend(shares)
     sec9, ownership_flag = _section_ownership(ticker, tenk_text, accn, filed, proxy_text, proxy_accn, proxy_filed)
+    sec9b = _section_management_incentives(ticker, proxy_text, proxy_accn, proxy_filed)
     sec10, concentration_flag = _section_risk_highlights(ticker, risk_text, accn, filed) if risk_text else (
         "<p>N/A -- could not locate the 'Item 1A. Risk Factors' section in the filing text.</p>", False)
     sec11 = _section_moat(ticker, biz_text, risk_text, accn, filed)
@@ -1274,7 +1591,7 @@ def build_report(ticker: str) -> "str | None":
     sec15 = _section_flags(signals)
 
     return _html_page(ticker, cik, accn, filed, tenk_url, [
-        sec1, sec2, sec3, sec4, sec5, sec6, sec7, sec8, sec9,
+        sec1, sec2, sec3, sec4, sec5, sec6, sec7, sec8, sec9, sec9b,
         sec10, sec11, sec12, sec13, sec14, sec15,
     ])
 

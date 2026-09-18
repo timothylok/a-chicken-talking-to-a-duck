@@ -560,6 +560,23 @@ def _latest_ttm(qtd_series: list) -> "float | None":
     return sum(by_end[q["end"]] for q in windows[-1])
 
 
+def _year_ago_ttm(qtd_series: list) -> "float | None":
+    # The TTM window ending ~1 year before the latest one, matched by DATE
+    # rather than by taking windows[-5]. With the gap-checking above, a
+    # filer missing quarters has fewer windows than calendar quarters, so
+    # an index step of 5 can silently land 2+ years back.
+    windows = _consecutive_ttm_windows(qtd_series)
+    if len(windows) < 2:
+        return None
+    by_end = {q["end"]: q["val"] for q in qtd_series}
+    latest_end = dt.date.fromisoformat(windows[-1][-1]["end"])
+    for window in reversed(windows[:-1]):
+        age = (latest_end - dt.date.fromisoformat(window[-1]["end"])).days
+        if 330 <= age <= 400:
+            return sum(by_end[q["end"]] for q in window)
+    return None
+
+
 def _trailing_multiples(facts: dict, tenk_accn: str, current_price: float,
                          shares: "float | None", net_debt: "float | None") -> dict:
     # Same 4 multiples as _historical_multiples, but for "right now" --
@@ -586,11 +603,36 @@ def _trailing_multiples(facts: dict, tenk_accn: str, current_price: float,
     ttm_eps = _latest_ttm(eps_qtd)
     out["pe"] = current_price / ttm_eps if current_price and ttm_eps and ttm_eps > 0 else None
 
+    # Prompt 8 (comps table): PEG on TRAILING EPS growth. Not the textbook
+    # forward-growth PEG -- there is no free forward-consensus source here
+    # (the same reason forward P/E was dropped), so this is labelled
+    # "PEG (trailing)" everywhere it surfaces rather than passed off as
+    # the forward figure. Undefined when growth is <= 0: a negative
+    # denominator makes PEG flip sign and read as "cheap".
+    prior_eps = _year_ago_ttm(eps_qtd)
+    eps_growth = (
+        (ttm_eps - prior_eps) / prior_eps
+        if ttm_eps is not None and prior_eps and prior_eps > 0 else None
+    )
+    out["eps_growth"] = eps_growth
+    out["peg"] = (
+        out["pe"] / (eps_growth * 100)
+        if out["pe"] and eps_growth and eps_growth > 0 else None
+    )
+
     _, rev_full = _xbrl_full_series(facts, sf.REVENUE_TAGS)
     rev_qtd = _derive_q4(_quarterly_qtd_series(rev_full), _fy_series(rev_full))
     ttm_revenue = _latest_ttm(rev_qtd)
     out["ttm_revenue"] = ttm_revenue
     out["ev_revenue"] = ev / ttm_revenue if ev and ttm_revenue and ttm_revenue > 0 else None
+
+    # Prompt 8 (comps table): revenue growth, on the same gap-checked TTM
+    # basis as every other trailing figure here.
+    prior_revenue = _year_ago_ttm(rev_qtd)
+    out["revenue_growth"] = (
+        (ttm_revenue - prior_revenue) / prior_revenue
+        if ttm_revenue is not None and prior_revenue and prior_revenue > 0 else None
+    )
 
     _, oi_full = _xbrl_full_series(facts, sf.OPERATING_INCOME_TAGS)
     oi_qtd = _derive_q4(_quarterly_qtd_series(oi_full), _fy_series(oi_full))
@@ -617,6 +659,46 @@ def _trailing_multiples(facts: dict, tenk_accn: str, current_price: float,
                 ebitda_is_annual = True
     out["ebitda_is_annual"] = ebitda_is_annual
     out["ev_ebitda"] = ev / ttm_ebitda if ev and ttm_ebitda and ttm_ebitda > 0 else None
+
+    # Prompt 8 (comps table): leverage on the same EBITDA basis used for
+    # EV/EBITDA above, so it inherits the ebitda_is_annual caveat too.
+    out["net_debt_ebitda"] = (
+        net_debt / ttm_ebitda
+        if net_debt is not None and ttm_ebitda and ttm_ebitda > 0 else None
+    )
+
+    _, gp_full = _xbrl_full_series(facts, sf.GROSS_PROFIT_TAGS)
+    ttm_gp = _latest_ttm(_derive_q4(_quarterly_qtd_series(gp_full), _fy_series(gp_full)))
+    out["gross_margin"] = (
+        ttm_gp / ttm_revenue
+        if ttm_gp is not None and ttm_revenue and ttm_revenue > 0 else None
+    )
+
+    _, ocf_full = _xbrl_full_series(facts, sf.OCF_TAGS)
+    ttm_ocf = _latest_ttm(_derive_q4(_quarterly_qtd_series(ocf_full), _fy_series(ocf_full)))
+    _, capex_full = _xbrl_full_series(facts, sf.CAPEX_TAGS)
+    ttm_capex = _latest_ttm(_derive_q4(_quarterly_qtd_series(capex_full), _fy_series(capex_full)))
+    fcf_is_annual = False
+    if ttm_ocf is None or ttm_capex is None:
+        # Same shape as the EBITDA fallback above, and for the same reason:
+        # AAPL (confirmed live) tags OCF and capex only at Q1 granularity --
+        # one entry per year, no Q2/Q3 -- so no true 4-quarter window exists
+        # and _latest_ttm correctly refuses to sum 4 different years' Q1s.
+        # Fall back to the latest full fiscal year, flagged, not silent.
+        _, ocf_scoped = sf._xbrl_series(facts, sf.OCF_TAGS, tenk_accn)
+        _, capex_scoped = sf._xbrl_series(facts, sf.CAPEX_TAGS, tenk_accn)
+        if ocf_scoped and capex_scoped:
+            ttm_ocf, ttm_capex = ocf_scoped[-1]["val"], capex_scoped[-1]["val"]
+            fcf_is_annual = True
+        else:
+            ttm_ocf = ttm_capex = None
+    out["fcf_is_annual"] = fcf_is_annual
+    # Capex is filed as a positive cash OUTFLOW in the investing section.
+    ttm_fcf = ttm_ocf - abs(ttm_capex) if ttm_ocf is not None and ttm_capex is not None else None
+    out["fcf_yield"] = (
+        ttm_fcf / market_cap
+        if ttm_fcf is not None and market_cap and market_cap > 0 else None
+    )
 
     equity = _instant_value_at_or_before(facts, STOCKHOLDERS_EQUITY_TAGS, dt.date.today().isoformat())
     out["pb"] = market_cap / equity if market_cap and equity and equity > 0 else None
@@ -771,6 +853,46 @@ def _ticker_trailing_multiples(ticker: str) -> "dict | None":
         return None
 
 
+# The comps table (prompt 8). "peg" is trailing-growth based and
+# "net_debt_ebitda"/"ev_ebitda" inherit the annual-EBITDA fallback caveat --
+# see _trailing_multiples.
+PEER_METRICS = [
+    "pe", "peg", "ev_revenue", "ev_ebitda", "pb",
+    "revenue_growth", "gross_margin", "fcf_yield", "net_debt_ebitda",
+]
+
+PEER_METRIC_LABELS = {
+    "pe": "P/E",
+    "peg": "PEG (trailing)",
+    "ev_revenue": "EV/Revenue",
+    "ev_ebitda": "EV/EBITDA",
+    "pb": "P/B",
+    "revenue_growth": "Revenue growth (TTM YoY)",
+    "gross_margin": "Gross margin",
+    "fcf_yield": "FCF yield",
+    "net_debt_ebitda": "Net debt/EBITDA",
+}
+
+# Rendered as percentages rather than multiples.
+PEER_PCT_METRICS = {"revenue_growth", "gross_margin", "fcf_yield"}
+
+
+def _format_comps_table(ticker: str, peer_comp: dict) -> str:
+    # One "metric: own vs peer median" line per available metric. Metrics
+    # where neither side resolved are dropped rather than printed as N/A --
+    # feeding the LLM rows of nothing invites it to comment on nothing.
+    lines = []
+    for key in PEER_METRICS:
+        own, med = peer_comp.get("own_" + key), peer_comp.get("peer_median_" + key)
+        if own is None and med is None:
+            continue
+        fmt = (lambda v: "N/A" if v is None else
+               ("%.1f%%" % (v * 100) if key in PEER_PCT_METRICS else "%.1f" % v))
+        lines.append("%s: %s %s, peer median %s"
+                     % (PEER_METRIC_LABELS[key], ticker, fmt(own), fmt(med)))
+    return "\n".join(lines)
+
+
 def _peer_comparison(ticker: str, own_multiples: dict) -> dict:
     peer_tickers = _load_peers(ticker)
     if not peer_tickers:
@@ -782,18 +904,15 @@ def _peer_comparison(ticker: str, own_multiples: dict) -> dict:
             peers.append({"ticker": p, **m})
     if not peers:
         return {"peers": [], "note": "N/A -- peer data could not be fetched"}
-    peer_pe = [p["pe"] for p in peers if p.get("pe")]
-    peer_ev_rev = [p["ev_revenue"] for p in peers if p.get("ev_revenue")]
-    peer_ev_ebitda = [p["ev_ebitda"] for p in peers if p.get("ev_ebitda")]
-    return {
-        "peers": peers,
-        "peer_median_pe": statistics.median(peer_pe) if peer_pe else None,
-        "peer_median_ev_revenue": statistics.median(peer_ev_rev) if peer_ev_rev else None,
-        "peer_median_ev_ebitda": statistics.median(peer_ev_ebitda) if peer_ev_ebitda else None,
-        "own_pe": own_multiples.get("pe"),
-        "own_ev_revenue": own_multiples.get("ev_revenue"),
-        "own_ev_ebitda": own_multiples.get("ev_ebitda"),
-    }
+    # Prompt 8 asks for 9 columns. Each median is taken over only the peers
+    # that actually have that metric, so one peer missing gross margin
+    # doesn't drop it from the P/E median too.
+    out = {"peers": peers}
+    for key in PEER_METRICS:
+        vals = [p[key] for p in peers if p.get(key) is not None]
+        out["peer_median_" + key] = statistics.median(vals) if vals else None
+        out["own_" + key] = own_multiples.get(key)
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -917,13 +1036,13 @@ MULTIPLES_PROMPT = (
 )
 
 PEER_PROMPT = (
-    "Act as an equity analyst. {ticker}'s trailing P/E is {own_pe}, "
-    "EV/Revenue is {own_ev_rev}. Its peer group ({peer_list}) has a median "
-    "P/E of {peer_pe} and median EV/Revenue of {peer_ev_rev}. Using ONLY "
-    "these numbers, state whether {ticker} trades at a premium or discount "
-    "to its peers, and explain in 2 sentences why that might be justified "
-    "or not, based only on what these multiples themselves suggest -- do "
-    "not invent qualitative facts about the business not given here. "
+    "Act as an equity analyst. Below is a comparable-company table for "
+    "{ticker} against its peer group ({peer_list}). Each row gives "
+    "{ticker}'s figure and the peer median.\n\n{comps_table}\n\n"
+    "Using ONLY these numbers, state whether {ticker} trades at a premium "
+    "or discount to its peers overall, and explain in 3 sentences whether "
+    "the growth, margin and leverage rows justify that premium or discount. "
+    "Do not invent qualitative facts about the business not given here. "
     "Under 250 words."
 )
 
@@ -1036,9 +1155,9 @@ def build_valuation_report(ticker: str, cik: str, subs: dict, trigger: dict) -> 
     if peer_comp.get("peers"):
         try:
             n16 = _generate(PEER_PROMPT.format(
-                ticker=ticker, own_pe=_fmt1(peer_comp.get("own_pe")), own_ev_rev=_fmt1(peer_comp.get("own_ev_revenue")),
+                ticker=ticker,
                 peer_list=", ".join(p["ticker"] for p in peer_comp["peers"]),
-                peer_pe=_fmt1(peer_comp.get("peer_median_pe")), peer_ev_rev=_fmt1(peer_comp.get("peer_median_ev_revenue")),
+                comps_table=_format_comps_table(ticker, peer_comp),
             ))
         except Exception as exc:
             log.warning("%s: section16 narrative failed: %s", ticker, exc)
@@ -1079,7 +1198,9 @@ def build_valuation_report(ticker: str, cik: str, subs: dict, trigger: dict) -> 
         "ticker": ticker, "accn": trigger["accn"], "filed": trigger["filed"],
         "trailing": trailing, "historical": historical, "wacc_data": wacc_data,
         "dcf": dcf, "reverse": reverse, "sensitivity": sensitivity,
-        "peer_comp": peer_comp, "sop": sop,
+        "peer_comp": peer_comp,
+        "comps_table": _format_comps_table(ticker, peer_comp) if peer_comp.get("peers") else "",
+        "sop": sop,
         "n15": n15, "n16": n16, "n22": n22, "methodology": methodology,
         "current_price": price,
     }
@@ -1145,6 +1266,11 @@ def create_database(parent_page_id: str, api_key: str) -> str:
             "Trailing P/E": {"number": {"format": "number"}},
             "Trailing EV/Revenue": {"number": {"format": "number"}},
             "Trailing EV/EBITDA": {"number": {"format": "number"}},
+            "Trailing PEG": {"number": {"format": "number"}},
+            "Net Debt/EBITDA": {"number": {"format": "number"}},
+            "Revenue Growth %": {"number": {"format": "percent"}},
+            "Gross Margin %": {"number": {"format": "percent"}},
+            "FCF Yield %": {"number": {"format": "percent"}},
             "Trailing P/B": {"number": {"format": "number"}},
             "5Y Median P/E": {"number": {"format": "number"}},
             "5Y Median EV/Revenue": {"number": {"format": "number"}},
@@ -1187,15 +1313,24 @@ def _page_properties(report: dict) -> dict:
         "Filed Date": {"date": {"start": report["filed"]}},
         "Accession": {"rich_text": _rich(report["accn"])},
         "Multiples Commentary": {"rich_text": _rich(report["n15"])},
-        "Peer Comparison": {"rich_text": _rich(report["n16"])},
+        # Deterministic table first, narration second -- the numbers are the
+        # record, the commentary is the gloss.
+        "Peer Comparison": {"rich_text": _rich(
+            (report["comps_table"] + "\n\n" + report["n16"]) if report.get("comps_table") else report["n16"]
+        )},
         "Sensitivity Matrix": {"rich_text": _rich(_sensitivity_table(report.get("sensitivity")))},
         "Methodology": {"rich_text": _rich(report["methodology"])},
         "Sum-of-Parts Commentary": {"rich_text": _rich(report["n22"])},
     }
     for key, prop in (("pe", "Trailing P/E"), ("ev_revenue", "Trailing EV/Revenue"),
-                       ("ev_ebitda", "Trailing EV/EBITDA"), ("pb", "Trailing P/B")):
+                       ("ev_ebitda", "Trailing EV/EBITDA"), ("pb", "Trailing P/B"),
+                       ("peg", "Trailing PEG"), ("net_debt_ebitda", "Net Debt/EBITDA")):
         if trailing.get(key) is not None:
             props[prop] = {"number": round(trailing[key], 2)}
+    for key, prop in (("revenue_growth", "Revenue Growth %"), ("gross_margin", "Gross Margin %"),
+                       ("fcf_yield", "FCF Yield %")):
+        if trailing.get(key) is not None:
+            props[prop] = {"number": round(trailing[key], 4)}
     for key, prop in (("pe", "5Y Median P/E"), ("ev_revenue", "5Y Median EV/Revenue")):
         if historical.get(key) is not None:
             props[prop] = {"number": round(historical[key], 2)}

@@ -315,6 +315,139 @@ def _inventory_table(rows: list, note: "str | None") -> str:
 # Section 6: debt maturity schedule -- 100% deterministic
 # ---------------------------------------------------------------------------
 
+# --- Accounting quality scan (prompt 46) ------------------------------------
+# Zero LLM calls, in keeping with this tier's sections 4-6. Scores the three
+# signals this script did not already compute -- the earnings-to-cash-flow
+# gap, how often "one-time" charges recur, and capitalisation aggressiveness
+# -- then folds in the DSO, inventory and goodwill readings the caller has
+# already produced, so the composite reflects all six rather than restating
+# work. Each signal contributes 0 (clean), 1 (watch) or 2 (concern); the
+# 1-10 grade is 10 minus the share of the available penalty actually
+# incurred, so a filer that only supports three signals is graded on three,
+# never penalised for the ones it does not disclose.
+
+ONE_TIME_CHARGE_TAGS = [
+    "RestructuringCharges",
+    "GoodwillImpairmentLoss",
+    "ImpairmentOfIntangibleAssetsExcludingGoodwill",
+    "AssetImpairmentCharges",
+]
+CAPITALIZED_SOFTWARE_TAGS = [
+    "CapitalizedComputerSoftwareAdditions",
+    "PaymentsToDevelopSoftware",
+]
+
+
+def _section_accounting_quality(facts: dict, accn: str, dso: dict,
+                                 inventory: dict, goodwill: dict) -> dict:
+    signals, penalty, available = [], 0, 0
+
+    def add(name, detail, score):
+        nonlocal penalty, available
+        signals.append({"name": name, "detail": detail,
+                        "score": None if score is None else score})
+        if score is not None:
+            penalty += score
+            available += 2
+
+    # 1. Earnings vs cash flow. Net income persistently above operating cash
+    #    flow is the classic accrual-quality warning.
+    _, ni = sf._xbrl_annual_history(facts, sf.NET_INCOME_TAGS, n=3)
+    _, ocf = sf._xbrl_annual_history(facts, sf.OCF_TAGS, n=3)
+    ni_by, ocf_by = {i["end"]: i["val"] for i in ni}, {i["end"]: i["val"] for i in ocf}
+    common = sorted(set(ni_by) & set(ocf_by))
+    if len(common) >= 2:
+        ratios = [ni_by[e] / ocf_by[e] for e in common if ocf_by[e]]
+        if ratios:
+            latest = ratios[-1]
+            worsening = len(ratios) >= 2 and ratios[-1] > ratios[0]
+            detail = ("NI/OCF %.2f in %s (from %.2f in %s)"
+                      % (latest, common[-1][:4], ratios[0], common[0][:4]))
+            add("Earnings vs cash flow", detail,
+                2 if latest > 1.2 else 1 if latest > 1.0 or worsening else 0)
+        else:
+            add("Earnings vs cash flow", "N/A -- operating cash flow is zero in every year matched", None)
+    else:
+        add("Earnings vs cash flow",
+            "N/A -- net income and operating cash flow do not share enough fiscal years", None)
+
+    # 2. "One-time" charges that are not one-time. Counts the fiscal years in
+    #    the last 5 carrying a restructuring or impairment charge.
+    years = set()
+    for tag_group in (ONE_TIME_CHARGE_TAGS,):
+        for tag in tag_group:
+            _, hist = sf._xbrl_annual_history(facts, [tag], n=5)
+            years.update(i["end"] for i in hist if i["val"])
+    if years:
+        n = len(years)
+        add("Recurring 'one-time' charges",
+            "%d of the last 5 fiscal years carry a restructuring or impairment charge" % n,
+            2 if n >= 4 else 1 if n >= 2 else 0)
+    else:
+        add("Recurring 'one-time' charges",
+            "none tagged in the last 5 fiscal years", 0)
+
+    # 3. Capitalisation aggressiveness. Capitalised software growing far
+    #    faster than revenue means more cost moved off the income statement.
+    _, capsw = sf._xbrl_annual_history(facts, CAPITALIZED_SOFTWARE_TAGS, n=5)
+    _, rev = sf._xbrl_annual_history(facts, sf.REVENUE_TAGS, n=5)
+    if len(capsw) >= 2 and len(rev) >= 2 and sf._aligned(capsw, rev):
+        cg, rg = sf._pct_change(capsw), sf._pct_change(rev)
+        if cg is not None and rg is not None:
+            add("Capitalisation aggressiveness",
+                "capitalised software %+.0f%% vs revenue %+.0f%%" % (cg * 100, rg * 100),
+                2 if cg - rg > 0.50 else 1 if cg - rg > 0.20 else 0)
+        else:
+            add("Capitalisation aggressiveness", "N/A -- insufficient history", None)
+    else:
+        add("Capitalisation aggressiveness",
+            "N/A -- no capitalised-software tag (most filers outside software do not report one)", None)
+
+    # 4-6. Fold in what this tier already computed, rather than recomputing.
+    if dso.get("rising") is None:
+        add("Receivables (DSO) trend", "N/A -- insufficient DSO history", None)
+    else:
+        add("Receivables (DSO) trend",
+            "rising" if dso["rising"] else "flat or falling", 2 if dso["rising"] else 0)
+
+    if inventory.get("rising") is None:
+        add("Inventory vs revenue trend", inventory.get("note") or "N/A -- insufficient history", None)
+    else:
+        add("Inventory vs revenue trend",
+            "rising" if inventory["rising"] else "flat or falling", 2 if inventory["rising"] else 0)
+
+    if goodwill.get("pct_of_equity") is None:
+        add("Goodwill as % of equity", "N/A -- goodwill or equity not tagged", None)
+    else:
+        pct = goodwill["pct_of_equity"]
+        add("Goodwill as % of equity", "%.0f%%" % pct,
+            2 if pct > 30 else 1 if pct > 15 else 0)
+
+    if available == 0:
+        return {"signals": signals, "grade": None,
+                "basis": "Not graded -- none of the six signals could be computed for this filer."}
+    grade = round(10 - (penalty / available) * 9, 1)
+    return {
+        "signals": signals,
+        "grade": grade,
+        "basis": ("Graded on %d of 6 signals (%d penalty points of a possible %d). "
+                  "10 = cleanest. Signals a filer does not disclose are excluded from "
+                  "the denominator rather than scored as clean or as concerns."
+                  % (available // 2, penalty, available)),
+    }
+
+
+def _accounting_quality_table(scan: dict) -> str:
+    lines = ["%s: %s%s" % (sig["name"], sig["detail"],
+                            "" if sig["score"] is None else "  [%d/2]" % sig["score"])
+             for sig in scan["signals"]]
+    if scan["grade"] is not None:
+        lines.append("")
+        lines.append("Accounting quality grade: %.1f/10" % scan["grade"])
+    lines.append(scan["basis"])
+    return "\n".join(lines)
+
+
 def _section_debt_maturity(facts: dict, accn: str) -> dict:
     buckets = {}
     for key, tags in DEBT_MATURITY_TAGS.items():
@@ -380,15 +513,21 @@ def build_report(ticker: str, cik: str, tenk: dict) -> "dict | None":
         auditor_gc = {"going_concern": "N/A -- could not fetch 10-K text.",
                       "auditor_changes": "N/A -- could not fetch 10-K text."}
 
+    goodwill = _section_goodwill(ticker, facts, accn, tenk_text, filed)
+    dso = _section_dso_trend(facts, accn)
+    inventory = _section_inventory_trend(facts, accn)
+    accounting_quality = _section_accounting_quality(facts, accn, dso, inventory, goodwill)
+
     return {
         "ticker": ticker, "accn": accn, "filed": filed, "tenk_url": tenk_url,
         "top_risks": top_risks,
         "off_balance_sheet": off_balance_sheet,
-        "goodwill": _section_goodwill(ticker, facts, accn, tenk_text, filed),
-        "dso": _section_dso_trend(facts, accn),
-        "inventory": _section_inventory_trend(facts, accn),
+        "goodwill": goodwill,
+        "dso": dso,
+        "inventory": inventory,
         "debt_maturity": _section_debt_maturity(facts, accn),
         "auditor_gc": auditor_gc,
+        "accounting_quality": accounting_quality,
     }
 
 
@@ -456,6 +595,8 @@ def create_database(parent_page_id: str, api_key: str) -> str:
             "Debt Due in 24mo": {"number": {"format": "number"}},
             "Refinancing Risk Flag": {"select": {"options": [{"name": "Flagged"}, {"name": "Clear"}]}},
             "Debt Maturity Basis": {"rich_text": {}},
+            "Accounting Quality": {"rich_text": {}},
+            "Accounting Quality Grade": {"number": {"format": "number"}},
             "Going Concern": {"rich_text": {}},
             "Auditor Changes": {"rich_text": {}},
         },
@@ -475,7 +616,10 @@ def _page_properties(report: dict) -> dict:
         "DSO Detail": {"rich_text": _rich(_dso_table(dso["rows"]))},
         "Inventory Detail": {"rich_text": _rich(_inventory_table(inventory["rows"], inventory.get("note")))},
         "Debt Maturity Basis": {"rich_text": _rich(debt["basis"])},
+        "Accounting Quality": {"rich_text": _rich(_accounting_quality_table(report["accounting_quality"]))},
         "Going Concern": {"rich_text": _rich(report["auditor_gc"]["going_concern"])},
+        **({"Accounting Quality Grade": {"number": report["accounting_quality"]["grade"]}}
+           if report["accounting_quality"]["grade"] is not None else {}),
         "Auditor Changes": {"rich_text": _rich(report["auditor_gc"]["auditor_changes"])},
     }
     if goodwill.get("pct_of_equity") is not None:

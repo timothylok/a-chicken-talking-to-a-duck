@@ -165,6 +165,40 @@ def _ema(closes: list, period: int) -> "float | None":
     return ema
 
 
+def _macd(closes: list, fast: int = 12, slow: int = 26, signal: int = 9) -> "dict | None":
+    # Standard 12/26/9. Needs slow+signal bars before the signal line itself
+    # has seen a full window, so it returns None rather than a value derived
+    # from a half-filled EMA.
+    if len(closes) < slow + signal:
+        return None
+
+    def ema_series(vals, period):
+        k = 2 / (period + 1)
+        out, ema = [], sum(vals[:period]) / period
+        out.append(ema)
+        for v in vals[period:]:
+            ema = v * k + ema * (1 - k)
+            out.append(ema)
+        return out
+
+    fast_s, slow_s = ema_series(closes, fast), ema_series(closes, slow)
+    # Align: the fast series starts earlier, so trim its head.
+    fast_s = fast_s[len(fast_s) - len(slow_s):]
+    macd_line = [f - sl for f, sl in zip(fast_s, slow_s)]
+    if len(macd_line) < signal:
+        return None
+    signal_line = ema_series(macd_line, signal)
+    hist = macd_line[-1] - signal_line[-1]
+    prev_hist = (macd_line[-2] - signal_line[-2]) if len(macd_line) >= 2 and len(signal_line) >= 2 else None
+    return {
+        "macd": macd_line[-1],
+        "signal": signal_line[-1],
+        "histogram": hist,
+        "bullish": hist > 0,
+        "turning": None if prev_hist is None else (hist > 0) != (prev_hist > 0),
+    }
+
+
 def _rolling_sma(closes: list, period: int) -> list:
     # Same math as _sma, but returns the full per-bar series (for chart
     # overlay lines) instead of only the latest value.
@@ -486,18 +520,162 @@ def _section_earnings_volatility(ticker: str, daily: dict) -> dict:
 # Report assembly
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Monthly chart read + multi-timeframe alignment (prompt 26)
+# ---------------------------------------------------------------------------
+
+def _section_monthly(ticker: str, monthly: dict) -> dict:
+    closes = monthly["closes"]
+    close = closes[-1] if closes else None
+    sma20, sma50 = _sma(closes, 20), _sma(closes, 50)   # ~20 and ~50 months
+    rsi = _rsi(closes, 14)
+    macd = _macd(closes)
+    trend = None
+    if close and sma20 and sma50:
+        trend = "up" if close > sma20 > sma50 else "down" if close < sma20 < sma50 else "mixed"
+    return {
+        "close": close, "sma20m": sma20, "sma50m": sma50, "rsi14m": rsi,
+        "macd": macd, "trend": trend,
+        "bars": len(closes),
+    }
+
+
+def _timeframe_trend(close, fast, slow) -> "str | None":
+    # One rule applied identically to all three timeframes, so "aligned"
+    # means the same thing on each rather than three different tests.
+    if close is None or fast is None or slow is None:
+        return None
+    if close > fast > slow:
+        return "up"
+    if close < fast < slow:
+        return "down"
+    return "mixed"
+
+
+def _section_alignment(monthly: dict, weekly: dict, daily: dict) -> dict:
+    # Deterministic: no LLM. Prompt 26 asks whether the timeframes agree or
+    # conflict, which is a comparison, not a judgement call.
+    tf = {
+        "monthly": monthly.get("trend"),
+        "weekly": _timeframe_trend(weekly.get("close"), weekly.get("ema50w"), weekly.get("ema200w")),
+        "daily": _timeframe_trend(daily.get("price") or daily.get("close"),
+                                   daily.get("sma50"), daily.get("sma200")),
+    }
+    known = [v for v in tf.values() if v]
+    if not known:
+        verdict = "N/A -- not enough history on any timeframe"
+    elif len(set(known)) == 1 and known[0] != "mixed":
+        verdict = "Aligned %s across %s" % (known[0], ", ".join(k for k, v in tf.items() if v))
+    elif "up" in known and "down" in known:
+        verdict = "Conflicting: " + ", ".join("%s %s" % (k, v) for k, v in tf.items() if v)
+    else:
+        verdict = "Partially aligned: " + ", ".join("%s %s" % (k, v) for k, v in tf.items() if v)
+    return {"timeframes": tf, "verdict": verdict}
+
+
+# ---------------------------------------------------------------------------
+# Seasonality (prompt 30) -- 100% deterministic, no LLM
+# ---------------------------------------------------------------------------
+
+_MONTH_NAMES = ["January", "February", "March", "April", "May", "June",
+                "July", "August", "September", "October", "November", "December"]
+
+
+def _section_seasonality(monthly: dict, min_years: int = 5) -> dict:
+    # Month-over-month returns from the monthly bars. Needs at least
+    # min_years observations for a given month before reporting it -- a
+    # "100% win rate" computed from two Januaries is noise, not a pattern.
+    closes, dates = monthly["closes"], monthly["dates"]
+    if len(closes) < 2:
+        return {"rows": [], "note": "N/A -- insufficient monthly history."}
+    # Refuse to compute monthly seasonality from bars that are not monthly.
+    # Yahoo downsamples long ranges without saying so, and quarterly bars
+    # labelled as months would silently produce a 4-row "seasonality" table.
+    gaps = sorted((dates[i] - dates[i - 1]).days for i in range(1, len(dates)))
+    median_gap = gaps[len(gaps) // 2]
+    if median_gap > 45:
+        return {"rows": [], "note": "N/A -- price feed returned %d-day bars, not monthly." % median_gap}
+    by_month = {}
+    for i in range(1, len(closes)):
+        if not closes[i - 1]:
+            continue
+        ret = (closes[i] - closes[i - 1]) / closes[i - 1]
+        month = int(str(dates[i])[5:7])
+        by_month.setdefault(month, []).append(ret)
+    rows = []
+    for m in range(1, 13):
+        rets = by_month.get(m, [])
+        if len(rets) < min_years:
+            continue
+        wins = sum(1 for r in rets if r > 0)
+        rows.append({
+            "month": _MONTH_NAMES[m - 1],
+            "n": len(rets),
+            "avg_return": sum(rets) / len(rets),
+            "win_rate": wins / len(rets),
+            "worst": min(rets),
+        })
+    if not rows:
+        return {"rows": [], "note": "N/A -- fewer than %d years of history for any month." % min_years}
+    best = max(rows, key=lambda r: r["avg_return"])
+    worst = min(rows, key=lambda r: r["avg_return"])
+    return {
+        "rows": rows,
+        "note": ("Strongest month %s (%+.1f%% average, %.0f%% win rate over %d years); "
+                 "weakest %s (%+.1f%% average, %.0f%% win rate over %d years). "
+                 "Past seasonality is a base rate, not a forecast."
+                 % (best["month"], best["avg_return"] * 100, best["win_rate"] * 100, best["n"],
+                    worst["month"], worst["avg_return"] * 100, worst["win_rate"] * 100, worst["n"])),
+    }
+
+
+def _seasonality_table(seasonality: dict) -> str:
+    if not seasonality["rows"]:
+        return seasonality["note"]
+    lines = ["%-10s n=%-3d avg %+6.2f%%  win %3.0f%%  worst %+6.1f%%"
+             % (r["month"], r["n"], r["avg_return"] * 100, r["win_rate"] * 100, r["worst"] * 100)
+             for r in seasonality["rows"]]
+    lines.append("")
+    lines.append(seasonality["note"])
+    return "\n".join(lines)
+
+
 def build_report(ticker: str, spy_daily: dict) -> "dict | None":
     try:
         weekly = _fetch_series(ticker, "10y", "1wk")
         daily = _fetch_series(ticker, "2y", "1d")
+        # Prompt 26 asks for a monthly timeframe too, and prompt 30's
+        # seasonality wants as many completed months as possible. 30y, NOT
+        # "max": Yahoo silently downsamples range=max&interval=1mo to
+        # QUARTERLY bars (AAPL came back with 169 bars spaced 91 days apart,
+        # only Mar/Jun/Sep/Dec), and for a short-lived ticker it ignores the
+        # interval altogether (SPCX returned 475 bars spanning 3 months).
+        # 30y is the longest range that still honours 1mo. Verified live
+        # 2026-09-19.
     except Exception as exc:
         log.error("%s: price fetch failed: %s", ticker, exc)
         return None
+    # Fetched separately and non-fatally: the weekly/daily pair is what this
+    # report has always needed, so a monthly fetch failure must degrade the
+    # two new sections rather than drop the whole ticker. Yahoo/SEC timeouts
+    # are routine here (12 absorbed retries over three days, 2026-09-17).
+    try:
+        monthly = _fetch_series(ticker, "30y", "1mo")
+    except Exception as exc:
+        log.warning("%s: monthly fetch failed, monthly/seasonality N/A: %s", ticker, exc)
+        monthly = {"closes": [], "dates": [], "highs": [], "lows": [],
+                   "opens": [], "volumes": []}
+    weekly_sec = _section_weekly(ticker, weekly)
+    daily_sec = _section_daily(ticker, daily)
+    monthly_sec = _section_monthly(ticker, monthly)
     return {
         "ticker": ticker,
         "currency": daily.get("currency") or weekly.get("currency") or "",
-        "weekly": _section_weekly(ticker, weekly),
-        "daily": _section_daily(ticker, daily),
+        "monthly": monthly_sec,
+        "alignment": _section_alignment(monthly_sec, weekly_sec, daily_sec),
+        "seasonality": _section_seasonality(monthly),
+        "weekly": weekly_sec,
+        "daily": daily_sec,
         "volume": _section_volume(ticker, daily),
         "rs": _section_relative_strength(ticker, daily, spy_daily),
         "earnings": _section_earnings_volatility(ticker, daily),
@@ -531,6 +709,8 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
 {page_footer}"""
 
 SECTION_TITLES = [
+    "Monthly Chart Read & Timeframe Alignment",
+    "Seasonality",
     "Weekly Chart Read",
     "Daily Chart Read for Swing Entries",
     "Volume & Accumulation",
@@ -629,6 +809,23 @@ def _html_page(report: dict) -> str:
     currency = f" {report['currency']}" if report.get("currency") else ""
     w, d, v, rs, e = report["weekly"], report["daily"], report["volume"], report["rs"], report["earnings"]
 
+    mo, al, se = report["monthly"], report["alignment"], report["seasonality"]
+    monthly_rsi_text = _fmt(mo["rsi14m"], digits=1)
+    macd = mo.get("macd") or {}
+    sec_m = sf._table2(["Metric", "Value"], [
+        ("Monthly Close", _fmt(mo["close"], currency)),
+        ("20-Month SMA", _fmt(mo["sma20m"], currency)),
+        ("50-Month SMA", _fmt(mo["sma50m"], currency)),
+        ("14-Period Monthly RSI",
+         (monthly_rsi_text, sf._colored_span(monthly_rsi_text, sf._rsi_color(mo["rsi14m"])))),
+        ("MACD (12/26/9)", _fmt(macd.get("macd"), digits=2)),
+        ("MACD Signal", _fmt(macd.get("signal"), digits=2)),
+        ("MACD Histogram", _fmt(macd.get("histogram"), digits=2)),
+        ("Monthly Bars Available", str(mo["bars"])),
+    ]) + f'<p><strong>Timeframe alignment:</strong> {sf._esc(al["verdict"])}</p>'
+
+    sec_s = _text_html(_seasonality_table(se))
+
     weekly_rsi_text = _fmt(w["rsi14w"], digits=1)
     sec1 = sf._table2(["Metric", "Value"], [
         ("Weekly Close", _fmt(w["close"], currency)),
@@ -710,7 +907,7 @@ def _html_page(report: dict) -> str:
     sections_html = "".join(
         sf._card(f"{i}. {sf._esc(title)}", body)
         for i, (title, body) in enumerate(
-            zip(SECTION_TITLES, [sec1, sec2, sec3, sec4, sec5, sec6]), start=1
+            zip(SECTION_TITLES, [sec_m, sec_s, sec1, sec2, sec3, sec4, sec5, sec6]), start=1
         )
     )
     meta = (
@@ -804,6 +1001,10 @@ def create_database(parent_page_id: str, api_key: str) -> str:
             "52W Low": {"number": {"format": "number"}},
             "Weekly Support": {"number": {"format": "number"}},
             "Weekly Resistance": {"number": {"format": "number"}},
+            "Timeframe Alignment": {"rich_text": {}},
+            "Seasonality": {"rich_text": {}},
+            "Monthly RSI": {"number": {"format": "number"}},
+            "MACD Histogram": {"number": {"format": "number"}},
             "Weekly Read": {"rich_text": {}},
             "Price": {"number": {"format": "number"}},
             "SMA50": {"number": {"format": "number"}},
@@ -830,9 +1031,12 @@ def create_database(parent_page_id: str, api_key: str) -> str:
 
 def _page_properties(report: dict, when: dt.datetime) -> dict:
     w, d, v, rs, e = report["weekly"], report["daily"], report["volume"], report["rs"], report["earnings"]
+    mo, al, se = report["monthly"], report["alignment"], report["seasonality"]
     props = {
         "Ticker": {"title": _rich(report["ticker"])},
         "Date": {"date": {"start": when.date().isoformat()}},
+        "Timeframe Alignment": {"rich_text": _rich(al["verdict"])},
+        "Seasonality": {"rich_text": _rich(_seasonality_table(se))},
         "Weekly Read": {"rich_text": _rich(w["read"])},
         "Daily Read": {"rich_text": _rich(d["read"])},
         "Setup": {"select": {"name": d["setup"]}},
@@ -849,6 +1053,8 @@ def _page_properties(report: dict, when: dt.datetime) -> dict:
         "Price": d["price"], "SMA50": d["sma50"], "SMA200": d["sma200"], "RSI14": d["rsi14"],
         "Daily Support": d["support"], "Daily Resistance": d["resistance"],
         "20D Volume MA": v["vol_ma20"],
+        "Monthly RSI": mo["rsi14m"],
+        "MACD Histogram": (mo.get("macd") or {}).get("histogram"),
         "RS 3M pp": rs["rs_3m_diff"], "RS 6M pp": rs["rs_6m_diff"],
     }
     for name, val in numeric.items():
