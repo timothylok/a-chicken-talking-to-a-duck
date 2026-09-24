@@ -253,6 +253,7 @@ def _check_and_alert(notify, state: dict, today: str, key: str, title: str, pric
     # identity yet re-baselines once, silently, rather than trusting a baseline
     # whose item is unknown.
     same_item = identity is None or identity == prev_identity
+    alert_failed = False
 
     if prev_price is not None and prev_date != today and price <= prev_price * (1 - MIN_DROP_PCT / 100):
         # A minimum drop keeps rounding noise off the phone -- any strictly-lower
@@ -263,11 +264,13 @@ def _check_and_alert(notify, state: dict, today: str, key: str, title: str, pric
         if same_item:
             line = f"{title} 平咗：${prev_price:.2f} → ${price:.2f}\n{url}"
             sent = notify("價錢監察", line, priority=3)
+            alert_failed = not sent
             log.info("%s: drop $%.2f -> $%.2f, alert %s", title, prev_price, price,
                       "sent" if sent else "NOT sent")
         elif prev_identity is not None:
             line = f"{title} 有新平嘅盤：${prev_price:.2f} → ${price:.2f}\n{url}"
             sent = notify("價錢監察", line, priority=3)
+            alert_failed = not sent
             log.info("%s: cheaper listing %s -> %s, $%.2f -> $%.2f, alert %s", title,
                       prev_identity, identity, prev_price, price, "sent" if sent else "NOT sent")
         else:
@@ -279,7 +282,14 @@ def _check_and_alert(notify, state: dict, today: str, key: str, title: str, pric
 
     # Only record once per day so a same-day rerun (manual test, retry)
     # doesn't overwrite tomorrow's "yesterday" baseline with today's price.
-    if prev_date != today:
+    # An alert that was attempted and failed to send leaves the baseline alone
+    # too: recording it anyway retired the drop after one silent loss, as a
+    # timed-out ntfy POST did to a real $830.96 -> $780.00 Trade Me listing on
+    # 2026-09-23. Keeping yesterday's baseline re-raises it on the next run.
+    if alert_failed:
+        log.warning("%s: baseline left at $%.2f -- alert failed, will retry next run",
+                    title, prev_price)
+    elif prev_date != today:
         entry = {"date": today, "price": price, "title": title}
         if identity is not None:
             entry["identity"] = identity

@@ -99,12 +99,12 @@ for label, ok in [
 # --- price-watch listing identity -------------------------------------------
 # A Trade Me search's cheapest match is a different auction most days, so a
 # fall between two observations is only a price cut when it's the same listing.
-def alert_for(prev, price, identity):
+def alert_for(prev, price, identity, delivered=True):
     sent = []
 
     def notify(title, line, priority=3):
         sent.append(line)
-        return True
+        return delivered
 
     state = {"k": dict(prev)} if prev else {}
     pw._check_and_alert(notify, state, "2026-09-11", "k", "T", price, "u", identity=identity)
@@ -147,6 +147,18 @@ sent, st = alert_for({"date": "2026-09-11", "price": 840.0, "title": "T", "ident
                      700.0, "222")
 check_true("same-day rerun sends nothing", not sent)
 check("same-day rerun leaves the baseline alone", st["price"], 840.0)
+
+# A push that never left the machine must not retire the drop. Recording the
+# new price anyway lost a real $830.96 -> $780.00 Trade Me listing on
+# 2026-09-23, when the ntfy POST timed out -- the baseline moved to $780 and
+# the drop was never raised again.
+sent, st = alert_for(same, 800.0, "111", delivered=False)
+check_true("failed push is still attempted", len(sent) == 1)
+check("a failed push leaves the price baseline alone", st["price"], 859.0)
+check("...and the date, so the next run re-raises it", st["date"], DAY)
+
+sent, st = alert_for(same, 800.0, "111", delivered=True)
+check("a delivered push still advances the baseline", st["price"], 800.0)
 
 
 # --- report ------------------------------------------------------------------
