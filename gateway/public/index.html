@@ -77,7 +77,7 @@
 
 <div class="stats">
   <div class="stat"><div class="num">27</div><div class="label">語音指令</div></div>
-  <div class="stat"><div class="num">9</div><div class="label">自動功能</div></div>
+  <div class="stat"><div class="num">11</div><div class="label">自動功能</div></div>
 </div>
 
 <h2>呢個係乜嘢嚟？</h2>
@@ -169,20 +169,22 @@
 <tr><th>幾時</th><th>做乜嘢</th></tr>
 <tr><td class="phrase">朝早十點</td><td>iPhone自動攞當日簡報然後讀出嚟：天氣、巴士、收垃圾提醒、新聞</td></tr>
 <tr><td class="phrase">朝早九點</td><td>檢查牛奶價錢，如果今日最平嘅3公升奶平過琴日，推送通知去手機</td></tr>
-<tr><td class="phrase">朝早9點05分</td><td>監察PriceSpy價錢——Nintendo Switch 2、Kingston Fury Beast Black DDR4記憶體、G.Skill Ripjaws V Black DDR4記憶體、Pokemon Pokopia (Switch 2)、Zelda: Tears of the Kingdom (Switch 2)——如果今日平過上次記錄就推送通知去手機</td></tr>
-<tr><td class="phrase">每十分鐘</td><td>系統心跳檢查 — 條通道或者語音服務死咗，手機即刻收到高優先通知</td></tr>
+<tr><td class="phrase">朝早10點05分</td><td>監察PriceSpy價錢——Nintendo Switch 2、Kingston Fury Beast Black DDR4記憶體、G.Skill Ripjaws V Black DDR4記憶體、Pokemon Pokopia (Switch 2)、Zelda: Tears of the Kingdom (Switch 2)——如果今日平過上次記錄就推送通知去手機</td></tr>
+<tr><td class="phrase">每個鐘</td><td>系統心跳檢查 — 條通道或者語音服務死咗，手機即刻收到高優先通知</td></tr>
 <tr><td class="phrase">每五分鐘</td><td>指令紀錄自動同步去Notion（傾偈內容唔會離開屋企部機）</td></tr>
-<tr><td class="phrase">朝早三點半</td><td>自動清理舊紀錄：傾偈內容留30日，系統日誌留90日，指令紀錄長期保存</td></tr>
+<tr><td class="phrase">凌晨4點32分</td><td>自動清理舊紀錄：傾偈內容留30日，系統日誌留90日，指令紀錄長期保存</td></tr>
 <tr><td class="phrase">每分鐘</td><td>檢查提醒事項，到咗指定時間就推送通知去手機</td></tr>
 <tr><td class="phrase">朝早6點20分</td><td>落雨機率高過7成就推送通知提你帶遮</td></tr>
 <tr><td class="phrase">每分鐘</td><td>執行自訂工作流規則：聽日收垃圾今晚提你、指令出錯即刻通知</td></tr>
+<tr><td class="phrase">每十五分鐘</td><td>同步Google日曆，淨係攞今日同聽日嘅行程標題同時間，俾「今日行程」指令用</td></tr>
+<tr><td class="phrase">朝早九點</td><td>收集NVIDIA相關新聞，本機AI生成每日報告草稿</td></tr>
 </table>
 
 <h3 class="timeline-title">股票分析自動化時間表</h3>
 <p class="timeline-caption">六個獨立股票分析程序，由凌晨到朝早自動接力執行，資料寫落Notion</p>
 <div class="timeline">
 <div class="t-row">
-<div class="t-time">01:00<br>凌晨</div>
+<div class="t-time">02:00<br>凌晨</div>
 <div class="t-rail"><span class="t-dot"></span><span class="t-line"></span></div>
 <div class="t-card">
 <div class="t-head"><span class="t-cat">Category 2</span><span class="t-name">業績監察 Earnings Watch</span></div>
@@ -190,7 +192,7 @@
 </div>
 </div>
 <div class="t-row">
-<div class="t-time">01:30<br>凌晨</div>
+<div class="t-time">02:30<br>凌晨</div>
 <div class="t-rail"><span class="t-dot"></span><span class="t-line"></span></div>
 <div class="t-card">
 <div class="t-head"><span class="t-cat">Category 3</span><span class="t-name">估值分析 Valuation Watch</span></div>
@@ -198,7 +200,7 @@
 </div>
 </div>
 <div class="t-row">
-<div class="t-time">02:00<br>凌晨</div>
+<div class="t-time">03:00<br>凌晨</div>
 <div class="t-rail"><span class="t-dot"></span><span class="t-line"></span></div>
 <div class="t-card">
 <div class="t-head"><span class="t-cat">Category 5</span><span class="t-name">風險紅旗 Risk Watch</span></div>
@@ -214,7 +216,7 @@
 </div>
 </div>
 <div class="t-row">
-<div class="t-time">09:30<br>朝早</div>
+<div class="t-time">10:30<br>朝早</div>
 <div class="t-rail"><span class="t-dot"></span><span class="t-line"></span></div>
 <div class="t-card">
 <div class="t-head"><span class="t-cat">Category 4</span><span class="t-name">技術分析 Technicals Daily</span></div>
@@ -222,15 +224,7 @@
 </div>
 </div>
 <div class="t-row">
-<div class="t-time">10:00<br>朝早</div>
-<div class="t-rail"><span class="t-dot"></span><span class="t-line"></span></div>
-<div class="t-card">
-<div class="t-head"><span class="t-cat">Category 6</span><span class="t-name">風險評分儀表板 Risk Dashboard</span></div>
-<p class="t-desc">計算10個KPI風險評分（0-1分同紅黃綠燈），寫落Notion，然後自動出版去<a href="/dashboard">網頁儀表板</a>——生成失敗就唔會出版，唔會俾舊儀表板落線</p>
-</div>
-</div>
-<div class="t-row">
-<div class="t-time">10:00<br>朝早</div>
+<div class="t-time">11:00<br>朝早</div>
 <div class="t-rail"><span class="t-dot"></span><span class="t-line"></span></div>
 <div class="t-card">
 <div class="t-head"><span class="t-cat">—</span><span class="t-name">業績報告通知</span></div>
@@ -238,7 +232,15 @@
 </div>
 </div>
 <div class="t-row">
-<div class="t-time">10:15<br>朝早</div>
+<div class="t-time">11:10<br>朝早</div>
+<div class="t-rail"><span class="t-dot"></span><span class="t-line"></span></div>
+<div class="t-card">
+<div class="t-head"><span class="t-cat">Category 6</span><span class="t-name">風險評分儀表板 Risk Dashboard</span></div>
+<p class="t-desc">計算10個KPI風險評分（0-1分同紅黃綠燈），寫落Notion，然後自動出版去<a href="/dashboard">網頁儀表板</a>——生成失敗就唔會出版，唔會俾舊儀表板落線</p>
+</div>
+</div>
+<div class="t-row">
+<div class="t-time">11:25<br>朝早</div>
 <div class="t-rail"><span class="t-dot"></span><span class="t-line"></span></div>
 <div class="t-card">
 <div class="t-head"><span class="t-cat">—</span><span class="t-name">每日股價範圍 Stock Day Range</span></div>

@@ -64,37 +64,41 @@ CATEGORIES = [
 AUTOMATIONS = [
     ("朝早十點", "iPhone自動攞當日簡報然後讀出嚟：天氣、巴士、收垃圾提醒、新聞"),
     ("朝早九點", "檢查牛奶價錢，如果今日最平嘅3公升奶平過琴日，推送通知去手機"),
-    ("朝早9點05分", "監察PriceSpy價錢——Nintendo Switch 2、Kingston Fury Beast Black DDR4記憶體、G.Skill Ripjaws V Black DDR4記憶體、Pokemon Pokopia (Switch 2)、Zelda: Tears of the Kingdom (Switch 2)——如果今日平過上次記錄就推送通知去手機"),
-    ("每十分鐘", "系統心跳檢查 — 條通道或者語音服務死咗，手機即刻收到高優先通知"),
+    ("朝早10點05分", "監察PriceSpy價錢——Nintendo Switch 2、Kingston Fury Beast Black DDR4記憶體、G.Skill Ripjaws V Black DDR4記憶體、Pokemon Pokopia (Switch 2)、Zelda: Tears of the Kingdom (Switch 2)——如果今日平過上次記錄就推送通知去手機"),
+    ("每個鐘", "系統心跳檢查 — 條通道或者語音服務死咗，手機即刻收到高優先通知"),
     ("每五分鐘", "指令紀錄自動同步去Notion（傾偈內容唔會離開屋企部機）"),
-    ("朝早三點半", "自動清理舊紀錄：傾偈內容留30日，系統日誌留90日，指令紀錄長期保存"),
+    ("凌晨4點32分", "自動清理舊紀錄：傾偈內容留30日，系統日誌留90日，指令紀錄長期保存"),
     ("每分鐘", "檢查提醒事項，到咗指定時間就推送通知去手機"),
     ("朝早6點20分", "落雨機率高過7成就推送通知提你帶遮"),
     ("每分鐘", "執行自訂工作流規則：聽日收垃圾今晚提你、指令出錯即刻通知"),
+    ("每十五分鐘", "同步Google日曆，淨係攞今日同聽日嘅行程標題同時間，俾「今日行程」指令用"),
+    ("朝早九點", "收集NVIDIA相關新聞，本機AI生成每日報告草稿"),
 ]
 
 # Stock-related automations get their own visual timeline on the home page
 # (see STOCK_TIMELINE_INTRO + the .timeline CSS/render logic below) instead
 # of living in the generic AUTOMATIONS table above — six real scheduled
 # tasks plus Category 1's reactive refresh, in actual chronological order.
-# Times/scripts confirmed live via `Get-ScheduledTask` 2026-07-29 — keep in
-# sync if a task's trigger time ever changes.
+# Times/scripts confirmed live via `Get-ScheduledTask` 2026-09-29 — keep in
+# sync if a task's trigger time ever changes. The triggers are anchored to a
+# UTC offset, so their NZ wall-clock time moves an hour at each DST change;
+# these are NZDT (daylight) times.
 STOCK_TIMELINE = [
-    ("01:00", "凌晨", "Category 2", "業績監察 Earnings Watch",
+    ("02:00", "凌晨", "Category 2", "業績監察 Earnings Watch",
      "監察定咗嗰啲股票嘅SEC新聞稿（8-K），一有新季度業績就自動生成分析報告——EPS對比市場預期、前瞻指引、四季分部趨勢——寫落Notion"),
-    ("01:30", "凌晨", "Category 3", "估值分析 Valuation Watch",
+    ("02:30", "凌晨", "Category 3", "估值分析 Valuation Watch",
      "同一個觸發條件，自動跑齊DCF現金流折現、倍數法、反推隱含增長率、同業比較等多種估值模型，寫落Notion"),
-    ("02:00", "凌晨", "Category 5", "風險紅旗 Risk Watch",
+    ("03:00", "凌晨", "Category 5", "風險紅旗 Risk Watch",
      "監察定咗嗰啲股票有冇新年報（10-K），揪出主要風險因素、資產負債表外負債、商譽減值、應收帳款同存貨趨勢等鑑證式分析，寫落Notion"),
     ("即時", "觸發", "Category 1", "基本面快照刷新",
      "Category 2／3／5 一有新報告成功生成，即刻觸發，重新整理返嗰隻股票嘅基本面快照（現價、時效標記），確保資料新鮮"),
-    ("09:30", "朝早", "Category 4", "技術分析 Technicals Daily",
+    ("10:30", "朝早", "Category 4", "技術分析 Technicals Daily",
      "讀週線同日線走勢圖、成交量、對大盤（SPY）強弱、業績波幅，每日生成技術分析報告寫落Notion"),
-    ("10:00", "朝早", "Category 6", "風險評分儀表板 Risk Dashboard",
-     "計算10個KPI風險評分（0-1分同紅黃綠燈），寫落Notion，然後自動出版去<a href=\"/dashboard\">網頁儀表板</a>——生成失敗就唔會出版，唔會俾舊儀表板落線"),
-    ("10:00", "朝早", "—", "業績報告通知",
+    ("11:00", "朝早", "—", "業績報告通知",
      "如果凌晨嗰輪監察到新嘅季度業績報告，推送手機通知話你知——刻意同生成分開幾個鐘，唔會半夜嘈醒你"),
-    ("10:15", "朝早", "—", "每日股價範圍 Stock Day Range",
+    ("11:10", "朝早", "Category 6", "風險評分儀表板 Risk Dashboard",
+     "計算10個KPI風險評分（0-1分同紅黃綠燈），寫落Notion，然後自動出版去<a href=\"/dashboard\">網頁儀表板</a>——生成失敗就唔會出版，唔會俾舊儀表板落線"),
+    ("11:25", "朝早", "—", "每日股價範圍 Stock Day Range",
      "即時攞Yahoo Finance數據計50/200日均線、RSI、支持阻力位，加上20日歷史波幅推算出嘅預期浮動範圍，再讀返Category 6嘅風險評分做參考，AI寫低每隻股票嘅簡短分析——純粹技術/波幅參考，唔係價錢預測，都唔係投資建議，存做本機HTML報告"),
 ]
 
