@@ -10,6 +10,7 @@ import concurrent.futures
 import datetime as dt
 import json
 import logging
+import logging.handlers
 import os
 import random
 import re
@@ -29,7 +30,10 @@ os.makedirs(os.path.dirname(_STOCK_LOG_PATH), exist_ok=True)
 stock_log = logging.getLogger("router.stock")
 stock_log.propagate = False
 stock_log.setLevel(logging.INFO)
-_stock_handler = logging.FileHandler(_STOCK_LOG_PATH, encoding="utf-8")
+# Long-lived service process: rolls over at midnight into stock-YYYY-MM-DD.log,
+# matching the per-day files the scheduled ops/ scripts write.
+_stock_handler = logging.handlers.TimedRotatingFileHandler(_STOCK_LOG_PATH, when="midnight", encoding="utf-8")
+_stock_handler.namer = lambda name: name.replace("stock.log.", "stock-") + ".log"
 _stock_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
 stock_log.addHandler(_stock_handler)
 

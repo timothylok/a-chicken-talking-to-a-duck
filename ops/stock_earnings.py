@@ -84,7 +84,7 @@ import stock_fundamentals as sf  # noqa: E402
 EARNINGS_MODEL = "qwen3:8b"
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-LOG_PATH = os.path.join(ROOT, "asr", "logs", "stock_earnings.log")
+LOG_PATH = os.path.join(ROOT, "asr", "logs", f"stock_earnings-{dt.date.today():%Y-%m-%d}.log")
 CONFIG = os.path.join(ROOT, "ops", "notion.json")
 WATCH_STATE = os.path.join(ROOT, "asr", "logs", "earnings_watch_state.json")
 EARNINGS_HISTORY = os.path.join(ROOT, "asr", "logs", "earnings_history.json")

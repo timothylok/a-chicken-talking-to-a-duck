@@ -82,7 +82,7 @@ import stock_risk_flags as srf  # noqa: E402
 DASHBOARD_MODEL = "qwen3:8b"
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-LOG_PATH = os.path.join(ROOT, "asr", "logs", "stock_risk_dashboard.log")
+LOG_PATH = os.path.join(ROOT, "asr", "logs", f"stock_risk_dashboard-{dt.date.today():%Y-%m-%d}.log")
 CONFIG = os.path.join(ROOT, "ops", "notion.json")
 NOTION_VERSION = "2022-06-28"
 NZ_TZ = ZoneInfo("Pacific/Auckland")
@@ -909,8 +909,8 @@ def poll_and_generate() -> int:
     if written == 0:
         from notify import notify
         notify("股票報告失敗", f"Category 6 dashboard: 0/{len(WATCHLIST)} tickers, "
-                               "check asr/logs/stock_risk_dashboard.log", priority=4)
-    sf.alert_if_narration_dead("Category 6 dashboard", "stock_risk_dashboard.log")
+                               f"check asr/logs/{os.path.basename(LOG_PATH)}", priority=4)
+    sf.alert_if_narration_dead("Category 6 dashboard", os.path.basename(LOG_PATH))
     return written
 
 

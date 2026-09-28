@@ -63,7 +63,7 @@ from zoneinfo import ZoneInfo
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUTPUT_DIR = os.path.join(ROOT, "content", "stock-fundamentals")
-LOG_PATH = os.path.join(ROOT, "asr", "logs", "stock_fundamentals.log")
+LOG_PATH = os.path.join(ROOT, "asr", "logs", f"stock_fundamentals-{dt.date.today():%Y-%m-%d}.log")
 NZ_TZ = ZoneInfo("Pacific/Auckland")
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 # Deliberately not the shared OLLAMA_MODEL (gemma3:4b, tuned for spoken

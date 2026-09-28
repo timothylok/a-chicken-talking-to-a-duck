@@ -41,7 +41,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CONFIG = os.path.join(ROOT, "ops", "workflows.json")
 HISTORY = os.path.join(ROOT, "asr", "logs", "history.jsonl")
 STATE = os.path.join(ROOT, "asr", "logs", "workflows_state.json")
-LOG_PATH = os.path.join(ROOT, "asr", "logs", "workflows.log")
+LOG_PATH = os.path.join(ROOT, "asr", "logs", f"workflows-{dt.date.today():%Y-%m-%d}.log")
 COMMAND_URL = "http://localhost:9000/command"
 sys.path.insert(0, os.path.join(ROOT, "asr"))
 sys.path.insert(0, os.path.join(ROOT, "ops"))

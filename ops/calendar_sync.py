@@ -31,7 +31,7 @@ import recurring_ical_events
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ENV_PATH = os.path.join(ROOT, ".env")
 CACHE = os.path.join(ROOT, "asr", "cache", "calendar.json")
-LOG_PATH = os.path.join(ROOT, "asr", "logs", "calendar_sync.log")
+LOG_PATH = os.path.join(ROOT, "asr", "logs", f"calendar_sync-{dt.date.today():%Y-%m-%d}.log")
 NZ_TZ = zoneinfo.ZoneInfo("Pacific/Auckland")
 
 os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)

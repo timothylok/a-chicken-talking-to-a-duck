@@ -72,7 +72,7 @@ import urllib.request
 from zoneinfo import ZoneInfo
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-LOG_PATH = os.path.join(ROOT, "asr", "logs", "pricewatch.log")
+LOG_PATH = os.path.join(ROOT, "asr", "logs", f"pricewatch-{dt.date.today():%Y-%m-%d}.log")
 STATE_PATH = os.path.join(ROOT, "asr", "logs", "pricewatch_state.json")
 CLI = "D:/ai/thecolab-skills/skills/nz-pricewatch/scripts/cli.py"
 TRADEME_CLI = "D:/ai/thecolab-skills/skills/trademe-nz/scripts/cli.py"

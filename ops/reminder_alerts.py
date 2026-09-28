@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HISTORY = os.path.join(ROOT, "asr", "logs", "history.jsonl")
 STATE = os.path.join(ROOT, "asr", "logs", "reminder_alerts.json")
-LOG_PATH = os.path.join(ROOT, "asr", "logs", "reminder_alerts.log")
+LOG_PATH = os.path.join(ROOT, "asr", "logs", f"reminder_alerts-{dt.date.today():%Y-%m-%d}.log")
 sys.path.insert(0, os.path.join(ROOT, "ops"))
 
 NZ_TZ = ZoneInfo("Pacific/Auckland")

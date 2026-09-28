@@ -21,7 +21,7 @@ from zoneinfo import ZoneInfo
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LAST_RUN = os.path.join(ROOT, "asr", "logs", "earnings_watch_last_run.json")
-LOG_PATH = os.path.join(ROOT, "asr", "logs", "earnings_watch_notify.log")
+LOG_PATH = os.path.join(ROOT, "asr", "logs", f"earnings_watch_notify-{dt.date.today():%Y-%m-%d}.log")
 NZ_TZ = ZoneInfo("Pacific/Auckland")
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 

@@ -68,7 +68,7 @@ from router import _sma, _rsi  # noqa: E402
 TECHNICALS_MODEL = "qwen3:8b"
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-LOG_PATH = os.path.join(ROOT, "asr", "logs", "stock_technicals.log")
+LOG_PATH = os.path.join(ROOT, "asr", "logs", f"stock_technicals-{dt.date.today():%Y-%m-%d}.log")
 CONFIG = os.path.join(ROOT, "ops", "notion.json")
 NOTION_VERSION = "2022-06-28"
 NZ_TZ = ZoneInfo("Pacific/Auckland")
@@ -1121,8 +1121,8 @@ def run() -> int:
         # the normal weekend outcome and must stay silent.
         from notify import notify
         notify("股票報告失敗", f"Category 4 technicals: 0/{len(WATCHLIST)} tickers, "
-                               "check asr/logs/stock_technicals.log", priority=4)
-    sf.alert_if_narration_dead("Category 4 technicals", "stock_technicals.log")
+                               f"check asr/logs/{os.path.basename(LOG_PATH)}", priority=4)
+    sf.alert_if_narration_dead("Category 4 technicals", os.path.basename(LOG_PATH))
     return written
 
 

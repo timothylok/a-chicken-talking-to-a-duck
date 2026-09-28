@@ -14,6 +14,7 @@ string already uses, not all-or-nothing.
 Run manually: python ops/deploy_dashboard.py
 """
 
+import datetime as dt
 import json
 import logging
 import os
@@ -26,7 +27,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import stock_risk_dashboard as srd  # noqa: E402
 
 DASHBOARD_DIR = os.path.join(ROOT, "dashboard")
-LOG_PATH = os.path.join(ROOT, "asr", "logs", "deploy_dashboard.log")
+LOG_PATH = os.path.join(ROOT, "asr", "logs", f"deploy_dashboard-{dt.date.today():%Y-%m-%d}.log")
 
 log = logging.getLogger("deploy_dashboard")
 os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)

@@ -27,7 +27,7 @@ from zoneinfo import ZoneInfo
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUTPUT_DIR = os.path.join(ROOT, "content", "nvidia-daily")
-LOG_PATH = os.path.join(ROOT, "asr", "logs", "nvidia_daily.log")
+LOG_PATH = os.path.join(ROOT, "asr", "logs", f"nvidia_daily-{dt.date.today():%Y-%m-%d}.log")
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "gemma3:4b")
 NZ_TZ = ZoneInfo("Pacific/Auckland")
@@ -243,7 +243,7 @@ def _alert(reason: str, priority: int = 4) -> None:
         return
     _alerted = True
     from notify import notify
-    notify("NVIDIA報告失敗", f"{reason} -- check asr/logs/nvidia_daily.log", priority=priority)
+    notify("NVIDIA報告失敗", f"{reason} -- check asr/logs/{os.path.basename(LOG_PATH)}", priority=priority)
 
 
 def main() -> None:

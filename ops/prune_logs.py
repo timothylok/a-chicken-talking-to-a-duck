@@ -3,7 +3,8 @@
 Runs daily via the "VoiceOS Log Prune" scheduled task as the logged-in user.
 Policy (chosen 2026-07-16): chat entries in history.jsonl (command == null)
 are kept 30 days; command entries are kept forever (Notion mirrors them);
-rotated service-*.log files are kept 90 days.
+rotated service-*.log and per-day <name>-YYYY-MM-DD.log files are kept
+90 days.
 
 history.jsonl is rewritten atomically, and only within the region the Notion
 sync's byte-offset cursor has already passed — the cursor is then shifted by
@@ -29,7 +30,7 @@ HISTORY = os.path.join(LOGS, "history.jsonl")
 CURSOR = os.path.join(LOGS, "notion_sync.cursor")
 WF_STATE = os.path.join(LOGS, "workflows_state.json")
 REM_STATE = os.path.join(LOGS, "reminder_alerts.json")
-LOG_PATH = os.path.join(LOGS, "prune.log")
+LOG_PATH = os.path.join(LOGS, f"prune-{dt.date.today():%Y-%m-%d}.log")
 
 CHAT_DAYS = 30
 ROTATED_LOG_DAYS = 90
@@ -145,7 +146,9 @@ def prune_history() -> None:
 def prune_rotated_logs() -> None:
     cutoff = time.time() - ROTATED_LOG_DAYS * 86400
     removed = 0
-    for path in glob.glob(os.path.join(LOGS, "service-*.log")):
+    paths = glob.glob(os.path.join(LOGS, "service-*.log"))
+    paths += glob.glob(os.path.join(LOGS, "*-[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9].log"))
+    for path in paths:
         if os.path.getmtime(path) < cutoff:
             os.remove(path)
             removed += 1

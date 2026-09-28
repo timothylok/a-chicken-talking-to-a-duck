@@ -15,13 +15,14 @@ clears it, so a genuinely new drop (even one that happens to produce the
 same wording) always alerts.
 """
 
+import datetime as dt
 import json
 import logging
 import os
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-LOG_PATH = os.path.join(ROOT, "asr", "logs", "milk_watch.log")
+LOG_PATH = os.path.join(ROOT, "asr", "logs", f"milk_watch-{dt.date.today():%Y-%m-%d}.log")
 STATE_PATH = os.path.join(ROOT, "asr", "logs", "milk_watch_state.json")
 sys.path.insert(0, os.path.join(ROOT, "asr"))
 sys.path.insert(0, os.path.join(ROOT, "ops"))

@@ -68,7 +68,7 @@ from router import _sma, _rsi  # noqa: E402
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUTPUT_DIR = os.path.join(ROOT, "content", "StockDayRange")
 DASHBOARD_JSON = os.path.join(ROOT, "dashboard", "data", "latest.json")
-LOG_PATH = os.path.join(ROOT, "asr", "logs", "stock_day_range.log")
+LOG_PATH = os.path.join(ROOT, "asr", "logs", f"stock_day_range-{dt.date.today():%Y-%m-%d}.log")
 HISTORY_PATH = os.path.join(ROOT, "asr", "logs", "stock_day_range_history.json")
 NZ_TZ = ZoneInfo("Pacific/Auckland")
 EXCHANGE_TZ = ZoneInfo("America/New_York")
@@ -561,7 +561,7 @@ def run() -> int:
         log.error("no tickers produced a report; not writing HTML")
         from notify import notify
         notify("股票報告失敗", f"Stock day range: 0/{len(WATCHLIST)} tickers, "
-                               "check asr/logs/stock_day_range.log", priority=4)
+                               f"check asr/logs/{os.path.basename(LOG_PATH)}", priority=4)
         return 0
 
     accuracy_rows = _todays_accuracy(reports, history)
@@ -578,7 +578,7 @@ def run() -> int:
 
     out_path = write_html(reports, now, accuracy_rows, cumulative)
     log.info("wrote %d/%d tickers to %s", len(reports), len(WATCHLIST), out_path)
-    sf.alert_if_narration_dead("Stock day range", "stock_day_range.log")
+    sf.alert_if_narration_dead("Stock day range", os.path.basename(LOG_PATH))
     return len(reports)
 
 

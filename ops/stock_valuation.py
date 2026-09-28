@@ -90,7 +90,7 @@ import stock_earnings as se  # noqa: E402
 VALUATION_MODEL = "qwen3:8b"
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-LOG_PATH = os.path.join(ROOT, "asr", "logs", "stock_valuation.log")
+LOG_PATH = os.path.join(ROOT, "asr", "logs", f"stock_valuation-{dt.date.today():%Y-%m-%d}.log")
 CONFIG = os.path.join(ROOT, "ops", "notion.json")
 PEERS_CONFIG = os.path.join(ROOT, "ops", "peers.json")
 WATCH_STATE = os.path.join(ROOT, "asr", "logs", "valuation_watch_state.json")

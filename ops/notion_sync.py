@@ -15,6 +15,7 @@ Setup:
 Until the config exists, runs are silent no-ops.
 """
 
+import datetime as dt
 import json
 import logging
 import os
@@ -24,7 +25,7 @@ import urllib.request
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HISTORY = os.path.join(ROOT, "asr", "logs", "history.jsonl")
 CURSOR = os.path.join(ROOT, "asr", "logs", "notion_sync.cursor")
-LOG_PATH = os.path.join(ROOT, "asr", "logs", "notion_sync.log")
+LOG_PATH = os.path.join(ROOT, "asr", "logs", f"notion_sync-{dt.date.today():%Y-%m-%d}.log")
 CONFIG = os.path.join(ROOT, "ops", "notion.json")
 NOTION_VERSION = "2022-06-28"
 

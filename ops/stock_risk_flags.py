@@ -55,6 +55,7 @@ no-ops (--tickers still prints/writes if configured).
 """
 
 import argparse
+import datetime as dt
 import json
 import logging
 import os
@@ -70,7 +71,7 @@ import stock_fundamentals as sf  # noqa: E402
 RISK_MODEL = "qwen3:8b"
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-LOG_PATH = os.path.join(ROOT, "asr", "logs", "stock_risk_flags.log")
+LOG_PATH = os.path.join(ROOT, "asr", "logs", f"stock_risk_flags-{dt.date.today():%Y-%m-%d}.log")
 CONFIG = os.path.join(ROOT, "ops", "notion.json")
 WATCH_STATE = os.path.join(ROOT, "asr", "logs", "risk_watch_state.json")
 NOTION_VERSION = "2022-06-28"
