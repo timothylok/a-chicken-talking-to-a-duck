@@ -13,8 +13,15 @@ regressed before. Everything else in this project fails at runtime against live
 data, and no unit test would have caught it.
 """
 
+import logging
 import os
 import sys
+
+# pricewatch.py's module-level basicConfig() points the root logger at the live
+# asr/logs/pricewatch-<date>.log, so every run of this file used to append fake
+# "T: drop ..." lines to the real price history. basicConfig() is a no-op once
+# the root logger has a handler, so give it one first.
+logging.getLogger().addHandler(logging.NullHandler())
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "asr"))
