@@ -32,6 +32,7 @@ import datetime as dt  # noqa: E402
 import flightwatch as fw  # noqa: E402
 import pricewatch as pw  # noqa: E402
 import router as r  # noqa: E402
+import stock_earnings as se  # noqa: E402
 
 failures = []
 
@@ -183,6 +184,31 @@ check("alerts fire on >=10% drop and new low; 5% drop at a non-low and first sig
       [(c1, ["-11% vs 2026-10-02", "new low"]), (c3, ["-10% vs 2026-10-02", "new low"])])
 check("a 5% drop that is also a new low still alerts",
       [a["reasons"] for a in fw.find_alerts({c2: 9500}, {c2: [("2026-10-01", 10000)]})], [["new low"]])
+
+
+# --- stock_earnings: segment trends are computed, never LLM-judged ------------
+# Real AAPL Q3 FY26 10-Q table text (2026-10-02): Llama 3.3 70B called the
+# rising Americas/Europe growth "decelerating" when given this raw text.
+aapl = ("Three Months Ended Nine Months Ended June 27, 2026 June 28, 2025 Change June 27, 2026 "
+        "June 28, 2025 Change Americas $ 45,781 $ 41,198 11% $ 149,403 $ 134,161 11% "
+        "Europe 29,395 24,014 22% 95,596 82,329 16% Greater China 18,816 15,369 22% "
+        "64,839 49,884 30% Total net sales $ 109,417 $ 94,036 16%")
+got = se._segment_growth(aapl)
+check("table rows: names cleaned, 9-month columns ignored, stops at Total",
+      list(got), ["Americas", "Europe", "Greater China"])
+check("YoY recomputed from the dollar columns", round(got["Europe"], 1), 22.4)
+tsla = ("21 % Automotive & Services and Other Segment Automotive sales revenue increased $4.22 billion, "
+        "or 27%, in the three months ended June 30, 2026 as compared to the three months ended June 30, 2025. "
+        "Automotive sales revenue increased $6.77 billion, or 24%, in the six months ended June 30, 2026. "
+        "Automotive regulatory credits revenue decreased $293 million, or 67%, in the three months ended June 30, 2026.")
+check("prose: three-month sentences only, decreases negative, heading prefix stripped",
+      se._segment_growth(tsla), {"Automotive sales revenue": 27.0, "Automotive regulatory credits revenue": -67.0})
+check("rising growth is accelerating", se._segment_label([9.7, 12.7, 14.7, 22.4]).split()[0], "accelerating")
+check("falling growth is decelerating", se._segment_label([4.4, 37.9, 28.1, 22.4]).split()[0], "decelerating")
+check("a sub-2pp move is steady", se._segment_label([9.3, 11.2, 11.9, 11.1]).split()[0], "steady")
+check("negative latest growth is shrinking", se._segment_label([-36.0, -67.0]).split()[0], "shrinking")
+check("a gap in the latest two quarters gets no label",
+      se._segment_label([17.0, None, 50.0]).startswith("no label"), True)
 
 
 # --- report ------------------------------------------------------------------

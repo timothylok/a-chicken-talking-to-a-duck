@@ -68,6 +68,8 @@ import stock_fundamentals as sf  # noqa: E402
 
 # Not sf.OLLAMA_MODEL (lfm2.5) -- same reasoning as stock_earnings.py/
 # stock_valuation.py: structured judgment/translation the user may act on.
+# Since 2026-10-02 this is the local FALLBACK only: narration goes to Workers
+# AI first (sf.workers_ai_or_local) and drops back here if that call fails.
 RISK_MODEL = "qwen3:8b"
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -145,6 +147,10 @@ def _xbrl_multi_year(facts: dict, tags: list, unit: str = "USD", n: int = 3) -> 
 # ---------------------------------------------------------------------------
 
 def _generate(prompt: str, num_predict: int = 500) -> str:
+    return sf.workers_ai_or_local(prompt, num_predict, lambda: _local_generate(prompt, num_predict), log)
+
+
+def _local_generate(prompt: str, num_predict: int) -> str:
     payload = json.dumps({
         "model": RISK_MODEL,
         "think": False,

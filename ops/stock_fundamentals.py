@@ -75,7 +75,9 @@ OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 # fixed that, then lfm2.5 was benchmarked against it on the same real AAPL
 # excerpts (2026-07-28): matched qwen3:8b's quality (no false-flag repeat)
 # at roughly half the wall-clock time -- swapped in as the default. See the
-# num_predict note on _ollama_generate for the one config gotcha it needs.
+# num_predict note on _ollama_local for the one config gotcha it needs.
+# Since 2026-10-02 this is the local FALLBACK only: narration goes to Workers
+# AI first (sf.workers_ai_or_local) and drops back here if that call fails.
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "lfm2.5")
 SEC_UA = "voice-ecosystem stock-fundamentals research (timlok@gmail.com)"
 SEC_DELAY = 0.2  # SEC asks for <=10 req/sec; well under that.
@@ -1292,8 +1294,12 @@ def alert_if_narration_dead(job: str, log_name: str) -> None:
 # data only, ~7x faster than the 4 GB GTX 1650 (benchmarked 2026-10-01), and it
 # keeps qwen3:8b off the GPU in the 10:00 window it shares with the voice
 # briefing. Credentials live in the gitignored repo-root .env. Budget: these
-# jobs use ~3,300 of the 10,000 free neurons/day; the reactive SEC-filing
-# reports deliberately stay on local Ollama so earnings days can't blow it.
+# jobs use ~3,300 of the 10,000 free neurons/day (resets 00:00 UTC). The
+# reactive SEC-filing reports (Category 1/2/3/5, ~4,400 neurons per filing)
+# use it too since 2026-10-02, but through workers_ai_or_local(): a
+# multi-filing earnings night can exhaust the free tier, and those runs land
+# at 02:00-03:00 when the GPU is idle, so they fall back to local Ollama
+# rather than writing blank sections.
 # ---------------------------------------------------------------------------
 
 WORKERS_AI_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
@@ -1332,7 +1338,23 @@ def workers_ai_generate(prompt: str, max_tokens: int) -> str:
     return reply.strip()
 
 
+def workers_ai_or_local(prompt: str, max_tokens: int, local, logger) -> str:
+    """Workers AI first; on any failure or empty reply, call local() instead."""
+    try:
+        reply = workers_ai_generate(prompt, max_tokens)
+        if reply:
+            return reply
+        logger.warning("Workers AI returned empty content -- falling back to local Ollama")
+    except Exception as exc:
+        logger.warning("Workers AI failed (%s) -- falling back to local Ollama", exc)
+    return local()
+
+
 def _ollama_generate(prompt: str, num_predict: int = 1500) -> str:
+    return workers_ai_or_local(prompt, num_predict, lambda: _ollama_local(prompt, num_predict), log)
+
+
+def _ollama_local(prompt: str, num_predict: int) -> str:
     # lfm2.5 is also a hybrid reasoning model, but unlike qwen3:8b its
     # "think": false doesn't suppress reasoning -- it just dumps <think>
     # into the visible content instead. Left unset, Ollama correctly

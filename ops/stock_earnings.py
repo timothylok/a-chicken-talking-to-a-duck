@@ -81,6 +81,8 @@ import stock_fundamentals as sf  # noqa: E402
 # reliability wins over lfm2.5's speed edge; qwen3:8b succeeded cleanly on
 # all 4, and its segment-percentage figures were verified correct against
 # the real filing.
+# Since 2026-10-02 this is the local FALLBACK only: narration goes to Workers
+# AI first (sf.workers_ai_or_local) and drops back here if that call fails.
 EARNINGS_MODEL = "qwen3:8b"
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -403,6 +405,10 @@ def _extract_income_figures(text: str) -> dict:
 
 
 def _generate(prompt: str, num_predict: int = 400) -> str:
+    return sf.workers_ai_or_local(prompt, num_predict, lambda: _local_generate(prompt, num_predict), log)
+
+
+def _local_generate(prompt: str, num_predict: int) -> str:
     payload = json.dumps({
         "model": EARNINGS_MODEL,
         "think": False,
@@ -529,12 +535,12 @@ GUIDANCE_PROMPT = (
 )
 
 SEGMENTS_PROMPT = (
-    "Below are segment-discussion excerpts from {ticker}'s last {n} 10-Q filings, "
-    "one per quarter, oldest first (each labeled with its filing date). Using ONLY "
-    "this text, identify which segment has accelerating growth, which is "
-    "decelerating, and which (if any) is shrinking. If a quarter's excerpt doesn't "
-    "disclose segment figures, say so for that quarter rather than guessing. Cite "
-    "SEC EDGAR as the source. Under 250 words.\n\n---\n{excerpt}\n---"
+    "Below is a table of {ticker}'s segment revenue growth, computed from its last "
+    "{n} 10-Q filings (SEC EDGAR). Each row is one segment's year-over-year growth "
+    "per quarter, oldest first, followed by a trend label. The labels are computed "
+    "and final: describe the trends in plain English, but do not change, soften or "
+    "contradict any label, and do not introduce any number that is not in the "
+    "table. Under 150 words.\n\n---\n{table}\n---"
 )
 
 CAPITAL_RETURN_PROMPT = (
@@ -641,28 +647,87 @@ def _segment_excerpt(text: str) -> "str | None":
     )
 
 
+# Segment trends are computed here, not judged by the LLM: handed the raw
+# 10-Q prose, Llama 3.3 70B labelled AAPL's rising Americas/Europe growth
+# (9->11->12%) "decelerating" on 2 of 2 runs and qwen3:8b called it "steady"
+# (2026-10-02). The LLM now only narrates the labels below.
+_NUM = r"(\d{1,3}(?:,\d{3})+|\d+)"
+# AAPL-style table row: "Europe 29,395 24,014 22%" -- name, current quarter,
+# same quarter last year, printed change (ignored; recomputed from the dollars).
+_SEG_ROW = re.compile(r"([A-Z][A-Za-z&,.' ]{1,40}?)\s+\$?\s*" + _NUM + r"\s+\$?\s*" + _NUM + r"\s+\(?\d+\)?\s*%")
+# TSLA-style prose: "Automotive sales revenue increased $4.22 billion, or 27%,
+# in the three months ended ..." (the six-month sentences are skipped).
+_SEG_PROSE = re.compile(r"\b([A-Z][a-z]+(?:\s+[a-z&]+){0,4}\s+revenues?)\s+(increased|decreased)\s+\$[\d.,]+\s*(?:billion|million)?,\s+or\s+(\d+(?:\.\d+)?)%,\s+in the three months ended")
+ACCEL_PP = 2.0  # a quarter-on-quarter move in YoY growth smaller than this is "steady"
+
+
+def _segment_growth(excerpt: str) -> dict:
+    """{segment: three-month YoY growth %} from one 10-Q's segment excerpt."""
+    growth = {}
+    m = re.search(r"Three\s+Months\s+Ended", excerpt)
+    if m:
+        window = excerpt[m.end():]
+        end = re.search(r"\bTotal\b", window)
+        for row in _SEG_ROW.finditer(window[:end.start()] if end else window):
+            name = re.sub(r"^Change\s+", "", row.group(1).strip())
+            cur, prior = (float(row.group(i).replace(",", "")) for i in (2, 3))
+            if prior > 0 and name not in growth:
+                growth[name] = (cur - prior) / prior * 100
+    if not growth:
+        for p in _SEG_PROSE.finditer(excerpt):
+            pct = float(p.group(3))
+            growth.setdefault(p.group(1).strip(), pct if p.group(2) == "increased" else -pct)
+    return growth
+
+
+def _segment_label(series: list) -> str:
+    if len(series) < 2 or series[-1] is None or series[-2] is None:
+        return "no label (needs figures for the latest two quarters)"
+    delta = series[-1] - series[-2]
+    if series[-1] < 0:
+        trend = "shrinking"
+    elif delta >= ACCEL_PP:
+        trend = "accelerating"
+    elif delta <= -ACCEL_PP:
+        trend = "decelerating"
+    else:
+        trend = "steady"
+    return f"{trend} ({delta:+.1f} pp vs prior quarter)"
+
+
 def _section13_segments(ticker: str, cik: str, subs: dict) -> str:
     tenqs = _recent_filings(subs, "10-Q", 4)
     if not tenqs:
         return "N/A -- no 10-Q filings found for this ticker."
-    parts = []
-    for f in reversed(tenqs):  # oldest first
+    quarters = []  # (label, {segment: yoy}), oldest first
+    for f in reversed(tenqs):
         try:
             text = sf._fetch_text(sf._filing_url(cik, f["accn"], f["doc"]))
         except Exception as exc:
             log.warning("%s: 10-Q fetch failed (%s): %s", ticker, f["accn"], exc)
             continue
         excerpt = _segment_excerpt(text)
-        if excerpt:
-            parts.append(f"[Filed {f['filed']}]\n{excerpt}")
-    if not parts:
-        return "N/A -- could not locate segment-discussion text in the last 4 10-Qs."
-    prompt = SEGMENTS_PROMPT.format(ticker=ticker, n=len(parts), excerpt="\n\n".join(parts)[:7000])
+        growth = _segment_growth(excerpt) if excerpt else {}
+        if growth:
+            ended = re.search(r"ended\s+([A-Z][a-z]+ \d{1,2}, \d{4})", excerpt)
+            quarters.append((f"Q ended {ended.group(1)}" if ended else f"10-Q filed {f['filed']}", growth))
+    if not quarters:
+        return "N/A -- could not extract segment revenue figures from the last 4 10-Qs."
+
+    rows = []
+    for name in quarters[-1][1]:  # segments in the latest quarter, in filing order
+        series = [g.get(name) for _, g in quarters]
+        values = " -> ".join("n/a" if v is None else f"{v:.1f}%" for v in series)
+        rows.append(f"{name}: {values} YoY -- {_segment_label(series)}")
+    header = f"Quarters ({len(quarters)}, oldest first): " + "; ".join(label for label, _ in quarters)
+    table = header + "\n" + "\n".join(rows)
+    source = "*Source: SEC EDGAR 10-Q segment disclosures; YoY and labels computed, not model-judged.*"
     try:
-        return _generate(prompt)
+        narrative = _generate(SEGMENTS_PROMPT.format(ticker=ticker, n=len(quarters), table=table))
     except Exception as exc:
-        log.warning("%s: section13 segments failed: %s", ticker, exc)
-        return f"N/A -- segment analysis failed ({exc})."
+        log.warning("%s: section13 segments narrative failed: %s", ticker, exc)
+        return f"{table}\n\n{source}"
+    return f"{table}\n\n{narrative}\n\n{source}"
 
 
 def _section14_capital_return(ticker: str, ex99_text: str, accn: str, filed: str) -> str:

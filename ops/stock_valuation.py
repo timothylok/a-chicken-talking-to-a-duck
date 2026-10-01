@@ -87,6 +87,8 @@ import stock_earnings as se  # noqa: E402
 # Deliberately NOT sf.OLLAMA_MODEL (lfm2.5) or se.EARNINGS_MODEL blindly --
 # benchmark this script's own 3 narrative prompts (15/16/22) before locking
 # in a default; see the model-benchmark note near the narrative section.
+# Since 2026-10-02 this is the local FALLBACK only: narration goes to Workers
+# AI first (sf.workers_ai_or_local) and drops back here if that call fails.
 VALUATION_MODEL = "qwen3:8b"
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -1005,6 +1007,10 @@ def _sum_of_parts(ticker: str, ex99_text: str, own_ev_revenue_multiple: "float |
 # ---------------------------------------------------------------------------
 
 def _generate(prompt: str, num_predict: int = 400) -> str:
+    return sf.workers_ai_or_local(prompt, num_predict, lambda: _local_generate(prompt, num_predict), log)
+
+
+def _local_generate(prompt: str, num_predict: int) -> str:
     payload = json.dumps({
         "model": VALUATION_MODEL,
         "think": False,
