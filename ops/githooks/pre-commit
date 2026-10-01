@@ -2,6 +2,15 @@
 # Regenerate the public home page and CLAUDE.md's command list whenever the
 # command table changes, so both always match COMMANDS in asr/router.py.
 # Enabled via:  git config core.hooksPath ops/githooks
+
+# A new scheduled task (ops/register_*.ps1) must come with its home-page
+# automation entry, or the page's timetable silently falls behind what runs.
+if git diff --cached --name-only --diff-filter=A | grep -qE "^ops/register_.*\.ps1$" &&
+   ! git diff --cached --name-only | grep -qE "^ops/generate_homepage\.py$"; then
+    echo "pre-commit: new ops/register_*.ps1 task staged without an AUTOMATIONS/STOCK_TIMELINE entry in ops/generate_homepage.py" >&2
+    exit 1
+fi
+
 if git diff --cached --name-only | grep -qE "^(asr/router\.py|ops/generate_homepage\.py|ops/macros\.json)$"; then
     python ops/generate_homepage.py || exit 1
     git add gateway/public/index.html CLAUDE.md

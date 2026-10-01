@@ -60,20 +60,22 @@ CATEGORIES = [
 ]
 
 # Non-voice automations shown on the home page; the dashboard count derives
-# from this list, so adding an automation = one entry here.
+# from this list, so adding an automation = one entry here. The first field is
+# the NZ wall-clock HH:MM the table is sorted by ("" = recurring, listed first),
+# so a new entry lands in time order wherever it is added.
 AUTOMATIONS = [
-    ("朝早十點", "iPhone自動攞當日簡報然後讀出嚟：天氣、巴士、收垃圾提醒、新聞"),
-    ("朝早九點", "檢查牛奶價錢，如果今日最平嘅3公升奶平過琴日，推送通知去手機"),
-    ("朝早10點05分", "監察價錢：PriceSpy上面嘅Nintendo Switch 2、Kingston Fury Beast Black DDR4記憶體、G.Skill Ripjaws V Black DDR4記憶體、Pokemon Pokopia (Switch 2)、Zelda: Tears of the Kingdom (Switch 2)、Zelda: Ocarina of Time (Switch 2)、Asus GeForce RTX 5050顯示卡、Nintendo Switch 2薩爾達40週年特別版主機；Trade Me上面嘅Nintendo Switch 2；仲有Bottle-O同Super Liquor嘅Aberlour 12年威士忌。只計有貨嘅價錢，平過上次記錄最少1%先推送通知去手機"),
-    ("每個鐘", "系統心跳檢查 — 條通道或者語音服務死咗，手機即刻收到高優先通知"),
-    ("每五分鐘", "指令紀錄自動同步去Notion（傾偈內容唔會離開屋企部機）"),
-    ("凌晨4點32分", "自動清理舊紀錄：傾偈內容留30日，系統日誌留90日，指令紀錄長期保存"),
-    ("每分鐘", "檢查提醒事項，到咗指定時間就推送通知去手機"),
-    ("朝早6點20分", "落雨機率高過7成就推送通知提你帶遮"),
-    ("每分鐘", "執行自訂工作流規則：聽日收垃圾今晚提你、指令出錯即刻通知"),
-    ("每十五分鐘", "同步Google日曆，淨係攞今日同聽日嘅行程標題同時間，俾「今日行程」指令用"),
-    ("朝早九點", "收集NVIDIA相關新聞，本機AI生成每日報告草稿"),
-    ("朝早8點15分", "監察香港直飛奧克蘭來回機票（國泰／紐航，經濟艙，一位成人）：12月26至31號出發、玩14至21日，每日喺Google Flights搜齊48個日期組合，用港幣記錄，生成價格日曆報告；任何組合平過琴日10%或者創新低就推送通知去手機"),
+    ("10:00", "朝早十點", "iPhone自動攞當日簡報然後讀出嚟：天氣、巴士、收垃圾提醒、新聞"),
+    ("09:00", "朝早九點", "檢查牛奶價錢，如果今日最平嘅3公升奶平過琴日，推送通知去手機"),
+    ("10:05", "朝早10點05分", "監察價錢：PriceSpy上面嘅Nintendo Switch 2、Kingston Fury Beast Black DDR4記憶體、G.Skill Ripjaws V Black DDR4記憶體、Pokemon Pokopia (Switch 2)、Zelda: Tears of the Kingdom (Switch 2)、Zelda: Ocarina of Time (Switch 2)、Asus GeForce RTX 5050顯示卡、Nintendo Switch 2薩爾達40週年特別版主機；Trade Me上面嘅Nintendo Switch 2；仲有Bottle-O同Super Liquor嘅Aberlour 12年威士忌。只計有貨嘅價錢，平過上次記錄最少1%先推送通知去手機"),
+    ("", "每個鐘", "系統心跳檢查 — 條通道或者語音服務死咗，手機即刻收到高優先通知"),
+    ("", "每五分鐘", "指令紀錄自動同步去Notion（傾偈內容唔會離開屋企部機）"),
+    ("04:32", "凌晨4點32分", "自動清理舊紀錄：傾偈內容留30日，系統日誌留90日，指令紀錄長期保存"),
+    ("", "每分鐘", "檢查提醒事項，到咗指定時間就推送通知去手機"),
+    ("06:20", "朝早6點20分", "落雨機率高過7成就推送通知提你帶遮"),
+    ("", "每分鐘", "執行自訂工作流規則：聽日收垃圾今晚提你、指令出錯即刻通知"),
+    ("", "每十五分鐘", "同步Google日曆，淨係攞今日同聽日嘅行程標題同時間，俾「今日行程」指令用"),
+    ("09:00", "朝早九點", "收集NVIDIA相關新聞，本機AI生成每日報告草稿"),
+    ("08:15", "朝早8點15分", "監察香港直飛奧克蘭來回機票（國泰／紐航，經濟艙，一位成人）：12月26至31號出發、玩14至21日，每日喺Google Flights搜齊48個日期組合，用港幣記錄，生成價格日曆報告；任何組合平過琴日10%或者創新低就推送通知去手機"),
 ]
 
 # Stock-related automations get their own visual timeline on the home page
@@ -267,7 +269,7 @@ def render() -> str:
 
     automation_rows = [
         f'<tr><td class="phrase">{html.escape(when)}</td><td>{html.escape(what)}</td></tr>'
-        for when, what in AUTOMATIONS
+        for _, when, what in sorted(AUTOMATIONS, key=lambda a: a[0])
     ]
 
     timeline_rows = [
