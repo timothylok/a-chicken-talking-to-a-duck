@@ -66,7 +66,7 @@ CATEGORIES = [
 AUTOMATIONS = [
     ("10:00", "朝早十點", "iPhone自動攞當日簡報然後讀出嚟：天氣、巴士、收垃圾提醒、新聞"),
     ("09:00", "朝早九點", "檢查牛奶價錢，如果今日最平嘅3公升奶平過琴日，推送通知去手機"),
-    ("10:05", "朝早10點05分", "監察價錢：PriceSpy上面嘅Nintendo Switch 2、Kingston Fury Beast Black DDR4記憶體、G.Skill Ripjaws V Black DDR4記憶體、Pokemon Pokopia (Switch 2)、Zelda: Tears of the Kingdom (Switch 2)、Zelda: Ocarina of Time (Switch 2)、Asus GeForce RTX 5050顯示卡、Nintendo Switch 2薩爾達40週年特別版主機；Trade Me上面嘅Nintendo Switch 2；仲有Bottle-O同Super Liquor嘅Aberlour 12年威士忌。只計有貨嘅價錢，平過上次記錄最少1%先推送通知去手機"),
+    ("10:05", "朝早10點05分", "監察價錢：PriceSpy上面嘅Nintendo Switch 2、Kingston Fury Beast Black DDR4記憶體、G.Skill Ripjaws V Black DDR4記憶體、Pokemon Pokopia (Switch 2)、Zelda: Tears of the Kingdom (Switch 2)、Zelda: Ocarina of Time (Switch 2)、Asus GeForce RTX 5050顯示卡、Nintendo Switch 2薩爾達40週年特別版主機；Trade Me上面嘅Nintendo Switch 2；仲有Bottle-O同Super Liquor嘅Aberlour 12年威士忌。只計有貨嘅價錢，平過或者貴過上次記錄最少1%就推送通知去手機；缺貨嘅貨品一返貨都會即刻通知"),
     ("", "每個鐘", "系統心跳檢查 — 條通道或者語音服務死咗，手機即刻收到高優先通知"),
     ("", "每五分鐘", "指令紀錄自動同步去Notion（傾偈內容唔會離開屋企部機）"),
     ("04:32", "凌晨4點32分", "自動清理舊紀錄：傾偈內容留30日，系統日誌留90日，指令紀錄長期保存"),
@@ -88,11 +88,11 @@ AUTOMATIONS = [
 # these are NZDT (daylight) times.
 STOCK_TIMELINE = [
     ("02:00", "凌晨", "Category 2", "業績監察 Earnings Watch",
-     "監察定咗嗰啲股票嘅SEC新聞稿（8-K），一有新季度業績就自動生成分析報告——EPS對比市場預期、前瞻指引、四季分部趨勢——寫落Notion"),
+     "監察定咗嗰啲股票嘅SEC新聞稿（8-K），一有新季度業績就自動生成分析報告——EPS對比市場預期、前瞻指引、四季分部趨勢（加速定減速由程式計，唔係AI估）——寫落Notion；文字分析由Cloudflare Workers AI生成，失敗就自動轉返屋企部機嘅本機AI"),
     ("02:30", "凌晨", "Category 3", "估值分析 Valuation Watch",
-     "同一個觸發條件，自動跑齊DCF現金流折現、倍數法、反推隱含增長率、同業比較等多種估值模型，寫落Notion"),
+     "同一個觸發條件，自動跑齊DCF現金流折現、倍數法、反推隱含增長率、同業比較等多種估值模型，寫落Notion；文字分析同樣由Cloudflare Workers AI生成，失敗就轉返本機AI"),
     ("03:00", "凌晨", "Category 5", "風險紅旗 Risk Watch",
-     "監察定咗嗰啲股票有冇新年報（10-K），揪出主要風險因素、資產負債表外負債、商譽減值、應收帳款同存貨趨勢等鑑證式分析，寫落Notion"),
+     "監察定咗嗰啲股票有冇新年報（10-K），揪出主要風險因素、資產負債表外負債、商譽減值、應收帳款同存貨趨勢等鑑證式分析，寫落Notion；文字分析同樣由Cloudflare Workers AI生成，失敗就轉返本機AI"),
     ("即時", "觸發", "Category 1", "基本面快照刷新",
      "Category 2／3／5 一有新報告成功生成，即刻觸發，重新整理返嗰隻股票嘅基本面快照（現價、時效標記），確保資料新鮮"),
     ("10:30", "朝早", "Category 4", "技術分析 Technicals Daily",

@@ -62,7 +62,11 @@ publishes for Google Shopping, so they carry name, price, currency *and*
 availability, and they move far less often than the surrounding markup. A page
 that stops publishing either is reported as a failure rather than guessed at.
 
-A drop must be at least PRICEWATCH_MIN_DROP_PCT (default 1%) to alert.
+A drop must be at least PRICEWATCH_MIN_DROP_PCT (default 1%) to alert; since
+2026-10-02 a rise of the same size alerts too (for a Trade Me search: the
+cheapest listing went and the next one is dearer). An item seen out of stock is
+flagged in the state file and pages once (priority 4) when it is buyable again,
+including a product never seen in stock since it was added.
 
 Run manually: python ops/pricewatch.py
 """
@@ -263,7 +267,36 @@ def _check_and_alert(notify, state: dict, today: str, key: str, title: str, pric
     same_item = identity is None or identity == prev_identity
     alert_failed = False
 
-    if prev_price is not None and prev_date != today and price <= prev_price * (1 - MIN_DROP_PCT / 100):
+    if prev and prev.get("out_of_stock"):
+        # Back in stock outranks any price comparison: the old baseline is
+        # from before the item sold out, and the point is that it's buyable.
+        last = f"（上次有貨 ${prev_price:.2f}）" if prev_price is not None else ""
+        sent = notify("價錢監察", f"{title} 有貨喇：${price:.2f}{last}\n{url}", priority=4)
+        alert_failed = not sent
+        log.info("%s: back in stock at $%.2f, alert %s", title, price, "sent" if sent else "NOT sent")
+        if not sent:
+            log.warning("%s: still marked out of stock -- alert failed, will retry next run", title)
+            return
+        prev_date = None  # record today's price below even on a same-day rerun
+    elif prev_price is not None and prev_date != today and price >= prev_price * (1 + MIN_DROP_PCT / 100):
+        # Same threshold as drops, so cent-level noise stays quiet both ways.
+        # For a Trade Me search a dearer cheapest-match with a new identity
+        # means the cheaper listing sold or expired.
+        if same_item:
+            line = f"{title} 貴咗：${prev_price:.2f} → ${price:.2f}\n{url}"
+        elif prev_identity is not None:
+            line = f"{title} 最平嘅盤冇咗，而家最平：${prev_price:.2f} → ${price:.2f}\n{url}"
+        else:
+            line = None
+        if line:
+            sent = notify("價錢監察", line, priority=3)
+            alert_failed = not sent
+            log.info("%s: rise $%.2f -> $%.2f, alert %s", title, prev_price, price,
+                      "sent" if sent else "NOT sent")
+        else:
+            log.info("%s: current $%.2f, last recorded $%.2f but no listing identity -- "
+                     "re-baselined, no alert", title, price, prev_price)
+    elif prev_price is not None and prev_date != today and price <= prev_price * (1 - MIN_DROP_PCT / 100):
         # A minimum drop keeps rounding noise off the phone -- any strictly-lower
         # price used to page, so Kingston moving $470.35 -> $470.01 was an alert.
         # Tradeoff: the baseline moves every day, so a slow drift down in
@@ -304,6 +337,13 @@ def _check_and_alert(notify, state: dict, today: str, key: str, title: str, pric
         state[key] = entry
 
 
+def _mark_out_of_stock(state: dict, key: str, title: str) -> None:
+    # Flag only: the last in-stock price and date stay as they were, so the
+    # back-in-stock alert can quote the old price. A first-ever sighting that
+    # is out of stock gets an entry with no price at all.
+    state.setdefault(key, {"title": title})["out_of_stock"] = True
+
+
 def main() -> None:
     from notify import notify
 
@@ -322,6 +362,7 @@ def main() -> None:
             title = data.get("title", product_id)
             if price is None:
                 log.warning("%s: no in-stock offer in response", product_id)
+                _mark_out_of_stock(state, product_id, title)
                 continue
             _check_and_alert(notify, state, today, product_id, title, price, data.get("url", ""))
         except Exception:
@@ -363,6 +404,7 @@ def main() -> None:
                 # is not a price. Skipping also freezes the baseline, so coming
                 # back in stock at the old price is not read as a drop.
                 log.info("%s: out of stock, skipped", title)
+                _mark_out_of_stock(state, url, f"{title}（{urllib.parse.urlparse(url).hostname or url}）")
                 continue
             # Two shops can sell the same bottle at the same price, so the host
             # is part of the title -- otherwise the ntfy alert cannot say which

@@ -135,8 +135,37 @@ check_true("different listing + cheaper -> 'cheaper listing' wording, not a cut"
 check("a changed listing re-baselines onto the new identity",
       st["identity"], "222")
 
-sent, _ = alert_for(same, 900.0, "222")
-check_true("different listing but dearer -> silent", not sent)
+sent, st = alert_for(same, 900.0, "222")
+check_true("different listing and dearer -> 'cheapest listing gone' wording",
+           len(sent) == 1 and "最平嘅盤冇咗" in sent[0])
+check("...and re-baselines onto the dearer listing", st["price"], 900.0)
+
+# Rises alert too (owner request 2026-10-02), at the same 1% threshold.
+sent, _ = alert_for({"date": DAY, "price": 631.35, "title": "T"}, 722.20, None)
+check_true("same item dearer -> rise wording", len(sent) == 1 and "貴咗" in sent[0])
+sent, _ = alert_for({"date": DAY, "price": 116.00, "title": "T"}, 116.95, None)
+check_true("sub-threshold rise stays silent", not sent)
+
+# Back in stock: the flag outranks any price comparison and quotes the old price.
+oos = {"date": DAY, "price": 470.01, "title": "T", "out_of_stock": True}
+sent, st = alert_for(oos, 470.01, None)
+check_true("back in stock at the same price still alerts",
+           len(sent) == 1 and "有貨喇" in sent[0] and "470.01" in sent[0])
+check("...and clears the flag", "out_of_stock" in st, False)
+sent, st = alert_for({"title": "T", "out_of_stock": True}, 999.0, None)
+check_true("never-seen-in-stock item alerts without an old price",
+           len(sent) == 1 and "有貨喇" in sent[0] and "上次" not in sent[0])
+check("...and gets its first baseline", st["price"], 999.0)
+sent, st = alert_for(dict(oos, date="2026-09-11"), 470.01, None)
+check("back in stock on a same-day rerun still records the price", "out_of_stock" in st, False)
+sent, st = alert_for(oos, 470.01, None, delivered=False)
+check("a failed back-in-stock push keeps the flag for a retry", st.get("out_of_stock"), True)
+
+state = {"k": {"date": DAY, "price": 470.01, "title": "T"}}
+pw._mark_out_of_stock(state, "k", "T")
+check("marking out of stock keeps the last price", state["k"]["price"], 470.01)
+pw._mark_out_of_stock(state, "new", "N")
+check("a first sighting out of stock gets a flag-only entry", state["new"], {"title": "N", "out_of_stock": True})
 
 # Legacy state written before identities were recorded: re-baseline once,
 # quietly, rather than trusting a baseline whose item is unknown.

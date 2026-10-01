@@ -178,7 +178,7 @@
 <tr><td class="phrase">朝早九點</td><td>檢查牛奶價錢，如果今日最平嘅3公升奶平過琴日，推送通知去手機</td></tr>
 <tr><td class="phrase">朝早九點</td><td>收集NVIDIA相關新聞，本機AI生成每日報告草稿</td></tr>
 <tr><td class="phrase">朝早十點</td><td>iPhone自動攞當日簡報然後讀出嚟：天氣、巴士、收垃圾提醒、新聞</td></tr>
-<tr><td class="phrase">朝早10點05分</td><td>監察價錢：PriceSpy上面嘅Nintendo Switch 2、Kingston Fury Beast Black DDR4記憶體、G.Skill Ripjaws V Black DDR4記憶體、Pokemon Pokopia (Switch 2)、Zelda: Tears of the Kingdom (Switch 2)、Zelda: Ocarina of Time (Switch 2)、Asus GeForce RTX 5050顯示卡、Nintendo Switch 2薩爾達40週年特別版主機；Trade Me上面嘅Nintendo Switch 2；仲有Bottle-O同Super Liquor嘅Aberlour 12年威士忌。只計有貨嘅價錢，平過上次記錄最少1%先推送通知去手機</td></tr>
+<tr><td class="phrase">朝早10點05分</td><td>監察價錢：PriceSpy上面嘅Nintendo Switch 2、Kingston Fury Beast Black DDR4記憶體、G.Skill Ripjaws V Black DDR4記憶體、Pokemon Pokopia (Switch 2)、Zelda: Tears of the Kingdom (Switch 2)、Zelda: Ocarina of Time (Switch 2)、Asus GeForce RTX 5050顯示卡、Nintendo Switch 2薩爾達40週年特別版主機；Trade Me上面嘅Nintendo Switch 2；仲有Bottle-O同Super Liquor嘅Aberlour 12年威士忌。只計有貨嘅價錢，平過或者貴過上次記錄最少1%就推送通知去手機；缺貨嘅貨品一返貨都會即刻通知</td></tr>
 </table>
 
 <h3 class="timeline-title">股票分析自動化時間表</h3>
@@ -189,7 +189,7 @@
 <div class="t-rail"><span class="t-dot"></span><span class="t-line"></span></div>
 <div class="t-card">
 <div class="t-head"><span class="t-cat">Category 2</span><span class="t-name">業績監察 Earnings Watch</span></div>
-<p class="t-desc">監察定咗嗰啲股票嘅SEC新聞稿（8-K），一有新季度業績就自動生成分析報告——EPS對比市場預期、前瞻指引、四季分部趨勢——寫落Notion</p>
+<p class="t-desc">監察定咗嗰啲股票嘅SEC新聞稿（8-K），一有新季度業績就自動生成分析報告——EPS對比市場預期、前瞻指引、四季分部趨勢（加速定減速由程式計，唔係AI估）——寫落Notion；文字分析由Cloudflare Workers AI生成，失敗就自動轉返屋企部機嘅本機AI</p>
 </div>
 </div>
 <div class="t-row">
@@ -197,7 +197,7 @@
 <div class="t-rail"><span class="t-dot"></span><span class="t-line"></span></div>
 <div class="t-card">
 <div class="t-head"><span class="t-cat">Category 3</span><span class="t-name">估值分析 Valuation Watch</span></div>
-<p class="t-desc">同一個觸發條件，自動跑齊DCF現金流折現、倍數法、反推隱含增長率、同業比較等多種估值模型，寫落Notion</p>
+<p class="t-desc">同一個觸發條件，自動跑齊DCF現金流折現、倍數法、反推隱含增長率、同業比較等多種估值模型，寫落Notion；文字分析同樣由Cloudflare Workers AI生成，失敗就轉返本機AI</p>
 </div>
 </div>
 <div class="t-row">
@@ -205,7 +205,7 @@
 <div class="t-rail"><span class="t-dot"></span><span class="t-line"></span></div>
 <div class="t-card">
 <div class="t-head"><span class="t-cat">Category 5</span><span class="t-name">風險紅旗 Risk Watch</span></div>
-<p class="t-desc">監察定咗嗰啲股票有冇新年報（10-K），揪出主要風險因素、資產負債表外負債、商譽減值、應收帳款同存貨趨勢等鑑證式分析，寫落Notion</p>
+<p class="t-desc">監察定咗嗰啲股票有冇新年報（10-K），揪出主要風險因素、資產負債表外負債、商譽減值、應收帳款同存貨趨勢等鑑證式分析，寫落Notion；文字分析同樣由Cloudflare Workers AI生成，失敗就轉返本機AI</p>
 </div>
 </div>
 <div class="t-row">
