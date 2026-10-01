@@ -15,7 +15,6 @@ Run manually: python ops/deploy_dashboard.py
 """
 
 import datetime as dt
-import json
 import logging
 import os
 import shutil
@@ -62,11 +61,9 @@ def main() -> None:
     if result.returncode != 0:
         log.error("vercel deploy failed (exit %d): %s", result.returncode, result.stderr.strip()[-2000:])
         sys.exit(1)
-    try:
-        url = json.loads(result.stdout)["deployment"]["url"]
-    except (json.JSONDecodeError, KeyError):
-        url = "(url not parsed -- see raw output)"
-    log.info("deployed: https://%s", url)
+    # The CLI writes only the deployment URL to stdout; progress goes to stderr.
+    url = result.stdout.strip().splitlines()[-1] if result.stdout.strip() else "(no URL on stdout)"
+    log.info("deployed: %s", url)
 
 
 if __name__ == "__main__":
