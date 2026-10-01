@@ -1283,7 +1283,53 @@ def alert_if_narration_dead(job: str, log_name: str) -> None:
         from notify import notify
         notify("股票報告降級",
                f"{job}: {_llm_failures}/{_llm_attempts} narration calls failed -- "
-               f"check the Ollama service and asr/logs/{log_name}", priority=4)
+               f"check Ollama / Workers AI and asr/logs/{log_name}", priority=4)
+
+
+# ---------------------------------------------------------------------------
+# Cloudflare Workers AI -- the daily jobs (Category 4 technicals, Category 6
+# dashboard, day range) narrate here instead of local qwen3:8b: public market
+# data only, ~7x faster than the 4 GB GTX 1650 (benchmarked 2026-10-01), and it
+# keeps qwen3:8b off the GPU in the 10:00 window it shares with the voice
+# briefing. Credentials live in the gitignored repo-root .env. Budget: these
+# jobs use ~3,300 of the 10,000 free neurons/day; the reactive SEC-filing
+# reports deliberately stay on local Ollama so earnings days can't blow it.
+# ---------------------------------------------------------------------------
+
+WORKERS_AI_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+
+
+def _repo_env() -> dict:
+    env = {}
+    try:
+        with open(os.path.join(ROOT, ".env"), encoding="utf-8") as f:
+            for line in f:
+                key, sep, value = line.strip().partition("=")
+                if sep and not key.startswith("#"):
+                    env[key.strip()] = value.strip().strip('"')
+    except OSError:
+        pass
+    return env
+
+
+def workers_ai_generate(prompt: str, max_tokens: int) -> str:
+    env = _repo_env()
+    account = env.get("CF_ACCOUNT_ID") or os.environ.get("CF_ACCOUNT_ID")
+    token = env.get("CF_AI_TOKEN") or os.environ.get("CF_AI_TOKEN")
+    if not (account and token):
+        raise RuntimeError("CF_ACCOUNT_ID / CF_AI_TOKEN not set in .env")
+    req = urllib.request.Request(
+        f"https://api.cloudflare.com/client/v4/accounts/{account}/ai/v1/chat/completions",
+        data=json.dumps({
+            "model": WORKERS_AI_MODEL,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": max_tokens,
+        }).encode(),
+        headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"},
+    )
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        reply = json.loads(resp.read())["choices"][0]["message"]["content"] or ""
+    return reply.strip()
 
 
 def _ollama_generate(prompt: str, num_predict: int = 1500) -> str:

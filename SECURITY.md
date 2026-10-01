@@ -88,9 +88,17 @@ when the next one is built.)
 a user-context scheduled task holds the credentials, pulls from the provider
 on a cadence, sanitizes the response to the minimum fields the reply needs,
 and atomically writes a cache file under `asr\cache`. Commands only ever
-read the file. The service never holds a token; a compromised service sees
-only pre-minimized data; a dead task or revoked grant shows up as staleness,
-which the command reports in friendly Cantonese.
+read the file. A compromised service sees only pre-minimized data; a dead
+task or revoked grant shows up as staleness, which the command reports in
+friendly Cantonese.
+
+**Exception — Cloudflare Workers AI** (owner decision, 2026-10-01): the
+service may hold a Workers AI token (`CF_AI_TOKEN`) for LLM calls that carry
+no personal data (e.g. public news headlines, public market data). Reasoning:
+no personal data is sent, and against local Ollama on the 4 GB GTX 1650 it is
+several times faster (benchmarked 2026-10-01) at negligible cost (10,000 free
+neurons/day). Chat transcripts, reminders and anything else personal stay on
+local Ollama.
 
 **Writes — marker-file hand-off** (as above), plus an idempotency key in the
 marker and the existing spoken-確認 flow for anything destructive. Not yet

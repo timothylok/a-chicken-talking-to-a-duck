@@ -62,10 +62,8 @@ import stock_fundamentals as sf  # noqa: E402
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "asr"))
 from router import _sma, _rsi  # noqa: E402
 
-# Not sf.OLLAMA_MODEL (lfm2.5) or a blind default -- same reasoning as
-# stock_earnings.py/stock_valuation.py: structured trend/entry judgment the
-# user may act on, not spoken-Cantonese brevity.
-TECHNICALS_MODEL = "qwen3:8b"
+# Narration runs on Cloudflare Workers AI (sf.WORKERS_AI_MODEL), not local
+# Ollama -- see sf.workers_ai_generate for why.
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LOG_PATH = os.path.join(ROOT, "asr", "logs", f"stock_technicals-{dt.date.today():%Y-%m-%d}.log")
@@ -282,20 +280,8 @@ def _fmt(val, suffix: str = "", digits: int = 2) -> str:
 # ---------------------------------------------------------------------------
 
 def _generate(prompt: str, num_predict: int = 500) -> str:
-    payload = json.dumps({
-        "model": TECHNICALS_MODEL,
-        "think": False,
-        "messages": [{"role": "user", "content": prompt}],
-        "stream": False,
-        "options": {"num_ctx": 8192, "num_predict": num_predict},
-    }).encode()
-    req = urllib.request.Request(
-        f"{sf.OLLAMA_URL}/api/chat", data=payload,
-        headers={"Content-Type": "application/json"},
-    )
     try:
-        with urllib.request.urlopen(req, timeout=120) as resp:
-            reply = json.loads(resp.read()).get("message", {}).get("content", "").strip()
+        reply = sf.workers_ai_generate(prompt, max_tokens=num_predict)
         if not reply:
             raise RuntimeError("model returned empty content")
     except Exception:

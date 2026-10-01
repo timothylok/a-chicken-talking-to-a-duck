@@ -17,7 +17,7 @@ categories already produced, same "reuse in-process, don't refetch" pattern
 
 The 1-day "lean" (Bullish/Bearish/Neutral) is a deterministic rule over
 price vs. SMA50/SMA200 and RSI14 -- never LLM-decided, so it's reproducible
-run to run. `qwen3:8b` (`think:false`, same model as Category 4) only
+run to run. Workers AI Llama 3.3 70B (same model as Category 4) only
 narrates the reasoning paragraph from those already-computed numbers plus
 the Category 6 grounding text -- "compute first, narrate second", same
 guardrail as every other category in this project.
