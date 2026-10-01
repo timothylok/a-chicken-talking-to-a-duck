@@ -1,4 +1,4 @@
-"""Assertions over the dependency-free logic in router.py and pricewatch.py.
+"""Assertions over the dependency-free logic in router.py, pricewatch.py and flightwatch.py.
 
 Run: python tests/pure_logic.py
 
@@ -27,6 +27,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "asr"))
 sys.path.insert(0, os.path.join(ROOT, "ops"))
 
+import datetime as dt  # noqa: E402
+
+import flightwatch as fw  # noqa: E402
 import pricewatch as pw  # noqa: E402
 import router as r  # noqa: E402
 
@@ -166,6 +169,25 @@ check("...and the date, so the next run re-raises it", st["date"], DAY)
 
 sent, st = alert_for(same, 800.0, "111", delivered=True)
 check("a delivered push still advances the baseline", st["price"], 800.0)
+
+
+# --- flight watch peak flag + alerts ----------------------------------------
+D = dt.date
+check("early Dec, back before Christmas is off-peak", fw.is_peak(D(2026, 12, 3), D(2026, 12, 20)), False)
+check("departing after 18 Dec is peak", fw.is_peak(D(2026, 12, 19), D(2027, 1, 9)), True)
+check("returning 24 Dec is peak", fw.is_peak(D(2026, 12, 10), D(2026, 12, 24)), True)
+check("returning 6 Jan is off-peak if departed early", fw.is_peak(D(2026, 12, 18), D(2027, 1, 6)), False)
+
+c1, c2, c3 = (D(2026, 12, 1), D(2026, 12, 15)), (D(2026, 12, 2), D(2026, 12, 16)), (D(2026, 12, 3), D(2026, 12, 17))
+hist = {c1: [("2026-10-01", 9000), ("2026-10-02", 10000)],
+        c2: [("2026-10-01", 9200), ("2026-10-02", 10000)],
+        c3: [("2026-10-02", 10000)]}
+got = fw.find_alerts({c1: 8900, c2: 9500, c3: 9000, (D(2026, 12, 4), D(2026, 12, 18)): 5000}, hist)
+check("alerts fire on >=10% drop and new low; 5% drop at a non-low and first sighting stay quiet",
+      [(a["combo"], a["reasons"]) for a in got],
+      [(c1, ["-11% vs 2026-10-02", "new low"]), (c3, ["-10% vs 2026-10-02", "new low"])])
+check("a 5% drop that is also a new low still alerts",
+      [a["reasons"] for a in fw.find_alerts({c2: 9500}, {c2: [("2026-10-01", 10000)]})], [["new low"]])
 
 
 # --- report ------------------------------------------------------------------
