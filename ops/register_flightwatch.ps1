@@ -1,6 +1,6 @@
 # Registers the "VoiceOS Flight Watch" scheduled task. Run from an ELEVATED
-# PowerShell. Searches the HKG -> AKL December fare grid once a day at 08:15
-# NZT as the logged-in user (ops/flightwatch.py, ~15 min for 248 searches),
+# PowerShell. Searches the HKG -> AKL 26-31 Dec fare grid once a day at 08:15
+# NZT as the logged-in user (ops/flightwatch.py, ~3 min for 48 searches),
 # clear of the 10:00-11:30 stock-report window. Same principal/settings
 # convention as ops/register_calendar_sync.ps1 (S4U, Limited, Hidden,
 # StartWhenAvailable so a sleeping laptop catches up on wake).

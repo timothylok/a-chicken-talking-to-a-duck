@@ -1,10 +1,16 @@
 """Daily HKG -> AKL round-trip fare tracker (direct flights, economy, 1 adult, HKD).
 
-Searches every December 2026 departure x every 14-21 day trip length (248
-round trips) on Google Flights once a day, stores the cheapest fare per
-airline in SQLite, writes a markdown report to content/flight-tracker/, and
-pushes one ntfy alert when any combination drops >10% day-over-day or hits a
-new low.
+Searches every 26-31 December 2026 departure x every 14-21 day trip length
+(48 round trips, returning 9-21 January) on Google Flights once a day, stores
+the cheapest fare per airline in SQLite, writes a markdown report to
+content/flight-tracker/, and pushes one ntfy alert when any combination drops
+>10% day-over-day or hits a new low.
+
+Window narrowed from all of December on 2026-10-02 at the owner's request,
+after the first full-month run (2026-10-01) priced every 26-31 Dec departure
+at the month's floor (HK$9,638) -- post-Christmas is the quiet direction on
+this route. That also retired the peak-period flag: every one of these
+departures is after 18 Dec and every return is after 5 Jan.
 
 Data source: Google Flights through the `fast-flights` library (pip install
 fast-flights into asr/.venv). Chosen 2026-10-01 because every free official API
@@ -40,12 +46,9 @@ LOG_PATH = os.path.join(ROOT, "asr", "logs", f"flightwatch-{dt.date.today():%Y-%
 NZ_TZ = ZoneInfo("Pacific/Auckland")
 
 ORIGIN, DEST = "HKG", "AKL"
-DEPARTURES = [dt.date(2026, 12, d) for d in range(1, 32)]
+DEPARTURES = [dt.date(2026, 12, d) for d in range(26, 32)]
 TRIP_LENGTHS = range(14, 22)
 DROP_PCT = 0.10
-# Peak: departures after ~18 Dec, or a return inside the Christmas/New Year window.
-PEAK_DEPART_AFTER = dt.date(2026, 12, 18)
-PEAK_RETURN = (dt.date(2026, 12, 24), dt.date(2027, 1, 5))
 SEARCH_PAUSE_S = 2
 
 os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
@@ -61,10 +64,6 @@ logging.getLogger("primp").setLevel(logging.WARNING)
 # ---------------------------------------------------------------------------
 # Pure logic (stdlib only -- covered by tests/pure_logic.py)
 # ---------------------------------------------------------------------------
-
-def is_peak(depart: dt.date, ret: dt.date) -> bool:
-    return depart > PEAK_DEPART_AFTER or PEAK_RETURN[0] <= ret <= PEAK_RETURN[1]
-
 
 def find_alerts(today: dict, history: dict) -> list:
     """today: {(dep, ret): price}. history: {(dep, ret): [(run_date, price), ...]}
@@ -195,26 +194,24 @@ def build_report(con, run_date: str, searched: "int | None", alerts: list) -> st
     lines.append("Source: Google Flights (via `fast-flights`), prices quoted natively in HKD — no FX conversion.  ")
     if searched is not None:
         lines.append(f"Searched {searched} date combinations; {len(today)} returned direct fares.")
-    lines += ["", "† = peak (departs after 18 Dec, or returns 24 Dec – 5 Jan).", ""]
-
-    off_peak = sorted((p, c) for c, p in today.items() if not is_peak(*c))
-    peak = sorted((p, c) for c, p in today.items() if is_peak(*c))
-    lines.append("## Best windows today")
     lines.append("")
-    if off_peak:
-        p, c = off_peak[0]
-        lines.append(f"- **Cheapest off-peak:** {_label(*c)} — **{money(p)}** ({airlines.get(c, '')})")
-    if peak:
-        p, c = peak[0]
-        lines.append(f"- Cheapest peak†: {_label(*c)} — {money(p)} ({airlines.get(c, '')})")
-    if off_peak and peak:
-        lines.append(f"- Off-peak saving vs cheapest peak: {money(peak[0][0] - off_peak[0][0])}")
+
+    ranked = sorted((p, c) for c, p in today.items())
+    lines.append("## Best window today")
+    lines.append("")
+    if ranked:
+        floor = ranked[0][0]
+        at_floor = [c for p, c in ranked if p == floor]
+        p, c = ranked[0]
+        lines.append(f"- **Cheapest:** {_label(*c)} — **{money(p)}** ({airlines.get(c, '')})")
+        if len(at_floor) > 1:
+            lines.append(f"- {len(at_floor)} of {len(ranked)} combinations are at this price.")
     lines.append("")
 
     lines.append("## Alerts today")
     lines.append("")
     if alerts:
-        lines += [f"- {_label(*a['combo'])}{' †' if is_peak(*a['combo']) else ''}: "
+        lines += [f"- {_label(*a['combo'])}: "
                   f"{money(a['prev'])} → **{money(a['price'])}** ({', '.join(a['reasons'])})"
                   for a in alerts]
     else:
@@ -232,16 +229,16 @@ def build_report(con, run_date: str, searched: "int | None", alerts: list) -> st
             p = today.get(c)
             if p is not None:
                 row.append(p)
-            cells.append("—" if p is None else f"{p:,}{'†' if is_peak(*c) else ''}")
+            cells.append("—" if p is None else f"{p:,}")
         best = min(row) if row else None
         lines.append(f"| {dep:%a %d %b} | " + " | ".join(cells) + f" | {money(best)} |")
     lines.append("")
 
-    lines.append("## Top 15 off-peak combinations")
+    lines.append("## Top 15 combinations")
     lines.append("")
     lines.append("| Dates | Today | vs yesterday | Airlines |")
     lines.append("|---|---:|---:|---|")
-    for p, c in off_peak[:15]:
+    for p, c in ranked[:15]:
         y = prev.get(c)
         delta = "—" if y is None else f"{p - y:+,}"
         lines.append(f"| {_label(*c)} | {money(p)} | {delta} | {airlines.get(c, '')} |")
@@ -252,15 +249,15 @@ def build_report(con, run_date: str, searched: "int | None", alerts: list) -> st
     lines.append(f"{len(days)} day(s) of data, {days[0] if days else '—'} to {days[-1] if days else '—'}. "
                  "Sorted by today's price.")
     lines.append("")
-    lines.append("| Dates | Peak | Days | Low (date) | High | Today | vs yesterday |")
-    lines.append("|---|:-:|---:|---|---:|---:|---:|")
-    for p, c in sorted((p, c) for c, p in today.items()):
+    lines.append("| Dates | Days | Low (date) | High | Today | vs yesterday |")
+    lines.append("|---|---:|---|---:|---:|---:|")
+    for p, c in ranked:
         series = [(d, by_day[d][c]) for d in days if c in by_day[d]]
         low_d, low_p = min(series, key=lambda x: x[1])
         high = max(x[1] for x in series)
         y = prev.get(c)
         delta = "—" if y is None else f"{p - y:+,}"
-        lines.append(f"| {_label(*c)} | {'†' if is_peak(*c) else ''} | {len(series)} | "
+        lines.append(f"| {_label(*c)} | {len(series)} | "
                      f"{low_p:,} ({low_d}) | {high:,} | {p:,} | {delta} |")
     lines.append("")
     return "\n".join(lines)
@@ -304,7 +301,7 @@ def main() -> None:
     log.info("wrote %s (%d alerts)", out_path, len(alerts))
 
     if alerts and not report_only:
-        top = [f"{a['combo'][0]:%d %b}->{a['combo'][1]:%d %b}{' (peak)' if is_peak(*a['combo']) else ''}"
+        top = [f"{a['combo'][0]:%d %b}->{a['combo'][1]:%d %b}"
                f" HK${a['price']:,} ({', '.join(a['reasons'])})" for a in alerts[:5]]
         more = f"\n+{len(alerts) - 5} more" if len(alerts) > 5 else ""
         notify(f"HKG-AKL fares down: {len(alerts)} date pair(s)",

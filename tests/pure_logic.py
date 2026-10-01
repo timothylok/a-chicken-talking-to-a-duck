@@ -171,13 +171,8 @@ sent, st = alert_for(same, 800.0, "111", delivered=True)
 check("a delivered push still advances the baseline", st["price"], 800.0)
 
 
-# --- flight watch peak flag + alerts ----------------------------------------
+# --- flight watch alerts ----------------------------------------------------
 D = dt.date
-check("early Dec, back before Christmas is off-peak", fw.is_peak(D(2026, 12, 3), D(2026, 12, 20)), False)
-check("departing after 18 Dec is peak", fw.is_peak(D(2026, 12, 19), D(2027, 1, 9)), True)
-check("returning 24 Dec is peak", fw.is_peak(D(2026, 12, 10), D(2026, 12, 24)), True)
-check("returning 6 Jan is off-peak if departed early", fw.is_peak(D(2026, 12, 18), D(2027, 1, 6)), False)
-
 c1, c2, c3 = (D(2026, 12, 1), D(2026, 12, 15)), (D(2026, 12, 2), D(2026, 12, 16)), (D(2026, 12, 3), D(2026, 12, 17))
 hist = {c1: [("2026-10-01", 9000), ("2026-10-02", 10000)],
         c2: [("2026-10-01", 9200), ("2026-10-02", 10000)],
