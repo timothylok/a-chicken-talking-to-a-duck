@@ -15,8 +15,10 @@ Run manually: python ops/deploy_dashboard.py
 """
 
 import datetime as dt
+import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -61,8 +63,15 @@ def main() -> None:
     if result.returncode != 0:
         log.error("vercel deploy failed (exit %d): %s", result.returncode, result.stderr.strip()[-2000:])
         sys.exit(1)
-    # The CLI writes only the deployment URL to stdout; progress goes to stderr.
-    url = result.stdout.strip().splitlines()[-1] if result.stdout.strip() else "(no URL on stdout)"
+    # The CLI prints a bare URL from the scheduled task but a JSON object when
+    # it detects an agent shell (a 2026-10-02 manual run logged "deployed: }").
+    try:
+        url = json.loads(result.stdout)["deployment"]["url"]
+    except (json.JSONDecodeError, KeyError, TypeError):
+        match = re.search(r"[\w.-]+\.vercel\.app", result.stdout)
+        url = match.group(0) if match else "(no URL on stdout)"
+    if not url.startswith(("http", "(")):
+        url = f"https://{url}"
     log.info("deployed: %s", url)
 
 
