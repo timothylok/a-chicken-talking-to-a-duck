@@ -381,12 +381,23 @@ def _kpi_cash_flow_dividend(bundle: "dict | None") -> dict:
     ) if x)
     if fcf_val is None:
         return _kpi_na("free cash flow unavailable for this filing")
+    # Capex strain: share of operating cash flow consumed by capex. A
+    # non-payer used to get a flat 0.7 here, which scored AMZN (capex 94%
+    # of OCF) the same as GOOGL (55%).
+    fcf_end = bundle["fcf"][-1]["end"]
+    ocf_val = next((i["val"] for i in bundle["ocf"] if i["end"] == fcf_end), None)
+    capex_val = next((i["val"] for i in bundle["capex"] if i["end"] == fcf_end), None)
+    strain = capex_val / ocf_val if ocf_val and ocf_val > 0 else None
+    strain_score = _lerp_score(strain, 0.5, 1.0, 1.0, 0.2) if strain is not None else 0.0
+    strain_detail = (f"Capex uses {strain:.0%} of operating cash flow." if strain is not None
+                     else "Operating cash flow not positive -- capex unfunded by operations.")
     if returned <= 0:
-        return _kpi(0.7, "No buybacks/dividends this year to evaluate coverage against.")
+        return _kpi(strain_score, f"{strain_detail} No buybacks/dividends this year.")
     coverage = fcf_val / returned
-    score = _lerp_score(coverage, 1.0, 0.2, 1.5, 1.0)
-    detail = f"FCF covers {coverage:.1f}x this year's buybacks+dividends ({sf._fmt_usd(fcf_val)} FCF vs {sf._fmt_usd(returned)} returned)."
-    return _kpi(score, detail)
+    coverage_score = _lerp_score(coverage, 1.0, 0.2, 1.5, 1.0)
+    detail = (f"{strain_detail} FCF covers {coverage:.1f}x this year's buybacks+dividends "
+              f"({sf._fmt_usd(fcf_val)} FCF vs {sf._fmt_usd(returned)} returned).")
+    return _kpi((strain_score + coverage_score) / 2, detail)
 
 
 # ---------------------------------------------------------------------------
