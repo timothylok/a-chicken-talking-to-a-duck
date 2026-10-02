@@ -46,13 +46,18 @@ def main() -> None:
         log.warning("0/%d tickers generated -- skipping deploy, dashboard stays on last good publish",
                     len(srd.WATCHLIST))
         return
+    log.info("%d/%d tickers generated, deploying to Vercel production", written, len(srd.WATCHLIST))
+    publish()
 
+
+def publish() -> None:
+    """vercel --prod from dashboard/. Also called by ai_digest.py -- both
+    pages ship in one build from whatever data files are on disk."""
     vercel = shutil.which("vercel")
     if not vercel:
         log.error("vercel CLI not found on PATH -- data written locally but not published")
         sys.exit(1)
 
-    log.info("%d/%d tickers generated, deploying to Vercel production", written, len(srd.WATCHLIST))
     result = subprocess.run(
         [vercel, "--prod", "--yes"],
         cwd=DASHBOARD_DIR,

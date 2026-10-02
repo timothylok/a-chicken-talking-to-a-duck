@@ -76,6 +76,7 @@ AUTOMATIONS = [
     ("", "每十五分鐘", "同步Google日曆，淨係攞今日同聽日嘅行程標題同時間，俾「今日行程」指令用"),
     ("09:00", "朝早九點", "收集NVIDIA相關新聞，本機AI生成每日報告草稿"),
     ("08:15", "朝早8點15分", "監察香港直飛奧克蘭來回機票（國泰／紐航，經濟艙，一位成人）：12月26至31號出發、玩14至21日，每日喺Google Flights搜齊48個日期組合，用港幣記錄，生成價格日曆報告；任何組合平過琴日10%或者創新低就推送通知去手機"),
+    ("07:30", "朝早7點半", "整理每日AI精選：Google News嘅AI新聞同OpenAI、Anthropic狀態頁嘅故障，每條都連返原文，放上 /dashboard/ai"),
 ]
 
 # Stock-related automations get their own visual timeline on the home page
@@ -178,6 +179,7 @@ PAGE = """<!DOCTYPE html>
 <p class="translate"><a href="https://translate.google.com/translate?sl=auto&amp;tl=en&amp;u=https://a-chicken-talking-to-a-duck.vercel.app/" rel="nofollow">Translate to English (Google Translate)</a></p>
 <nav class="nav">
 <a href="/dashboard">📊 風險儀表板</a>
+<a href="/dashboard/ai">🤖 AI精選</a>
 <a href="/chat.html">💬 打字版傾偈</a>
 <a href="/snake.html">🐍 食蛇</a>
 </nav>

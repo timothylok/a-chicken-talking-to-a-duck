@@ -176,3 +176,45 @@ footer {
   padding: 1rem;
   margin-top: 2rem;
 }
+
+/* AI digest page (app/ai) */
+.digest-section h2 {
+  font-size: 1.15rem;
+  margin: 2rem 0 0.75rem;
+}
+
+.stale {
+  color: var(--amber);
+  font-size: 0.8rem;
+  font-weight: 400;
+}
+
+.digest-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.digest-title {
+  color: var(--fg);
+  font-weight: 600;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.digest-title:hover {
+  color: var(--accent);
+}
+
+.digest-summary {
+  margin: 0.35rem 0 0;
+  font-size: 0.9rem;
+}
+
+.digest-meta {
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
