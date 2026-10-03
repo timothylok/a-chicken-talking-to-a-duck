@@ -1085,6 +1085,12 @@ def write_factor_snapshot(snapshot: dict) -> None:
 # ---------------------------------------------------------------------------
 
 NOTES_DATA_PATH = os.path.join(ROOT, "dashboard", "data", "notes.json")
+# Budget guard: a note measured 145 neurons (2026-10-03); 300 allows a retry.
+# The reserve keeps room for jobs later in the same UTC quota day (Stock Day
+# Range at 11:25 NZT). The notes are the one discretionary Workers AI spend,
+# so they are what gives way after a multi-filing earnings night.
+NOTES_NEURONS_PER_TICKER = 300
+NOTES_NEURON_RESERVE = 1500
 NOTE_ACTIONS = {"Buy", "Hold", "Sell"}
 NOTE_CONVICTIONS = {"Low", "Medium", "High"}
 _NUMBER = re.compile(r"-?\d+(?:,\d{3})*(?:\.\d+)?")
@@ -1224,6 +1230,17 @@ def research_notes() -> dict:
     factors = _load_json(FACTORS_DATA_PATH, {})
     vol = _load_json(VOLATILITY_DATA_PATH, {})
     notes = []
+    scored = [r for r in rows if r.get("composite") is not None]
+    used = sf.workers_ai_neurons_today()
+    need = len(scored) * NOTES_NEURONS_PER_TICKER
+    if used + need + NOTES_NEURON_RESERVE > sf.WORKERS_AI_DAILY_NEURONS:
+        reason = (f"{used:.0f} of {sf.WORKERS_AI_DAILY_NEURONS} Workers AI neurons already used today; notes need "
+                  f"~{need} plus a {NOTES_NEURON_RESERVE} reserve")
+        log.warning("research notes skipped: %s", reason)
+        from notify import notify
+        notify("研究筆記今日跳過", f"Research notes skipped to protect the free tier: {reason}. "
+                                  "Yesterday's notes stay up.", priority=3)
+        return {"generatedAt": None, "model": sf.WORKERS_AI_MODEL, "notes": [], "skipped": reason}
     for row in rows:
         if row.get("composite") is None:
             continue
@@ -1243,7 +1260,8 @@ def write_notes_snapshot(snapshot: dict) -> None:
     os.makedirs(os.path.dirname(NOTES_DATA_PATH), exist_ok=True)
     with open(NOTES_DATA_PATH, "w", encoding="utf-8") as f:
         json.dump(snapshot, f, ensure_ascii=False, indent=2)
-    log.info("research notes: %s", ", ".join(f"{n['ticker']} {n['action']}/{n['conviction']}" for n in snapshot["notes"]))
+    log.info("research notes: %s; Workers AI today %.0f neurons", ", ".join(
+        f"{n['ticker']} {n['action']}/{n['conviction']}" for n in snapshot["notes"]), sf.workers_ai_neurons_today())
 
 
 # ---------------------------------------------------------------------------

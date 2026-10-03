@@ -1362,8 +1362,52 @@ def workers_ai_generate(prompt: str, max_tokens: int, json_schema: "dict | None"
         headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"},
     )
     with urllib.request.urlopen(req, timeout=60) as resp:
-        reply = json.loads(resp.read())["choices"][0]["message"]["content"] or ""
-    return reply.strip()
+        body = json.loads(resp.read())
+    _record_neurons((body.get("usage") or {}).get("neurons"))
+    return (body["choices"][0]["message"]["content"] or "").strip()
+
+
+# Every Workers AI call in the project passes through workers_ai_generate, and
+# each response reports its own `usage.neurons`, so a local ledger is an exact
+# count of the free tier's 10,000/day -- the account's analytics API needs a
+# token scope CF_AI_TOKEN deliberately lacks. Keyed by UTC day because that is
+# when the quota resets (13:00 NZDT). One JSON line per call, appended, so the
+# dashboard and day-range jobs can both write while overlapping.
+WORKERS_AI_DAILY_NEURONS = 10_000
+WORKERS_AI_LEDGER = os.path.join(ROOT, "asr", "logs", "workers_ai_usage.jsonl")
+
+
+def _utc_day() -> str:
+    return dt.datetime.now(dt.timezone.utc).date().isoformat()
+
+
+def _record_neurons(neurons: "float | None") -> None:
+    if neurons is None:
+        return
+    line = json.dumps({"day": _utc_day(), "neurons": round(float(neurons), 2),
+                       "job": os.path.basename(sys.argv[0]) or "?"})
+    try:
+        with open(WORKERS_AI_LEDGER, "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+    except OSError as exc:
+        log.warning("could not record Workers AI usage: %s", exc)
+
+
+def workers_ai_neurons_today() -> float:
+    """Neurons this project has spent in the current UTC quota day."""
+    day, total = _utc_day(), 0.0
+    try:
+        with open(WORKERS_AI_LEDGER, encoding="utf-8") as f:
+            for line in f:
+                try:
+                    row = json.loads(line)
+                except ValueError:
+                    continue
+                if row.get("day") == day:
+                    total += row.get("neurons", 0)
+    except OSError:
+        pass
+    return total
 
 
 def workers_ai_or_local(prompt: str, max_tokens: int, local, logger) -> str:

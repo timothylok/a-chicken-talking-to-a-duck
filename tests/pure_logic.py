@@ -240,6 +240,45 @@ check("a gap in the latest two quarters gets no label",
       se._segment_label([17.0, None, 50.0]).startswith("no label"), True)
 
 
+# --- Workers AI neuron ledger + research-notes budget guard -----------------
+# The ledger and every data file are redirected to a temp dir, and the note
+# generator and ntfy are stubbed, so nothing reaches the network or the real
+# asr/logs ledger.
+import json  # noqa: E402
+import tempfile  # noqa: E402
+
+import notify  # noqa: E402
+import stock_fundamentals as sf  # noqa: E402
+import stock_risk_dashboard as srd  # noqa: E402
+
+with tempfile.TemporaryDirectory() as tmp:
+    sf.WORKERS_AI_LEDGER = os.path.join(tmp, "ledger.jsonl")
+    with open(sf.WORKERS_AI_LEDGER, "w", encoding="utf-8") as f:
+        f.write(json.dumps({"day": "1999-01-01", "neurons": 9999}) + "\n")  # an old day must not count
+    sf._record_neurons(1200.5)
+    sf._record_neurons(None)  # a reply without usage records nothing
+    check("ledger sums only today's UTC day", sf.workers_ai_neurons_today(), 1200.5)
+
+    srd.DASHBOARD_DATA_PATH = os.path.join(tmp, "latest.json")
+    for attr in ("DRAWDOWN_DATA_PATH", "SECTORS_DATA_PATH", "FACTORS_DATA_PATH", "VOLATILITY_DATA_PATH"):
+        setattr(srd, attr, os.path.join(tmp, attr + ".json"))
+    with open(srd.DASHBOARD_DATA_PATH, "w", encoding="utf-8") as f:
+        json.dump([{"ticker": t, "composite": 6.0, "kpis": {}} for t in ("AAA", "BBB", "CCC")], f)
+    calls, pushes = [], []
+    srd._research_note = lambda row, facts: calls.append(row["ticker"]) or {"action": "Hold", "conviction": "Low"}
+    notify.notify = lambda *a, **k: pushes.append(a) or True
+
+    out = srd.research_notes()  # 1200.5 used + 3 x 300 + 1500 reserve fits in 10,000
+    check("notes run when the budget fits", (len(out["notes"]), calls), (3, ["AAA", "BBB", "CCC"]))
+
+    sf._record_neurons(7000)  # an earnings night: 8200.5 used
+    calls.clear()
+    out = srd.research_notes()
+    check("notes skip, without any model call, when the budget does not fit",
+          (out["notes"], calls, len(pushes)), ([], [], 1))
+    check_true("the skip reason names the usage", "8200 of 10000" in out["skipped"])
+
+
 # --- report ------------------------------------------------------------------
 if failures:
     print(f"FAILED ({len(failures)}):")
