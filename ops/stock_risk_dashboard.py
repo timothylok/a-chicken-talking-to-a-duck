@@ -790,6 +790,101 @@ def write_reversion_snapshot(snapshot: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Volatility regime ("Volatility Regime Analysis" prompt) -- market-wide,
+# 100% deterministic, no LLM. Cboe's VIX-family indices come through the
+# same free Yahoo chart endpoint as everything else; Yahoo has no ^RVX
+# (Russell 2000 implied, 404 live), so IWM shows realized vol only. The
+# "trades that suit this regime" lines are fixed textbook pairings per
+# regime, not recommendations.
+# ---------------------------------------------------------------------------
+
+VOLATILITY_DATA_PATH = os.path.join(ROOT, "dashboard", "data", "volatility.json")
+VIX_TERM = [("^VIX9D", "9-day"), ("^VIX", "30-day"), ("^VIX3M", "3-month"), ("^VIX6M", "6-month")]
+VOL_INDICES = [("SPY", "S&P 500", "^VIX"), ("QQQ", "Nasdaq-100", "^VXN"), ("IWM", "Russell 2000", None)]
+
+REGIME_TRADES = {
+    "Calm": "Options are cheap: hedges (puts, collars) cost little; premium-selling pays little and is "
+            "exposed to a vol spike.",
+    "Normal": "No strong vol edge either way; positioning matters more than vol trades.",
+    "Elevated": "Premium is rich: covered calls and cash-secured puts collect more; hedges are expensive.",
+    "Stressed": "Backwardation means near-term fear dominates: short-vol and leveraged carry are at their "
+                "riskiest; historically vol mean-reverts after the spike, but timing it is the hard part.",
+}
+
+
+def _realized_vol(closes: list, days: int = 20) -> "float | None":
+    if len(closes) < days + 1:
+        return None
+    rets = [closes[i] / closes[i - 1] - 1 for i in range(len(closes) - days, len(closes))]
+    return statistics.stdev(rets) * (252 ** 0.5) * 100
+
+
+def volatility_regime() -> dict:
+    series = {}
+    for t in {t for t, _ in VIX_TERM} | {i for _, _, i in VOL_INDICES if i} | {e for e, _, _ in VOL_INDICES}:
+        try:
+            series[t] = st._fetch_series(t, "10y", "1d")["closes"]
+        except Exception as exc:
+            log.warning("%s: volatility fetch failed: %s", t, exc)
+
+    vix = series.get("^VIX") or []
+    vix_now = vix[-1] if vix else None
+    pctile = (sum(v <= vix_now for v in vix) / len(vix) * 100) if vix else None
+    term = [{"index": t, "tenor": tenor, "level": round(series[t][-1], 2) if series.get(t) else None}
+            for t, tenor in VIX_TERM]
+    ratio = (vix_now / series["^VIX3M"][-1]) if vix_now and series.get("^VIX3M") else None
+    shape = None if ratio is None else "Backwardation" if ratio > 1 else "Contango"
+
+    indices = []
+    for etf, name, implied in VOL_INDICES:
+        rv = _realized_vol(series.get(etf) or [])
+        iv = series[implied][-1] if implied and series.get(implied) else None
+        indices.append({
+            "etf": etf, "name": name, "implied_index": implied,
+            "realized_20d": round(rv, 1) if rv is not None else None,
+            "implied": round(iv, 1) if iv is not None else None,
+            "spread": round(iv - rv, 1) if iv is not None and rv is not None else None,
+        })
+
+    # Fixed bands on the 10-year VIX percentile, with backwardation
+    # overriding: an inverted curve is the stress signal even at a middling
+    # VIX level.
+    if pctile is None:
+        regime = None
+    elif shape == "Backwardation":
+        regime = "Stressed"
+    elif pctile < 25:
+        regime = "Calm"
+    elif pctile < 75:
+        regime = "Normal"
+    else:
+        regime = "Elevated"
+    return {
+        "generatedAt": dt.datetime.now(NZ_TZ).strftime("%Y-%m-%d %H:%M"),
+        "vix": round(vix_now, 2) if vix_now is not None else None,
+        "vixPercentile10y": round(pctile, 0) if pctile is not None else None,
+        "vixRange10y": [round(min(vix), 2), round(max(vix), 2)] if vix else None,
+        "termStructure": term,
+        "vixToVix3m": round(ratio, 3) if ratio is not None else None,
+        "shape": shape,
+        "indices": indices,
+        "regime": regime,
+        "trades": REGIME_TRADES.get(regime, ""),
+    }
+
+
+def write_volatility_snapshot(snapshot: dict) -> None:
+    if snapshot["regime"] is None:
+        log.warning("no VIX data fetched; keeping the previous volatility.json")
+        return
+    os.makedirs(os.path.dirname(VOLATILITY_DATA_PATH), exist_ok=True)
+    with open(VOLATILITY_DATA_PATH, "w", encoding="utf-8") as f:
+        json.dump(snapshot, f, ensure_ascii=False, indent=2)
+    log.info("volatility regime %s: VIX %s (%sth pct), %s", snapshot["regime"], snapshot["vix"],
+             snapshot["vixPercentile10y"], snapshot["shape"])
+
+
+# ---------------------------------------------------------------------------
 # KPI 10: Red Flags & Accounting Risk
 # ---------------------------------------------------------------------------
 
@@ -1138,6 +1233,10 @@ def poll_and_generate() -> int:
         write_reversion_snapshot(mean_reversion_scan())
     except Exception as exc:
         log.error("mean reversion scan failed: %s", exc)
+    try:
+        write_volatility_snapshot(volatility_regime())
+    except Exception as exc:
+        log.error("volatility regime failed: %s", exc)
     log.info("wrote %d report(s)", written)
     if written == 0:
         from notify import notify
@@ -1167,7 +1266,15 @@ def main() -> None:
                          help="comma-separated ticker list; always regenerates, ignores no config")
     parser.add_argument("--reversion", action="store_true",
                         help="run only the mean reversion scan (no Notion, no LLM)")
+    parser.add_argument("--volatility", action="store_true",
+                        help="run only the volatility regime snapshot (no Notion, no LLM)")
     args = parser.parse_args()
+
+    if args.volatility:
+        snapshot = volatility_regime()
+        write_volatility_snapshot(snapshot)
+        print(json.dumps(snapshot, indent=2, ensure_ascii=False))
+        return
 
     if args.reversion:
         snapshot = mean_reversion_scan()

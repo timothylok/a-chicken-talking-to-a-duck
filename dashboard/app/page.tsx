@@ -4,11 +4,14 @@ import { loadDashboardData } from "./lib/data";
 import { loadSectors } from "./lib/sectors";
 import ReversionTable from "./components/ReversionTable";
 import { loadReversion } from "./lib/reversion";
+import VolatilityPanel from "./components/VolatilityPanel";
+import { loadVolatility } from "./lib/volatility";
 
 export default function Dashboard() {
   const rows = loadDashboardData();
   const sectors = loadSectors();
   const reversion = loadReversion();
+  const volatility = loadVolatility();
 
   if (rows.length === 0) {
     return (
@@ -40,6 +43,7 @@ export default function Dashboard() {
       </div>
       {sectors && <SectorTable snapshot={sectors} />}
       {reversion && <ReversionTable snapshot={reversion} />}
+      {volatility && <VolatilityPanel snapshot={volatility} />}
       <footer>
         KPI 9 ("Market &amp; Sector-Relative Pressure") blends each stock&apos;s 3-month return vs SPY with its
         sector ETF&apos;s. The sector regime is read from market prices and the Treasury yield curve only -- no
