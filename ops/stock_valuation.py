@@ -1011,6 +1011,7 @@ def _generate(prompt: str, num_predict: int = 400) -> str:
 
 
 def _local_generate(prompt: str, num_predict: int) -> str:
+    sf.ollama_make_room(VALUATION_MODEL)
     payload = json.dumps({
         "model": VALUATION_MODEL,
         "think": False,
@@ -1383,6 +1384,7 @@ def poll_and_generate() -> int:
     state = _load_json(WATCH_STATE, {})
     today = dt.datetime.now(NZ_TZ).date()
     written = 0
+    failed = []
 
     for ticker in WATCHLIST:
         if ticker in sf.EXCLUDE_NO_SEC_FILINGS:
@@ -1419,9 +1421,11 @@ def poll_and_generate() -> int:
                 log.info("%s: regenerated Category 1 report after valuation update", ticker)
         except Exception as exc:
             log.error("%s: valuation report failed: %s", ticker, exc)
+            failed.append(ticker)
 
     _save_json(WATCH_STATE, state)
     log.info("wrote %d report(s)", written)
+    sf.fail_on_report_errors("Category 3 valuation", failed, os.path.basename(LOG_PATH))
     return written
 
 

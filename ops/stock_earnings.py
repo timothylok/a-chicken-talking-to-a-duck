@@ -409,6 +409,7 @@ def _generate(prompt: str, num_predict: int = 400) -> str:
 
 
 def _local_generate(prompt: str, num_predict: int) -> str:
+    sf.ollama_make_room(EARNINGS_MODEL)
     payload = json.dumps({
         "model": EARNINGS_MODEL,
         "think": False,
@@ -890,6 +891,7 @@ def poll_and_generate() -> int:
     history = _load_json(EARNINGS_HISTORY, {})
     today = dt.datetime.now(NZ_TZ).date()
     written = 0
+    failed = []
     generated = []
 
     for ticker in WATCHLIST:
@@ -928,6 +930,7 @@ def poll_and_generate() -> int:
                 log.info("%s: regenerated Category 1 report after earnings update", ticker)
         except Exception as exc:
             log.error("%s: earnings report failed: %s", ticker, exc)
+            failed.append(ticker)
 
     _save_json(WATCH_STATE, state)
     _save_json(EARNINGS_HISTORY, history)
@@ -937,6 +940,7 @@ def poll_and_generate() -> int:
     # from "didn't run at all".
     _save_json(LAST_RUN, {"date": today.isoformat(), "tickers": generated, "notified": False})
     log.info("wrote %d report(s)", written)
+    sf.fail_on_report_errors("Category 2 earnings", failed, os.path.basename(LOG_PATH))
     return written
 
 

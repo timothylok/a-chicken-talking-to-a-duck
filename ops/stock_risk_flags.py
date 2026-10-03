@@ -151,6 +151,7 @@ def _generate(prompt: str, num_predict: int = 500) -> str:
 
 
 def _local_generate(prompt: str, num_predict: int) -> str:
+    sf.ollama_make_room(RISK_MODEL)
     payload = json.dumps({
         "model": RISK_MODEL,
         "think": False,
@@ -684,6 +685,7 @@ def poll_and_generate() -> int:
 
     state = _load_json(WATCH_STATE, {})
     written = 0
+    failed = []
     for ticker in WATCHLIST:
         if ticker in sf.EXCLUDE_NO_SEC_FILINGS:
             continue
@@ -705,6 +707,7 @@ def poll_and_generate() -> int:
             # encounter of any ticker always generates a report.
             report = _generate_and_write(ticker, cik, hit, cfg)
             if not report:
+                failed.append(ticker)
                 continue
             state.setdefault(ticker, {})["last_processed_accn"] = hit["accn"]
             state[ticker]["last_processed_filed"] = hit["filed"]
@@ -712,9 +715,11 @@ def poll_and_generate() -> int:
             log.info("%s: generated risk-flags report for accession %s (filed %s)", ticker, hit["accn"], hit["filed"])
         except Exception as exc:
             log.error("%s: risk-flags report failed: %s", ticker, exc)
+            failed.append(ticker)
 
     _save_json(WATCH_STATE, state)
     log.info("wrote %d report(s)", written)
+    sf.fail_on_report_errors("Category 5 risk flags", failed, os.path.basename(LOG_PATH))
     return written
 
 

@@ -49,6 +49,7 @@ rather than force-fitting a parser tuned for a different company's table.
 """
 
 import argparse
+import atexit
 import datetime as dt
 import html as html_lib
 import json
@@ -1288,6 +1289,22 @@ def alert_if_narration_dead(job: str, log_name: str) -> None:
                f"check Ollama / Workers AI and asr/logs/{log_name}", priority=4)
 
 
+def fail_on_report_errors(job: str, failed: list, log_name: str) -> None:
+    """Push one ntfy and raise if any ticker's report failed this run.
+
+    The reactive jobs catch per-ticker errors so one bad filer can't block the
+    rest, which also meant the task exited 0x0 on a failure: TSLA's valuation
+    report died on a Notion schema mismatch 2026-10-03 and only a log read
+    found it. Raising lets main() exit 1 so Task Scheduler shows it too.
+    Failed tickers keep their old accession cursor and retry next run.
+    """
+    if not failed:
+        return
+    from notify import notify
+    notify("股票報告失敗", f"{job}: {', '.join(failed)} failed -- check asr/logs/{log_name}", priority=4)
+    raise RuntimeError(f"{len(failed)} report(s) failed: {', '.join(failed)}")
+
+
 # ---------------------------------------------------------------------------
 # Cloudflare Workers AI -- the daily jobs (Category 4 technicals, Category 6
 # dashboard, day range) narrate here instead of local qwen3:8b: public market
@@ -1350,6 +1367,56 @@ def workers_ai_or_local(prompt: str, max_tokens: int, local, logger) -> str:
     return local()
 
 
+_evicted: set = set()
+
+
+def _ollama_post(path: str, body: dict, timeout: int) -> dict:
+    req = urllib.request.Request(
+        f"{OLLAMA_URL}{path}", data=json.dumps(body).encode(),
+        headers={"Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read())
+
+
+def ollama_make_room(model: str) -> None:
+    """Unload every other resident model before a local call to `model`.
+
+    asr/router.py pins gemma3:4b with keep_alive 24h and the Ollama service
+    runs OLLAMA_MAX_LOADED_MODELS=1, so a qwen3:8b/lfm2.5 call otherwise has
+    to win an implicit eviction race -- the one that wedged the runner on
+    2026-09-19. An explicit keep_alive 0 unload (what `ollama stop` does) was
+    the fix that worked by hand. Evicted models are reloaded at exit with the
+    router's 24h pin so voice replies don't pay a cold load afterwards.
+    """
+    try:
+        with urllib.request.urlopen(f"{OLLAMA_URL}/api/ps", timeout=10) as resp:
+            loaded = [m["name"] for m in json.loads(resp.read()).get("models", [])]
+    except Exception as exc:
+        log.warning("ollama ps failed (%s); calling %s without unloading", exc, model)
+        return
+    for name in loaded:
+        if name.split(":latest")[0] == model.split(":latest")[0]:
+            continue
+        try:
+            _ollama_post("/api/chat", {"model": name, "messages": [], "keep_alive": 0}, 30)
+            if not _evicted:
+                atexit.register(_restore_evicted)
+            _evicted.add(name)
+            log.info("unloaded %s to make room for %s", name, model)
+        except Exception as exc:
+            log.warning("could not unload %s (%s)", name, exc)
+
+
+def _restore_evicted() -> None:
+    for name in _evicted:
+        try:
+            _ollama_post("/api/chat", {"model": name, "messages": [], "keep_alive": "24h"}, 180)
+            log.info("reloaded %s", name)
+        except Exception as exc:
+            log.warning("could not reload %s (%s)", name, exc)
+
+
 def _ollama_generate(prompt: str, num_predict: int = 1500) -> str:
     return workers_ai_or_local(prompt, num_predict, lambda: _ollama_local(prompt, num_predict), log)
 
@@ -1364,6 +1431,7 @@ def _ollama_local(prompt: str, num_predict: int) -> str:
     # 2026-07-28); 1500 was enough for all prompts on a real AAPL filing
     # (1.3-2.8k reasoning chars, still ~2x faster than the old
     # qwen3:8b/400 baseline).
+    ollama_make_room(OLLAMA_MODEL)
     payload = json.dumps({
         "model": OLLAMA_MODEL,
         "messages": [{"role": "user", "content": prompt}],
