@@ -16,7 +16,7 @@ export const KPI_ORDER: [string, string][] = [
   ["kpi6", "Valuation vs History & Peers"],
   ["kpi7", "Technical Trend & Momentum"],
   ["kpi8", "Volatility & Event Risk"],
-  ["kpi9", "Market & Peer-Relative Pressure (approx.)"],
+  ["kpi9", "Market & Sector-Relative Pressure"],
   ["kpi10", "Red Flags & Accounting Risk"],
 ];
 

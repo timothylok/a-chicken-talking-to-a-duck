@@ -298,7 +298,7 @@ def _net_debt_at(facts: dict, as_of: str) -> "float | None":
 # hosts than SEC -- SEC_UA/SEC_DELAY politeness constants don't apply)
 # ---------------------------------------------------------------------------
 
-def _treasury_10yr_yield(as_of: "dt.date | None" = None) -> "float | None":
+def _treasury_10yr_yield(as_of: "dt.date | None" = None, col: str = "10 Yr") -> "float | None":
     as_of = as_of or dt.datetime.now(NZ_TZ).date()
     for months_back in (0, 1):  # this month, falling back to last month if empty (e.g. run on the 1st)
         year_month = (as_of.replace(day=1) - dt.timedelta(days=months_back * 28)).strftime("%Y%m")
@@ -315,7 +315,7 @@ def _treasury_10yr_yield(as_of: "dt.date | None" = None) -> "float | None":
             continue
         header = lines[0].split(",")
         try:
-            idx = header.index('"10 Yr"')
+            idx = header.index(f'"{col}"')
         except ValueError:
             continue
         row = lines[1].split(",")  # most recent date first

@@ -1,8 +1,11 @@
 import TickerCard from "./components/TickerCard";
+import SectorTable from "./components/SectorTable";
 import { loadDashboardData } from "./lib/data";
+import { loadSectors } from "./lib/sectors";
 
 export default function Dashboard() {
   const rows = loadDashboardData();
+  const sectors = loadSectors();
 
   if (rows.length === 0) {
     return (
@@ -32,9 +35,11 @@ export default function Dashboard() {
           <TickerCard key={row.ticker} row={row} />
         ))}
       </div>
+      {sectors && <SectorTable snapshot={sectors} />}
       <footer>
-        KPI 9 ("Market &amp; Peer-Relative Pressure") is an approximation built from relative strength vs
-        SPY and peer-multiple spread -- not real sector or macro data.
+        KPI 9 ("Market &amp; Sector-Relative Pressure") blends each stock&apos;s 3-month return vs SPY with its
+        sector ETF&apos;s. The sector regime is read from market prices and the Treasury yield curve only -- no
+        economic data feed.
       </footer>
     </main>
   );

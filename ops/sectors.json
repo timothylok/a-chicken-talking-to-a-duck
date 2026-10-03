@@ -1,0 +1,11 @@
+{
+  "_comment": "Ticker -> SPDR sector ETF for its GICS sector, used by Category 6 KPI 9 (Market & Sector-Relative Pressure). Owner-edited. A ticker missing here gets KPI 9 from market-relative strength alone rather than a guessed sector -- SPCX is deliberately absent (no GICS classification yet).",
+  "AAPL": "XLK",
+  "MSFT": "XLK",
+  "NVDA": "XLK",
+  "GOOGL": "XLC",
+  "META": "XLC",
+  "AMZN": "XLY",
+  "TSLA": "XLY",
+  "AON": "XLF"
+}

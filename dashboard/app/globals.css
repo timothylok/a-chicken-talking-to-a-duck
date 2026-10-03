@@ -218,3 +218,68 @@ footer {
   color: var(--muted);
   font-size: 0.78rem;
 }
+
+/* Sector rotation table (risk page) */
+.sectors h2 {
+  font-size: 1.15rem;
+  margin: 2.5rem 0 0.5rem;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+.sector-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.sector-table th,
+.sector-table td {
+  padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+}
+
+.sector-table th {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.sector-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.sector-table .pos {
+  color: var(--green);
+}
+
+.sector-table .neg {
+  color: var(--red);
+}
+
+.sector-table .etf {
+  font-weight: 700;
+}
+
+.sector-table .group {
+  display: block;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.call.Overweight {
+  color: var(--green);
+  font-weight: 600;
+}
+
+.call.Underweight {
+  color: var(--red);
+  font-weight: 600;
+}
+
+.call.Neutral {
+  color: var(--muted);
+}

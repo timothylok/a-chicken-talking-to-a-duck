@@ -29,20 +29,20 @@ call this script does make is a single 3-sentence per-ticker summary,
 fed only the already-computed KPI scores/lights/detail strings -- it
 narrates locked-in numbers, it never re-judges them.
 
-KPI 9 ("Market & Peer-Relative Pressure") is an explicit, labeled
-approximation: no sector classification, macro calendar, or regulatory
-tracking exists anywhere in this codebase, so it's built from two
-signals that already exist for other purposes (relative-strength-vs-SPY
-as a market-wide proxy, peer-multiple spread as a sector-stress proxy).
-The tile name itself carries the "(approximation)" caveat in Notion and
-should carry it into the dashboard UI too -- never implied as real
-sector/macro data.
+KPI 9 ("Market & Sector-Relative Pressure") blends the ticker's own
+3-month return vs SPY with its GICS sector ETF's (ops/sectors.json) --
+real sector data since 2026-10-03, when it replaced a peer-multiple-spread
+proxy. The same run computes a market-wide sector rotation table (11 SPDR
+ETFs, 1/3/6-month relative strength, a market-implied regime and a
+rule-based overweight/underweight call) to dashboard/data/sectors.json.
+There is still no macro data feed (ISM, credit spreads, claims), so the
+regime is labelled market-implied, never presented as an economic read.
 
 Tickers with no SEC filings (sf.EXCLUDE_NO_SEC_FILINGS, currently only
 SPCX) get every SEC-dependent KPI (1,2,3,4,5,6,10) marked N/A rather than
 guessed -- they still get a dashboard row, just with a low Coverage
-count. KPI 7 (technical) and KPI 9 (market/peer-relative, weighted 100%
-onto its non-SEC relative-strength term when peers are missing) still
+count. KPI 7 (technical) and KPI 9 (market/sector-relative, weighted 100%
+onto its own relative-strength term when no sector is mapped) still
 compute, since Category 4 already proved SPCX's thin trading history is
 still usable for pure price-based technicals.
 
@@ -404,12 +404,9 @@ def _kpi_cash_flow_dividend(bundle: "dict | None") -> dict:
 # KPI 6: Valuation vs History & Peers
 # ---------------------------------------------------------------------------
 
-def _kpi_valuation(ticker: str, bundle: "dict | None") -> "tuple[dict, dict | None]":
-    # Returns (KpiResult, peer_comparison) -- peer_comparison is handed
-    # back so KPI9 can reuse the peer-spread signal it already computed
-    # rather than a third fetch of the same peer set.
+def _kpi_valuation(ticker: str, bundle: "dict | None") -> dict:
     if bundle is None:
-        return _kpi_na("no SEC filings for this ticker"), None
+        return _kpi_na("no SEC filings for this ticker")
     facts, tenk_accn = bundle["facts"], bundle["accn"]
     price = sf._current_price(ticker)
     _, shares_series = sf._xbrl_series(facts, sv.DILUTED_SHARES_TAGS, tenk_accn, unit="shares")
@@ -438,7 +435,7 @@ def _kpi_valuation(ticker: str, bundle: "dict | None") -> "tuple[dict, dict | No
     peer_score = discount_score(own_pe, peer_comparison.get("peer_median_pe"))
 
     if hist_score is None and peer_score is None:
-        return _kpi_na("no trailing/historical/peer P/E available to compare"), peer_comparison
+        return _kpi_na("no trailing/historical/peer P/E available to compare")
     if peer_score is None:
         # peer_comparison["note"] distinguishes "no peers configured in
         # ops/peers.json" from "peers configured but their data couldn't be
@@ -451,7 +448,7 @@ def _kpi_valuation(ticker: str, bundle: "dict | None") -> "tuple[dict, dict | No
         weight_note = "own 5yr history + peer group"
     detail = f"Trailing P/E {own_pe:.1f}x" if own_pe else "Trailing P/E: N/A"
     detail += f"; compared against {weight_note}."
-    return _kpi(score, detail), peer_comparison
+    return _kpi(score, detail)
 
 
 # ---------------------------------------------------------------------------
@@ -532,36 +529,131 @@ def _kpi_volatility_event(ticker: str, daily: dict, spy_daily: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# KPI 9: Market & Peer-Relative Pressure (approximation) -- see module
-# docstring. Explicitly NOT presented as true sector/macro data.
+# Sector rotation ("Sector Rotation Signal" prompt) -- market-wide, computed
+# once per run. 100% deterministic, no LLM. There is still no ISM, credit
+# spread or claims data anywhere in this codebase, so the regime is labelled
+# market-implied: cyclical-vs-defensive sector leadership plus the Treasury
+# 10Y-3M curve. The overweight/underweight call is a fixed rule (playbook
+# fit AND 3+6-month relative strength), not a forecast.
 # ---------------------------------------------------------------------------
 
-def _kpi_market_peer_pressure(ticker: str, daily: dict, spy_daily: dict, peer_comparison: "dict | None") -> dict:
+SECTORS_PATH = os.path.join(ROOT, "ops", "sectors.json")
+SECTORS_DATA_PATH = os.path.join(ROOT, "dashboard", "data", "sectors.json")
+
+SECTOR_ETFS = {
+    "XLK": "Technology", "XLC": "Communication Services", "XLY": "Consumer Discretionary",
+    "XLF": "Financials", "XLI": "Industrials", "XLB": "Materials", "XLE": "Energy",
+    "XLRE": "Real Estate", "XLV": "Health Care", "XLP": "Consumer Staples", "XLU": "Utilities",
+}
+CYCLICALS = {"XLK", "XLC", "XLY", "XLF", "XLI", "XLB", "XLE"}
+DEFENSIVES = {"XLV", "XLP", "XLU", "XLRE"}
+
+# Conventional business-cycle sector playbook (the Fidelity-style map most
+# rotation write-ups use). "Slowdown" = defensives leading on a positive
+# curve, which reads either as a slowing expansion or an early recovery.
+REGIME_FAVOURED = {
+    "Expansion": {"XLK", "XLC", "XLI", "XLY", "XLF"},
+    "Late-cycle": {"XLE", "XLB", "XLV", "XLP"},
+    "Slowdown": {"XLV", "XLP", "XLU", "XLK"},
+    "Contraction risk": {"XLP", "XLU", "XLV"},
+}
+
+
+def _sector_map() -> dict:
+    return {k: v for k, v in _load_json(SECTORS_PATH, {}).items() if not k.startswith("_")}
+
+
+def _regime(cyc_minus_def: "float | None", curve: "float | None") -> "tuple[str | None, str]":
+    if cyc_minus_def is None:
+        return None, "N/A -- sector relative strength unavailable"
+    lead = "cyclicals" if cyc_minus_def > 0 else "defensives"
+    curve_txt = f"10Y-3M curve {curve:+.2f}pp" if curve is not None else "10Y-3M curve unavailable"
+    if curve is None:
+        label = "Expansion" if cyc_minus_def > 0 else "Slowdown"
+    elif cyc_minus_def > 0:
+        label = "Expansion" if curve >= 0 else "Late-cycle"
+    else:
+        label = "Slowdown" if curve >= 0 else "Contraction risk"
+    return label, f"{lead} leading by {abs(cyc_minus_def):.1f}pp over 3 months; {curve_txt}"
+
+
+def sector_rotation(spy_daily: dict) -> dict:
+    rows = []
+    for etf, name in SECTOR_ETFS.items():
+        try:
+            closes = st._fetch_series(etf, "1y", "1d")["closes"]
+        except Exception as exc:
+            log.warning("%s: sector fetch failed: %s", etf, exc)
+            continue
+        row = {"etf": etf, "name": name, "group": "Cyclical" if etf in CYCLICALS else "Defensive"}
+        for key, days in (("rs1m", 21), ("rs3m", 63), ("rs6m", 126)):
+            own, spy = st._pct_return(closes, days), st._pct_return(spy_daily["closes"], days)
+            row[key] = round(own - spy, 2) if own is not None and spy is not None else None
+        rows.append(row)
+
+    def avg(group):
+        vals = [r["rs3m"] for r in rows if r["etf"] in group and r["rs3m"] is not None]
+        return statistics.mean(vals) if vals else None
+
+    cyc, dfn = avg(CYCLICALS), avg(DEFENSIVES)
+    ten, three = sv._treasury_10yr_yield(), sv._treasury_10yr_yield(col="3 Mo")
+    curve = round(ten - three, 2) if ten is not None and three is not None else None
+    regime, basis = _regime(cyc - dfn if cyc is not None and dfn is not None else None, curve)
+    favoured = REGIME_FAVOURED.get(regime, set())
+    for r in rows:
+        strong = r["rs3m"] is not None and r["rs6m"] is not None and r["rs3m"] > 0 and r["rs6m"] > 0
+        weak = r["rs3m"] is not None and r["rs6m"] is not None and r["rs3m"] < 0 and r["rs6m"] < 0
+        r["favoured"] = r["etf"] in favoured
+        r["call"] = ("Overweight" if r["favoured"] and strong else
+                     "Underweight" if not r["favoured"] and weak else "Neutral")
+    rows.sort(key=lambda r: -(r["rs3m"] if r["rs3m"] is not None else -999))
+    return {
+        "generatedAt": dt.datetime.now(NZ_TZ).strftime("%Y-%m-%d %H:%M"),
+        "regime": regime, "regimeBasis": basis, "curve10y3m": curve,
+        "sectors": rows,
+    }
+
+
+def write_sector_snapshot(snapshot: dict) -> None:
+    if not snapshot["sectors"]:
+        log.warning("no sector data fetched; keeping the previous sectors.json")
+        return
+    os.makedirs(os.path.dirname(SECTORS_DATA_PATH), exist_ok=True)
+    with open(SECTORS_DATA_PATH, "w", encoding="utf-8") as f:
+        json.dump(snapshot, f, ensure_ascii=False, indent=2)
+    log.info("sector regime %s (%s); wrote %s", snapshot["regime"], snapshot["regimeBasis"], SECTORS_DATA_PATH)
+
+
+# ---------------------------------------------------------------------------
+# KPI 9: Market & Sector-Relative Pressure -- the ticker's own 3-month return
+# vs SPY, plus its GICS sector ETF's 3-month return vs SPY (a sector
+# tailwind or headwind). Replaced the peer-multiple-spread proxy 2026-10-03.
+# ---------------------------------------------------------------------------
+
+def _kpi_market_sector_pressure(ticker: str, daily: dict, spy_daily: dict, sectors: dict) -> dict:
     rs = st._section_relative_strength(ticker, daily, spy_daily)
     diff3 = rs.get("rs_3m_diff")
     market_score = _lerp_score(diff3, -15, 0.0, 15, 1.0) if diff3 is not None else None
 
-    peer_score = None
-    if peer_comparison and peer_comparison.get("peers"):
-        pe_vals = [p["pe"] for p in peer_comparison["peers"] if p.get("pe")]
-        all_pe = pe_vals + ([peer_comparison["own_pe"]] if peer_comparison.get("own_pe") else [])
-        if len(all_pe) >= 2:
-            spread_pct = (max(all_pe) - min(all_pe)) / statistics.median(all_pe) * 100
-            # A narrow peer-multiple spread reads as sector calm; a wide
-            # spread reads as sector re-rating stress. Never presented as
-            # real macro data -- purely a spread-of-multiples proxy.
-            peer_score = _lerp_score(spread_pct, 20, 1.0, 100, 0.0)
+    etf = _sector_map().get(ticker)
+    sector = next((r for r in sectors.get("sectors", []) if r["etf"] == etf), None) if etf else None
+    sector_rs = sector["rs3m"] if sector else None
+    sector_score = _lerp_score(sector_rs, -10, 0.0, 10, 1.0) if sector_rs is not None else None
 
-    if market_score is None and peer_score is None:
-        return _kpi_na("insufficient relative-strength/peer data for this ticker")
-    if peer_score is None:
+    if market_score is None and sector_score is None:
+        return _kpi_na("insufficient relative-strength data for this ticker or its sector")
+    if sector_score is None:
         score = market_score
+    elif market_score is None:
+        score = sector_score
     else:
-        score = 0.6 * market_score + 0.4 * peer_score if market_score is not None else peer_score
+        score = 0.6 * market_score + 0.4 * sector_score
     detail = (
-        f"Market-relative (3mo vs SPY): {diff3:+.1f}pp" if diff3 is not None else "Market-relative: N/A"
-    ) + "; peer-multiple spread " + ("N/A (no peers configured)" if peer_score is None else "included") + \
-        " -- approximation only, not real sector/macro data."
+        (f"Market-relative (3mo vs SPY): {diff3:+.1f}pp" if diff3 is not None else "Market-relative: N/A")
+        + "; sector "
+        + (f"{etf} ({SECTOR_ETFS[etf]}) {sector_rs:+.1f}pp vs SPY" if sector_rs is not None else
+           f"N/A ({'not mapped in ops/sectors.json' if not etf else etf + ' data unavailable'})")
+    )
     return _kpi(score, detail)
 
 
@@ -621,7 +713,7 @@ KPI_ORDER = [
     ("kpi6", "Valuation vs History & Peers"),
     ("kpi7", "Technical Trend & Momentum"),
     ("kpi8", "Volatility & Event Risk"),
-    ("kpi9", "Market & Peer-Relative Pressure (approx.)"),
+    ("kpi9", "Market & Sector-Relative Pressure"),
     ("kpi10", "Red Flags & Accounting Risk"),
 ]
 
@@ -679,6 +771,9 @@ def _summary_narrative(ticker: str, kpis: dict, composite: "float | None", cover
 # Report assembly
 # ---------------------------------------------------------------------------
 
+_sector_snapshot = None
+
+
 def build_report(ticker: str) -> "dict | None":
     bundle = _sec_bundle(ticker)
 
@@ -694,8 +789,13 @@ def build_report(ticker: str) -> "dict | None":
         log.error("SPY fetch failed, relative-strength KPIs will be N/A: %s", exc)
         spy_daily = {"closes": []}
 
+    global _sector_snapshot
+    if _sector_snapshot is None and spy_daily["closes"]:
+        _sector_snapshot = sector_rotation(spy_daily)
+        write_sector_snapshot(_sector_snapshot)
+
     kpi4, debt_flagged = _kpi_balance_sheet_debt(bundle)
-    kpi6, peer_comparison = _kpi_valuation(ticker, bundle)
+    kpi6 = _kpi_valuation(ticker, bundle)
 
     kpis = {
         "kpi1": _kpi_fundamental_health(bundle),
@@ -706,7 +806,7 @@ def build_report(ticker: str) -> "dict | None":
         "kpi6": kpi6,
         "kpi7": _kpi_technical_momentum(daily, weekly),
         "kpi8": _kpi_volatility_event(ticker, daily, spy_daily),
-        "kpi9": _kpi_market_peer_pressure(ticker, daily, spy_daily, peer_comparison),
+        "kpi9": _kpi_market_sector_pressure(ticker, daily, spy_daily, _sector_snapshot or {}),
         "kpi10": _kpi_red_flags(bundle),
     }
     composite, composite_light, coverage = _composite(kpis)
