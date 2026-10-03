@@ -761,6 +761,13 @@ def build_earnings_report(ticker: str, cik: str, subs: dict, trigger: dict, hist
         raise RuntimeError(f"could not find/fetch EX-99.1 for accession {trigger['accn']}")
 
     figures = _extract_income_figures(ex99_text) if ex99_text else {}
+    # Item 2.02 isn't only earnings: Tesla files its quarterly production &
+    # deliveries release under it too (2026-10-02, no income statement), which
+    # produced a fake TSLA "earnings" report. Every real release has an EPS
+    # line, so no figures and no "per share" anywhere means it isn't one.
+    if (figures.get("revenue_cur") is None and figures.get("eps_cur") is None
+            and "per share" not in ex99_text.lower()):
+        return None
     consensus = _nasdaq_eps_forecast(ticker, dt.date.fromisoformat(trigger["filed"]))
     prior = _prior_filing(history, ticker)
 
@@ -917,6 +924,11 @@ def poll_and_generate() -> int:
                 continue
 
             report = build_earnings_report(ticker, cik, subs, hit, history)
+            if report is None:
+                log.warning("%s: Item 2.02 8-K %s (filed %s) has no income figures, not an earnings release -- skipped",
+                            ticker, hit["accn"], hit["filed"])
+                state.setdefault(ticker, {})["last_processed_accn"] = hit["accn"]
+                continue
             _notion("POST", "/pages", {
                 "parent": {"database_id": cfg["earnings_database_id"]},
                 "properties": _page_properties(report, dt.datetime.now(NZ_TZ)),
