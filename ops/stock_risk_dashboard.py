@@ -658,6 +658,138 @@ def _kpi_market_sector_pressure(ticker: str, daily: dict, spy_daily: dict, secto
 
 
 # ---------------------------------------------------------------------------
+# Mean reversion scanner ("Mean Reversion Scanner" prompt) -- the watchlist
+# plus every ops/peers.json peer, ranked by how far each sits from its own
+# norms. 100% deterministic, no LLM. "Sector median" EV/EBITDA is the median
+# of the ticker's peers.json group(s), computed from this same scan, so it
+# costs no extra fetches. Value trap vs candidate is a fixed rule: cheap or
+# oversold with shrinking TTM revenue reads as a possible trap.
+# ---------------------------------------------------------------------------
+
+REVERSION_DATA_PATH = os.path.join(ROOT, "dashboard", "data", "reversion.json")
+REVERSION_TOP_N = 5
+REVERSION_MIN_PEERS = 3
+
+
+def _reversion_universe() -> "tuple[list, dict]":
+    """(tickers, groups): watchlist + all peers, and each anchor's peer group."""
+    peers = {k: v for k, v in _load_json(sv.PEERS_CONFIG, {}).items() if not k.startswith("_")}
+    groups = {anchor: [anchor, *members] for anchor, members in peers.items()}
+    tickers = [t for t in WATCHLIST if t not in sf.EXCLUDE_NO_SEC_FILINGS]
+    for members in groups.values():
+        tickers += [t for t in members if t not in tickers]
+    return tickers, groups
+
+
+def _reversion_metrics(ticker: str) -> "dict | None":
+    cik = sf._cik_for_ticker(ticker)
+    if not cik:
+        return None
+    facts = sf._company_facts(cik)
+    tenk = sf._latest_filing(sf._submissions(cik), "10-K")
+    if not tenk:
+        return None
+    price = sf._current_price(ticker)
+    _, shares_series = sf._xbrl_series(facts, sv.DILUTED_SHARES_TAGS, tenk["accn"], unit="shares")
+    shares = shares_series[-1]["val"] if shares_series else None
+    trailing = sv._trailing_multiples(facts, tenk["accn"], price, shares,
+                                      sv._net_debt_at(facts, dt.date.today().isoformat()))
+    historical = sv._historical_multiples(facts, sv._historical_prices(ticker, "5y", "1wk"))
+    closes = st._fetch_series(ticker, "2y", "1d")["closes"]
+    sma200 = st._sma(closes, 200)
+    return {
+        "ticker": ticker,
+        "pe": trailing.get("pe"), "pe_5y_median": historical.get("medians", {}).get("pe"),
+        "ev_ebitda": trailing.get("ev_ebitda"),
+        "revenue_growth": trailing.get("revenue_growth"), "eps_growth": trailing.get("eps_growth"),
+        "rsi": st._rsi(closes, 14),
+        "vs_sma200": (closes[-1] / sma200 - 1) * 100 if closes and sma200 else None,
+    }
+
+
+def _clamp(x: float, lim: float = 1.5) -> float:
+    return max(-lim, min(lim, x))
+
+
+def _reversion_score(m: dict, group_median_ev: "float | None") -> dict:
+    pe_dev = ((m["pe"] / m["pe_5y_median"] - 1) * 100
+              if m["pe"] and m["pe_5y_median"] and m["pe"] > 0 and m["pe_5y_median"] > 0 else None)
+    ev_dev = ((m["ev_ebitda"] / group_median_ev - 1) * 100
+              if m["ev_ebitda"] and group_median_ev and m["ev_ebitda"] > 0 else None)
+    # Each deviation is scaled to roughly -1..+1 at its own "extreme" level
+    # (50% off a multiple, 20% off the 200-day, RSI 30/70), so no single
+    # metric dominates the blend. Negative = cheap/oversold, positive = rich.
+    parts = [x for x in (
+        _clamp(pe_dev / 50) if pe_dev is not None else None,
+        _clamp(ev_dev / 50) if ev_dev is not None else None,
+        _clamp(m["vs_sma200"] / 20) if m["vs_sma200"] is not None else None,
+        _clamp((m["rsi"] - 50) / 20) if m["rsi"] is not None else None,
+    ) if x is not None]
+    extremes = [name for name, hit in (
+        ("P/E vs 5y", pe_dev is not None and abs(pe_dev) >= 30),
+        ("EV/EBITDA vs peers", ev_dev is not None and abs(ev_dev) >= 30),
+        ("price vs 200-day", m["vs_sma200"] is not None and abs(m["vs_sma200"]) >= 15),
+        ("RSI", m["rsi"] is not None and (m["rsi"] < 30 or m["rsi"] > 70)),
+    ) if hit]
+    score = statistics.mean(parts) if len(parts) >= 2 else None
+    if score is None:
+        verdict = None
+    elif score > 0:
+        verdict = "Stretched -- rich vs its norms; reversion risk is to the downside"
+    elif m["revenue_growth"] is not None and m["revenue_growth"] < 0:
+        verdict = "Possible value trap -- cheap, but TTM revenue is shrinking"
+    elif (pe_dev is not None and pe_dev < -30 and m["eps_growth"] is not None and m["revenue_growth"] is not None
+          and m["eps_growth"] - m["revenue_growth"] > 0.25):
+        # AON 2026-10-03: P/E -54% vs its 5y median, but TTM EPS +53% on
+        # revenue +5% (a Q4 2025 EPS of 7.81 vs 3.29) -- a low P/E that a
+        # one-off gain manufactured is not cheapness.
+        verdict = (f"Possible value trap -- P/E flattered: TTM EPS {m['eps_growth']*100:+.0f}% on revenue "
+                   f"{m['revenue_growth']*100:+.0f}%, likely one-off gains")
+    else:
+        verdict = "Reversion candidate -- cheap or oversold while revenue still grows"
+    return {**m, "pe_dev": pe_dev, "ev_dev": ev_dev, "group_median_ev_ebitda": group_median_ev,
+            "score": round(score, 2) if score is not None else None,
+            "extremes": extremes, "verdict": verdict}
+
+
+def mean_reversion_scan() -> dict:
+    tickers, groups = _reversion_universe()
+    metrics = {}
+    for t in tickers:
+        try:
+            m = _reversion_metrics(t)
+            if m:
+                metrics[t] = m
+        except Exception as exc:
+            log.warning("%s: reversion metrics failed: %s", t, exc)
+    scored = []
+    for t, m in metrics.items():
+        pool = {x for members in groups.values() if t in members for x in members if x != t}
+        evs = [metrics[x]["ev_ebitda"] for x in pool if x in metrics and metrics[x]["ev_ebitda"]
+               and metrics[x]["ev_ebitda"] > 0]
+        # A two-member "median" is just the other stock: TSLA read +4447% vs
+        # a GM/F pair (RIVN has negative EBITDA) and F read -96% vs TSLA/GM.
+        scored.append(_reversion_score(m, statistics.median(evs) if len(evs) >= REVERSION_MIN_PEERS else None))
+    ranked = sorted((r for r in scored if r["score"] is not None), key=lambda r: -abs(r["score"]))
+    return {
+        "generatedAt": dt.datetime.now(NZ_TZ).strftime("%Y-%m-%d %H:%M"),
+        "universe": len(tickers), "scored": len(ranked),
+        "top": ranked[:REVERSION_TOP_N],
+    }
+
+
+def write_reversion_snapshot(snapshot: dict) -> None:
+    if not snapshot["top"]:
+        log.warning("mean reversion scan scored nothing; keeping the previous reversion.json")
+        return
+    os.makedirs(os.path.dirname(REVERSION_DATA_PATH), exist_ok=True)
+    with open(REVERSION_DATA_PATH, "w", encoding="utf-8") as f:
+        json.dump(snapshot, f, ensure_ascii=False, indent=2)
+    log.info("mean reversion: scored %d/%d, top %s", snapshot["scored"], snapshot["universe"],
+             ", ".join(f"{r['ticker']} {r['score']:+.2f}" for r in snapshot["top"]))
+
+
+# ---------------------------------------------------------------------------
 # KPI 10: Red Flags & Accounting Risk
 # ---------------------------------------------------------------------------
 
@@ -1002,6 +1134,10 @@ def poll_and_generate() -> int:
                         row["ticker"], row.get("date"))
     merged.extend(fresh.values())
     write_local_snapshot_rows(merged)
+    try:
+        write_reversion_snapshot(mean_reversion_scan())
+    except Exception as exc:
+        log.error("mean reversion scan failed: %s", exc)
     log.info("wrote %d report(s)", written)
     if written == 0:
         from notify import notify
@@ -1029,7 +1165,15 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--tickers", default=None,
                          help="comma-separated ticker list; always regenerates, ignores no config")
+    parser.add_argument("--reversion", action="store_true",
+                        help="run only the mean reversion scan (no Notion, no LLM)")
     args = parser.parse_args()
+
+    if args.reversion:
+        snapshot = mean_reversion_scan()
+        write_reversion_snapshot(snapshot)
+        print(json.dumps(snapshot, indent=2, ensure_ascii=False))
+        return
 
     if args.tickers:
         cfg = load_config()
