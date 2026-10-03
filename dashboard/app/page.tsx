@@ -10,6 +10,8 @@ import VolatilityPanel from "./components/VolatilityPanel";
 import { loadVolatility } from "./lib/volatility";
 import DrawdownTable from "./components/DrawdownTable";
 import { loadDrawdowns } from "./lib/drawdowns";
+import FactorTable from "./components/FactorTable";
+import { loadFactors } from "./lib/factors";
 
 export default function Dashboard() {
   const rows = loadDashboardData();
@@ -17,6 +19,7 @@ export default function Dashboard() {
   const reversion = loadReversion();
   const volatility = loadVolatility();
   const drawdowns = loadDrawdowns();
+  const factors = loadFactors();
 
   if (rows.length === 0) {
     return (
@@ -67,6 +70,7 @@ export default function Dashboard() {
         ))}
       </div>
       {sectors && <SectorTable snapshot={sectors} />}
+      {factors && <FactorTable snapshot={factors} />}
       {reversion && <ReversionTable snapshot={reversion} />}
       {volatility && <VolatilityPanel snapshot={volatility} />}
       {drawdowns && <DrawdownTable snapshot={drawdowns} />}

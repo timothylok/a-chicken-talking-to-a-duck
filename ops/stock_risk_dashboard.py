@@ -1002,6 +1002,77 @@ def write_drawdown_snapshot(snapshot: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Factor performance ("Factor Performance Dashboard" prompt) -- six iShares
+# factor ETFs' returns vs SPY over 1/3/6/12 months, 100% deterministic, no
+# LLM. Value shows both MSCI's factor ETF (VLUE) and broad Russell 1000
+# value (IWD). Size is IWM (Russell 2000 small caps) against cap-weighted SPY, the
+# plain small-vs-large read. "In favour" = beating SPY over both 3 and 6
+# months, "out of favour" = lagging both; the rotation is read from three
+# fixed spreads, and the positioning lines are fixed per-factor notes.
+# ---------------------------------------------------------------------------
+
+FACTORS_DATA_PATH = os.path.join(ROOT, "dashboard", "data", "factors.json")
+FACTORS = [
+    ("VLUE", "Value (MSCI factor)", "Cheap stocks leading usually means investors are paying for current earnings over future growth."),
+    ("IWD", "Value (Russell 1000)", "Broad value, the like-for-like partner of IWF; VLUE is sector-neutral and concentrated, so it can diverge."),
+    ("IWF", "Growth", "Growth leading usually means falling or stable yields and appetite for long-duration earnings."),
+    ("MTUM", "Momentum", "Momentum leading means existing trends are persisting; it reverses hardest at turning points."),
+    ("QUAL", "Quality", "Quality leading often marks a late-cycle or uncertain market favouring strong balance sheets."),
+    ("USMV", "Low volatility", "Low volatility leading is a defensive signal: investors are paying for stability."),
+    ("IWM", "Size (small caps)", "Small caps leading usually signals risk appetite and expectations of easier credit."),
+]
+FACTOR_WINDOWS = (("rs1m", 21), ("rs3m", 63), ("rs6m", 126), ("rs12m", 252))
+
+
+def factor_performance(spy_daily: dict) -> dict:
+    rows = {}
+    for etf, name, note in FACTORS:
+        try:
+            closes = st._fetch_series(etf, "2y", "1d")["closes"]
+        except Exception as exc:
+            log.warning("%s: factor fetch failed: %s", etf, exc)
+            continue
+        row = {"etf": etf, "name": name, "note": note}
+        for key, days in FACTOR_WINDOWS:
+            own, spy = st._pct_return(closes, days), st._pct_return(spy_daily["closes"], days)
+            row[key] = round(own - spy, 2) if own is not None and spy is not None else None
+        both = (row["rs3m"], row["rs6m"])
+        row["status"] = ("In favour" if None not in both and min(both) > 0 else
+                         "Out of favour" if None not in both and max(both) < 0 else "Mixed")
+        rows[etf] = row
+
+    def spread(a: str, b: str, label_a: str, label_b: str) -> "dict | None":
+        x, y = rows.get(a, {}).get("rs6m"), rows.get(b, {}).get("rs6m")
+        if x is None or y is None:
+            return None
+        gap = round(x - y, 1)
+        return {"pair": f"{label_a} vs {label_b}", "spread6m": gap,
+                "leader": label_a if gap > 0 else label_b}
+
+    return {
+        "generatedAt": dt.datetime.now(NZ_TZ).strftime("%Y-%m-%d %H:%M"),
+        "factors": list(rows.values()),
+        "rotation": [s for s in (
+            # IWD/IWF, not VLUE: the Russell pair splits the same index, while
+            # VLUE ran +43pp vs SPY over 12 months to Oct 2026 on its own mix.
+            spread("IWD", "IWF", "Value", "Growth"),
+            spread("IWM", "QUAL", "Small caps", "Quality large caps"),
+            spread("USMV", "MTUM", "Low volatility", "Momentum"),
+        ) if s],
+    }
+
+
+def write_factor_snapshot(snapshot: dict) -> None:
+    if not snapshot["factors"]:
+        log.warning("no factor data fetched; keeping the previous factors.json")
+        return
+    os.makedirs(os.path.dirname(FACTORS_DATA_PATH), exist_ok=True)
+    with open(FACTORS_DATA_PATH, "w", encoding="utf-8") as f:
+        json.dump(snapshot, f, ensure_ascii=False, indent=2)
+    log.info("factors: %s", ", ".join(f"{r['name']} {r['status']}" for r in snapshot["factors"]))
+
+
+# ---------------------------------------------------------------------------
 # KPI 10: Red Flags & Accounting Risk
 # ---------------------------------------------------------------------------
 
@@ -1355,9 +1426,11 @@ def poll_and_generate() -> int:
     except Exception as exc:
         log.error("volatility regime failed: %s", exc)
     try:
-        write_drawdown_snapshot(drawdown_analogues(st._fetch_series(st.BENCHMARK_TICKER, "2y", "1d")))
+        spy_daily = st._fetch_series(st.BENCHMARK_TICKER, "2y", "1d")
+        write_drawdown_snapshot(drawdown_analogues(spy_daily))
+        write_factor_snapshot(factor_performance(spy_daily))
     except Exception as exc:
-        log.error("drawdown analogues failed: %s", exc)
+        log.error("drawdown analogues / factor performance failed: %s", exc)
     log.info("wrote %d report(s)", written)
     if written == 0:
         from notify import notify
@@ -1387,11 +1460,19 @@ def main() -> None:
                          help="comma-separated ticker list; always regenerates, ignores no config")
     parser.add_argument("--reversion", action="store_true",
                         help="run only the mean reversion scan (no Notion, no LLM)")
+    parser.add_argument("--factors", action="store_true",
+                        help="run only the factor performance snapshot (no Notion, no LLM)")
     parser.add_argument("--drawdowns", action="store_true",
                         help="run only the drawdown analogues (no Notion, no LLM)")
     parser.add_argument("--volatility", action="store_true",
                         help="run only the volatility regime snapshot (no Notion, no LLM)")
     args = parser.parse_args()
+
+    if args.factors:
+        snapshot = factor_performance(st._fetch_series(st.BENCHMARK_TICKER, "2y", "1d"))
+        write_factor_snapshot(snapshot)
+        print(json.dumps(snapshot, indent=2, ensure_ascii=False))
+        return
 
     if args.drawdowns:
         snapshot = drawdown_analogues(st._fetch_series(st.BENCHMARK_TICKER, "2y", "1d"))
