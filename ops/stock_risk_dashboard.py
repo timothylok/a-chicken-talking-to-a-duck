@@ -885,6 +885,123 @@ def write_volatility_snapshot(snapshot: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Drawdown analogues ("Drawdown Scenario Planner" prompt) -- each watchlist
+# ticker's actual peak-to-trough fall and recovery in four historical
+# sell-offs, against SPY. 100% deterministic, no LLM. Weekly closes over
+# range=30y (range=max silently downsamples to monthly/quarterly bars).
+# Closes are split- but not dividend-adjusted, so recoveries read slightly
+# slow for dividend payers. A ticker not yet listed in an episode gets a
+# beta-scaled estimate instead (2-year daily beta on SPY's log return), labelled as
+# one. Drivers and hedges are fixed per-episode notes, not generated.
+# ---------------------------------------------------------------------------
+
+DRAWDOWN_DATA_PATH = os.path.join(ROOT, "dashboard", "data", "drawdowns.json")
+DRAWDOWN_MIN_BETA_DAYS = 60
+
+EPISODES = [
+    {"id": "dotcom", "name": "Dot-com bust", "start": "2000-01-01", "end": "2002-12-31",
+     "driver": "A valuation bust: profitless tech and telecom growth repriced after the 1990s bubble.",
+     "hedge": "Underweighting high-multiple growth and holding index puts; value and defensives held up."},
+    {"id": "gfc", "name": "2008 financial crisis", "start": "2007-07-01", "end": "2009-06-30",
+     "driver": "A credit and banking crisis: forced deleveraging sold nearly every risk asset at once.",
+     "hedge": "Long Treasuries, cash and index puts; stock diversification failed as correlations went to 1."},
+    {"id": "covid", "name": "2020 COVID crash", "start": "2020-02-01", "end": "2020-04-30",
+     "driver": "A sudden-stop liquidity shock: the fastest 30%+ fall on record, recovered within months.",
+     "hedge": "Short-dated index puts or VIX calls paid most; selling near the bottom was the bigger risk."},
+    {"id": "rates2022", "name": "2022 rate shock", "start": "2021-11-01", "end": "2022-12-31",
+     "driver": "Inflation and Fed hikes repriced long-duration growth; stocks and bonds fell together.",
+     "hedge": "Bonds failed as a hedge; T-bills, energy and commodities, and value tilts held up."},
+]
+
+
+def _episode_drawdown(dates: list, closes: list, start: str, end: str) -> "dict | None":
+    dates = [d if isinstance(d, str) else d.isoformat() for d in dates]
+    idx = [i for i, d in enumerate(dates) if start <= d <= end]
+    if len(idx) < 4 or dates[0] > start:
+        return None  # not listed (or no history) for the whole episode
+    peak_i = trough_i = idx[0]
+    run_peak_i, worst = idx[0], 0.0
+    for i in idx:
+        if closes[i] > closes[run_peak_i]:
+            run_peak_i = i
+        dd = closes[i] / closes[run_peak_i] - 1
+        if dd < worst:
+            worst, peak_i, trough_i = dd, run_peak_i, i
+    if worst == 0.0:
+        return {"drawdown": 0.0, "peak": dates[peak_i], "trough": dates[trough_i], "recovered": dates[trough_i],
+                "weeksToRecover": 0}
+    recovered = next((i for i in range(trough_i + 1, len(closes)) if closes[i] >= closes[peak_i]), None)
+    return {
+        "drawdown": round(worst * 100, 1),
+        "peak": dates[peak_i], "trough": dates[trough_i],
+        "recovered": dates[recovered] if recovered is not None else None,
+        "weeksToRecover": (round((dt.date.fromisoformat(dates[recovered]) - dt.date.fromisoformat(dates[trough_i])).days / 7)
+                           if recovered is not None else None),
+    }
+
+
+def _beta(closes: list, spy_closes: list) -> "tuple[float | None, int]":
+    n = min(len(closes), len(spy_closes))
+    if n < DRAWDOWN_MIN_BETA_DAYS + 1:
+        return None, max(0, n - 1)
+    a, b = closes[-n:], spy_closes[-n:]
+    ra = [a[i] / a[i - 1] - 1 for i in range(1, n)]
+    rb = [b[i] / b[i - 1] - 1 for i in range(1, n)]
+    var = statistics.pvariance(rb)
+    if not var:
+        return None, n - 1
+    ma, mb = statistics.mean(ra), statistics.mean(rb)
+    cov = sum((x - ma) * (y - mb) for x, y in zip(ra, rb)) / len(ra)
+    return cov / var, n - 1
+
+
+def drawdown_analogues(spy_daily: dict) -> dict:
+    spy_w = st._fetch_series(st.BENCHMARK_TICKER, "30y", "1wk")
+    spy_eps = {ep["id"]: _episode_drawdown(spy_w["dates"], spy_w["closes"], ep["start"], ep["end"]) for ep in EPISODES}
+    rows = []
+    for ticker in WATCHLIST:
+        try:
+            w = st._fetch_series(ticker, "30y", "1wk")
+            daily = st._fetch_series(ticker, "2y", "1d")
+        except Exception as exc:
+            log.warning("%s: drawdown history fetch failed: %s", ticker, exc)
+            continue
+        beta, beta_days = _beta(daily["closes"], spy_daily["closes"])
+        cells = {}
+        for ep in EPISODES:
+            actual = _episode_drawdown(w["dates"], w["closes"], ep["start"], ep["end"])
+            spy = spy_eps[ep["id"]]
+            if actual:
+                cells[ep["id"]] = {**actual, "isEstimate": False}
+            elif beta is not None and spy:
+                # Scaled on log returns, not linearly: beta x SPY's -47% put
+                # TSLA at -107% for the dot-com bust. (1 + dd)^beta keeps any
+                # beta inside -100%.
+                est = (1 - (1 + spy["drawdown"] / 100) ** max(beta, 0.0)) * -100
+                cells[ep["id"]] = {"drawdown": round(est, 1), "isEstimate": True}
+            else:
+                cells[ep["id"]] = None
+        rows.append({"ticker": ticker, "beta": round(beta, 2) if beta is not None else None,
+                     "betaDays": beta_days, "episodes": cells})
+    return {
+        "generatedAt": dt.datetime.now(NZ_TZ).strftime("%Y-%m-%d %H:%M"),
+        "episodes": [{k: ep[k] for k in ("id", "name", "start", "end", "driver", "hedge")} for ep in EPISODES],
+        "spy": spy_eps,
+        "rows": rows,
+    }
+
+
+def write_drawdown_snapshot(snapshot: dict) -> None:
+    if not snapshot["rows"]:
+        log.warning("no drawdown rows computed; keeping the previous drawdowns.json")
+        return
+    os.makedirs(os.path.dirname(DRAWDOWN_DATA_PATH), exist_ok=True)
+    with open(DRAWDOWN_DATA_PATH, "w", encoding="utf-8") as f:
+        json.dump(snapshot, f, ensure_ascii=False, indent=2)
+    log.info("drawdown analogues: %d tickers", len(snapshot["rows"]))
+
+
+# ---------------------------------------------------------------------------
 # KPI 10: Red Flags & Accounting Risk
 # ---------------------------------------------------------------------------
 
@@ -1237,6 +1354,10 @@ def poll_and_generate() -> int:
         write_volatility_snapshot(volatility_regime())
     except Exception as exc:
         log.error("volatility regime failed: %s", exc)
+    try:
+        write_drawdown_snapshot(drawdown_analogues(st._fetch_series(st.BENCHMARK_TICKER, "2y", "1d")))
+    except Exception as exc:
+        log.error("drawdown analogues failed: %s", exc)
     log.info("wrote %d report(s)", written)
     if written == 0:
         from notify import notify
@@ -1266,9 +1387,17 @@ def main() -> None:
                          help="comma-separated ticker list; always regenerates, ignores no config")
     parser.add_argument("--reversion", action="store_true",
                         help="run only the mean reversion scan (no Notion, no LLM)")
+    parser.add_argument("--drawdowns", action="store_true",
+                        help="run only the drawdown analogues (no Notion, no LLM)")
     parser.add_argument("--volatility", action="store_true",
                         help="run only the volatility regime snapshot (no Notion, no LLM)")
     args = parser.parse_args()
+
+    if args.drawdowns:
+        snapshot = drawdown_analogues(st._fetch_series(st.BENCHMARK_TICKER, "2y", "1d"))
+        write_drawdown_snapshot(snapshot)
+        print(json.dumps(snapshot, indent=2, ensure_ascii=False))
+        return
 
     if args.volatility:
         snapshot = volatility_regime()

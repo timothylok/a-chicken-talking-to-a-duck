@@ -367,3 +367,16 @@ footer {
 .card {
   scroll-margin-top: 1rem;
 }
+/* Drawdown analogues */
+.sector-table td.est {
+  font-style: italic;
+  opacity: 0.75;
+}
+
+.episode-notes {
+  margin: 0.75rem 0 0;
+  padding-left: 1.1rem;
+  font-size: 0.85rem;
+  display: grid;
+  gap: 0.35rem;
+}
