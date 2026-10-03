@@ -1096,6 +1096,11 @@ NOTES_WORKERS = 4
 NOTE_ACTIONS = {"Buy", "Hold", "Sell"}
 NOTE_CONVICTIONS = {"Low", "Medium", "High"}
 _NUMBER = re.compile(r"-?\d+(?:,\d{3})*(?:\.\d+)?")
+# A pre-mortem warning sign is a level to watch ("VIX above 25", "P/E above
+# 20"): new by nature, so a number right after one of these words is allowed
+# there -- GOOGL's note was flagged twice for exactly that. Elsewhere, and for
+# a warning sign that states a fact ("P/E is 40x"), the strict check stands.
+_THRESHOLD = re.compile(r"\b(?:above|below|over|under|exceeds?|(?:falls?|drops?|rises?) to)\s+\$?-?\d+(?:\.\d+)?", re.I)
 _STR, _STRS = {"type": "string"}, {"type": "array", "items": {"type": "string"}}
 NOTE_SCHEMA = {
     "type": "object",
@@ -1170,7 +1175,7 @@ def _invented_numbers(note: dict, facts: str) -> list:
     known = [float(x.replace(",", "")) for x in _NUMBER.findall(facts)]
     texts = [note["thesis"], note["valuation"], note["debate_verdict"], *note["key_points"], *note["risks"],
              *note["bull"], *note["bear"], *(p["reason"] for p in note["premortem"]),
-             *(p["warning_sign"] for p in note["premortem"])]
+             *(_THRESHOLD.sub("", p["warning_sign"]) for p in note["premortem"])]
     bad = []
     for n in (float(x.replace(",", "")) for t in texts for x in _NUMBER.findall(t)):
         if n.is_integer() and 0 <= n <= 10:

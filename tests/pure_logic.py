@@ -286,6 +286,26 @@ with tempfile.TemporaryDirectory() as tmp:
     check_true("the skip reason names the usage", "8200 of 10000" in out["skipped"])
 
 
+# --- research-note invented-number check ------------------------------------
+_facts = "Trailing P/E 17.3x; VIX 15.31; Revenue YoY: +15.1%"
+
+
+def _note(**over):
+    base = {"thesis": "P/E is 17.3x", "valuation": "fair", "debate_verdict": "bull", "key_points": [],
+            "risks": [], "bull": [], "bear": [], "premortem": [{"reason": "x", "warning_sign": "VIX"}]}
+    base.update(over)
+    return base
+
+
+check("watch levels in a warning sign are allowed (GOOGL 2026-10-03)",
+      srd._invented_numbers(_note(premortem=[{"reason": "x", "warning_sign": "trailing P/E above 20"},
+                                             {"reason": "y", "warning_sign": "VIX above 25"}]), _facts), [])
+check("a stated fact in a warning sign is still caught",
+      srd._invented_numbers(_note(premortem=[{"reason": "x", "warning_sign": "P/E is 40x"}]), _facts), [40.0])
+check("the threshold allowance does not reach other fields",
+      srd._invented_numbers(_note(risks=["P/E above 30"]), _facts), [30.0])
+
+
 # --- report ------------------------------------------------------------------
 if failures:
     print(f"FAILED ({len(failures)}):")
