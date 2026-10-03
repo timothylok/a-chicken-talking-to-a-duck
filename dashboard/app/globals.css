@@ -380,3 +380,49 @@ footer {
   display: grid;
   gap: 0.35rem;
 }
+/* Research notes page (app/notes) */
+.note {
+  margin-top: 1.5rem;
+  scroll-margin-top: 1rem;
+}
+
+.note h3 {
+  font-size: 0.95rem;
+  margin: 1rem 0 0.35rem;
+}
+
+.note ul {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.88rem;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.note p {
+  font-size: 0.9rem;
+  margin: 0.25rem 0;
+}
+
+.note .thesis {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.note .verdict {
+  margin-top: 0.75rem;
+  padding: 0.6rem 0.8rem;
+  border-left: 3px solid var(--accent);
+  background: var(--bg);
+}
+
+.note-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 0 1.5rem;
+}
+
+.generated a,
+.tagline a {
+  color: var(--accent);
+}

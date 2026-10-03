@@ -63,6 +63,7 @@ import datetime as dt
 import json
 import logging
 import os
+import re
 import statistics
 import sys
 import urllib.error
@@ -1073,6 +1074,179 @@ def write_factor_snapshot(snapshot: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Research notes (Tranche C: "Research Note Template", "Debate Simulator",
+# "Pre-Mortem Analysis") -- one Workers AI call per ticker returning all
+# three as JSON, ~240 neurons each. The model only argues from a fact sheet
+# built from today's saved snapshots (the ticker's KPIs, drawdown history,
+# and the sector/factor/volatility readings); code validates the shape, and
+# any number in the reply that is not in the fact sheet counts as invented:
+# one retry, then the note is published flagged. Model-written opinion,
+# labelled as such on the page -- never investment advice.
+# ---------------------------------------------------------------------------
+
+NOTES_DATA_PATH = os.path.join(ROOT, "dashboard", "data", "notes.json")
+NOTE_ACTIONS = {"Buy", "Hold", "Sell"}
+NOTE_CONVICTIONS = {"Low", "Medium", "High"}
+_NUMBER = re.compile(r"-?\d+(?:,\d{3})*(?:\.\d+)?")
+_STR, _STRS = {"type": "string"}, {"type": "array", "items": {"type": "string"}}
+NOTE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "thesis": _STR, "key_points": _STRS, "risks": _STRS, "valuation": _STR,
+        "action": {"type": "string", "enum": sorted(NOTE_ACTIONS)},
+        "conviction": {"type": "string", "enum": sorted(NOTE_CONVICTIONS)},
+        "bull": _STRS, "bear": _STRS, "debate_verdict": _STR,
+        "premortem": {"type": "array", "items": {
+            "type": "object",
+            "properties": {"reason": _STR, "probability": {"type": "integer"}, "warning_sign": _STR},
+            "required": ["reason", "probability", "warning_sign"]}},
+    },
+    "required": ["thesis", "key_points", "risks", "valuation", "action", "conviction",
+                 "bull", "bear", "debate_verdict", "premortem"],
+}
+
+NOTES_PROMPT = """You are a portfolio manager's analyst. Using ONLY the fact sheet below, write
+three things about {ticker}. Every number you write must appear in the fact sheet; do not
+invent prices, targets, growth rates or dates. Plain English, no markdown.
+
+Return ONLY a JSON object with exactly these keys:
+{{
+  "thesis": "one sentence",
+  "key_points": ["3 to 5 short points, each citing a fact-sheet number"],
+  "risks": ["3 primary risks"],
+  "valuation": "1-2 sentences on valuation from the fact sheet",
+  "action": "Buy" or "Hold" or "Sell",
+  "conviction": "Low" or "Medium" or "High",
+  "bull": ["the 3 strongest arguments for buying"],
+  "bear": ["the 3 strongest arguments for selling"],
+  "debate_verdict": "2 sentences: which side is stronger and why",
+  "premortem": [{{"reason": "why it lost 40% in 12 months", "probability": whole-number percent, "warning_sign": "what to monitor"}}]
+}}
+The premortem list has exactly 5 entries.
+
+FACT SHEET
+{facts}
+"""
+
+
+def _fact_sheet(row: dict, drawdowns: dict, sectors: dict, factors: dict, vol: dict) -> str:
+    lines = [f"Ticker: {row['ticker']}",
+             f"Composite risk score: {row.get('composite')}/10 (higher = lower risk), {row.get('coverage')} available"]
+    for key, name in KPI_ORDER:
+        k = row.get("kpis", {}).get(key) or {}
+        if k.get("score") is not None:
+            lines.append(f"- {name}: {k['score']:.2f} ({k.get('light')}) -- {k.get('detail', '')}")
+        else:
+            lines.append(f"- {name}: N/A")
+    dd = next((r for r in drawdowns.get("rows", []) if r["ticker"] == row["ticker"]), None)
+    if dd:
+        lines.append(f"Beta vs SPY (2-year daily): {dd.get('beta')}")
+        for ep in drawdowns.get("episodes", []):
+            cell = dd["episodes"].get(ep["id"])
+            if cell:
+                kind = "estimated from beta" if cell["isEstimate"] else (
+                    f"recovered in {cell['weeksToRecover']} weeks" if cell.get("weeksToRecover") is not None else "not recovered")
+                lines.append(f"- {ep['name']} drawdown: {cell['drawdown']}% ({kind})")
+    if sectors.get("regime"):
+        lines.append(f"Market regime (from sector leadership and yield curve): {sectors['regime']} -- {sectors['regimeBasis']}")
+    if vol.get("regime"):
+        lines.append(f"Volatility regime: {vol['regime']}, VIX {vol['vix']} ({vol['vixPercentile10y']}th percentile of 10 years)")
+    for f in factors.get("factors", []):
+        lines.append(f"- Factor {f['name']}: {f['status']} ({f['rs6m']}pp vs SPY over 6 months)")
+    lines.append(f"Dashboard summary: {row.get('summary', '')}")
+    lines.append("Pre-mortem premise: the stock has lost 40% over the next 12 months.")
+    return "\n".join(lines)
+
+
+def _invented_numbers(note: dict, facts: str) -> list:
+    known = [float(x.replace(",", "")) for x in _NUMBER.findall(facts)]
+    texts = [note["thesis"], note["valuation"], note["debate_verdict"], *note["key_points"], *note["risks"],
+             *note["bull"], *note["bear"], *(p["reason"] for p in note["premortem"]),
+             *(p["warning_sign"] for p in note["premortem"])]
+    bad = []
+    for n in (float(x.replace(",", "")) for t in texts for x in _NUMBER.findall(t)):
+        if n.is_integer() and 0 <= n <= 10:
+            continue  # counts ("3 insiders", "10 KPIs")
+        if not any(abs(n - v) <= max(0.05, 0.006 * abs(v)) or n == round(v) or abs(n) == abs(round(v)) for v in known):
+            bad.append(n)
+    return bad
+
+
+def _parse_note(reply: str) -> dict:
+    text = reply.strip()
+    if text.startswith("```"):
+        text = text.strip("`").removeprefix("json").strip()
+    note = json.loads(text[text.index("{"): text.rindex("}") + 1])
+    lists = ("key_points", "risks", "bull", "bear")
+    if any(not isinstance(note.get(k), str) or not note[k].strip() for k in ("thesis", "valuation", "debate_verdict")):
+        raise ValueError("missing text field")
+    if any(not isinstance(note.get(k), list) or not all(isinstance(x, str) for x in note[k]) or not note[k] for k in lists):
+        raise ValueError("missing list field")
+    if note.get("action") not in NOTE_ACTIONS or note.get("conviction") not in NOTE_CONVICTIONS:
+        raise ValueError(f"bad action/conviction: {note.get('action')}/{note.get('conviction')}")
+    pm = note.get("premortem")
+    if not isinstance(pm, list) or len(pm) != 5:
+        raise ValueError("premortem must have 5 entries")
+    for p in pm:
+        prob = p.get("probability")
+        if isinstance(prob, str):
+            prob = int(prob.strip().rstrip("%"))
+        if not isinstance(prob, (int, float)) or not 0 <= prob <= 100 or not p.get("reason") or not p.get("warning_sign"):
+            raise ValueError("bad premortem entry")
+        p["probability"] = int(round(prob))
+    return {k: note[k] for k in ("thesis", "key_points", "risks", "valuation", "action", "conviction",
+                                 "bull", "bear", "debate_verdict", "premortem")}
+
+
+def _research_note(row: dict, facts: str) -> dict:
+    last_error = None
+    for attempt in range(2):
+        try:
+            note = _parse_note(_generate(NOTES_PROMPT.format(ticker=row["ticker"], facts=facts), num_predict=1300,
+                                         json_schema=NOTE_SCHEMA))
+        except Exception as exc:
+            last_error = exc
+            log.warning("%s: research note attempt %d failed: %s", row["ticker"], attempt + 1, exc)
+            continue
+        invented = _invented_numbers(note, facts)
+        if not invented or attempt == 1:
+            if invented:
+                log.warning("%s: research note keeps numbers not in the fact sheet: %s", row["ticker"], invented)
+            return {**note, "unverified": invented}
+        log.warning("%s: research note invented %s; retrying", row["ticker"], invented)
+    raise RuntimeError(f"no valid research note: {last_error}")
+
+
+def research_notes() -> dict:
+    rows = _load_json(DASHBOARD_DATA_PATH, [])
+    drawdowns = _load_json(DRAWDOWN_DATA_PATH, {})
+    sectors = _load_json(SECTORS_DATA_PATH, {})
+    factors = _load_json(FACTORS_DATA_PATH, {})
+    vol = _load_json(VOLATILITY_DATA_PATH, {})
+    notes = []
+    for row in rows:
+        if row.get("composite") is None:
+            continue
+        try:
+            note = _research_note(row, _fact_sheet(row, drawdowns, sectors, factors, vol))
+            notes.append({"ticker": row["ticker"], "composite": row["composite"], **note})
+        except Exception as exc:
+            log.error("%s: research note failed: %s", row["ticker"], exc)
+    return {"generatedAt": dt.datetime.now(NZ_TZ).strftime("%Y-%m-%d %H:%M"), "model": sf.WORKERS_AI_MODEL,
+            "notes": notes}
+
+
+def write_notes_snapshot(snapshot: dict) -> None:
+    if not snapshot["notes"]:
+        log.warning("no research notes generated; keeping the previous notes.json")
+        return
+    os.makedirs(os.path.dirname(NOTES_DATA_PATH), exist_ok=True)
+    with open(NOTES_DATA_PATH, "w", encoding="utf-8") as f:
+        json.dump(snapshot, f, ensure_ascii=False, indent=2)
+    log.info("research notes: %s", ", ".join(f"{n['ticker']} {n['action']}/{n['conviction']}" for n in snapshot["notes"]))
+
+
+# ---------------------------------------------------------------------------
 # KPI 10: Red Flags & Accounting Risk
 # ---------------------------------------------------------------------------
 
@@ -1142,9 +1316,9 @@ def _composite(kpis: dict) -> "tuple[float | None, str | None, str]":
     return composite, _light(composite / 10), coverage
 
 
-def _generate(prompt: str, num_predict: int = 300) -> str:
+def _generate(prompt: str, num_predict: int = 300, json_schema: "dict | None" = None) -> str:
     try:
-        reply = sf.workers_ai_generate(prompt, max_tokens=num_predict)
+        reply = sf.workers_ai_generate(prompt, max_tokens=num_predict, json_schema=json_schema)
         if not reply:
             raise RuntimeError("model returned empty content")
     except Exception:
@@ -1431,6 +1605,10 @@ def poll_and_generate() -> int:
         write_factor_snapshot(factor_performance(spy_daily))
     except Exception as exc:
         log.error("drawdown analogues / factor performance failed: %s", exc)
+    try:
+        write_notes_snapshot(research_notes())
+    except Exception as exc:
+        log.error("research notes failed: %s", exc)
     log.info("wrote %d report(s)", written)
     if written == 0:
         from notify import notify
@@ -1460,6 +1638,8 @@ def main() -> None:
                          help="comma-separated ticker list; always regenerates, ignores no config")
     parser.add_argument("--reversion", action="store_true",
                         help="run only the mean reversion scan (no Notion, no LLM)")
+    parser.add_argument("--notes", action="store_true",
+                        help="run only the research notes from today's saved snapshots (Workers AI, no Notion)")
     parser.add_argument("--factors", action="store_true",
                         help="run only the factor performance snapshot (no Notion, no LLM)")
     parser.add_argument("--drawdowns", action="store_true",
@@ -1467,6 +1647,12 @@ def main() -> None:
     parser.add_argument("--volatility", action="store_true",
                         help="run only the volatility regime snapshot (no Notion, no LLM)")
     args = parser.parse_args()
+
+    if args.notes:
+        snapshot = research_notes()
+        write_notes_snapshot(snapshot)
+        print(json.dumps(snapshot, indent=2, ensure_ascii=False))
+        return
 
     if args.factors:
         snapshot = factor_performance(st._fetch_series(st.BENCHMARK_TICKER, "2y", "1d"))

@@ -26,7 +26,9 @@ export default function TickerCard({ row, rank }: { row: TickerRow; rank: number
           <KpiTile key={key} name={name} kpi={row.kpis[key]} />
         ))}
       </div>
-      <p className="generated">Generated {row.generatedAt} NZT</p>
+      <p className="generated">
+        Generated {row.generatedAt} NZT · <a href={`/dashboard/notes#${row.ticker}`}>Research note →</a>
+      </p>
     </div>
   );
 }

@@ -1342,7 +1342,7 @@ def _repo_env() -> dict:
     return env
 
 
-def workers_ai_generate(prompt: str, max_tokens: int) -> str:
+def workers_ai_generate(prompt: str, max_tokens: int, json_schema: "dict | None" = None) -> str:
     env = _repo_env()
     account = env.get("CF_ACCOUNT_ID") or os.environ.get("CF_ACCOUNT_ID")
     token = env.get("CF_AI_TOKEN") or os.environ.get("CF_AI_TOKEN")
@@ -1354,6 +1354,10 @@ def workers_ai_generate(prompt: str, max_tokens: int) -> str:
             "model": WORKERS_AI_MODEL,
             "messages": [{"role": "user", "content": prompt}],
             "max_tokens": max_tokens,
+            # JSON mode: without it Llama 3.3 sometimes left a string value
+            # unquoted ("thesis": AON's ...), which no parser can recover.
+            **({"response_format": {"type": "json_schema", "json_schema": {"name": "reply", "schema": json_schema}}}
+               if json_schema else {}),
         }).encode(),
         headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"},
     )
