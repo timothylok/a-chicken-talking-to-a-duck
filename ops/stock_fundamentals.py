@@ -63,6 +63,7 @@ import os
 import re
 import statistics
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -218,6 +219,7 @@ PRETAX_INCOME_TAGS = [
 
 RETRY_ATTEMPTS = 3
 RETRY_BACKOFF = 2.0  # seconds before the first retry, doubled each time
+_GET_CACHE: dict = {}
 
 
 def urlopen_retry(req: urllib.request.Request, timeout: int,
@@ -230,12 +232,25 @@ def urlopen_retry(req: urllib.request.Request, timeout: int,
     interception blip (CERTIFICATE_VERIFY_FAILED) zeroed an entire Category 4
     run. A 4xx is a real answer from the server, so it is raised immediately
     rather than hammered; only 429/5xx and socket/TLS faults are retried.
+
+    GETs are cached for the life of the process -- one scheduled run, since
+    only short-lived ops/ scripts import this (the ASR service never does).
+    The 11:10 dashboard run made 121 SEC requests, 70 of them repeats
+    (MSFT's and GOOGL's multi-MB companyfacts 5-6 times each, SPY's chart
+    10 times): every report tier and panel re-fetched what an earlier one in
+    the same run already had. Bytes are cached, so no caller can mutate
+    another's parsed copy.
     """
+    if req.data is None and req.full_url in _GET_CACHE:
+        return _GET_CACHE[req.full_url]
     delay = RETRY_BACKOFF
     for attempt in range(1, attempts + 1):
         try:
             with urllib.request.urlopen(req, timeout=timeout) as resp:
-                return resp.read()
+                body = resp.read()
+            if req.data is None:
+                _GET_CACHE[req.full_url] = body
+            return body
         except urllib.error.HTTPError as exc:
             if exc.code not in (429, 500, 502, 503, 504) or attempt == attempts:
                 raise
@@ -253,6 +268,8 @@ def urlopen_retry(req: urllib.request.Request, timeout: int,
 
 def _sec_get(url: str) -> bytes:
     req = urllib.request.Request(url, headers={"User-Agent": SEC_UA})
+    if url in _GET_CACHE:
+        return _GET_CACHE[url]  # no request made, so no SEC pacing needed
     data = urlopen_retry(req, timeout=30)
     time.sleep(SEC_DELAY)
     return data
@@ -1280,11 +1297,15 @@ _llm_attempts = 0
 _llm_failures = 0
 
 
+_llm_lock = threading.Lock()  # the research notes narrate on several threads
+
+
 def llm_record(ok: bool) -> None:
     global _llm_attempts, _llm_failures
-    _llm_attempts += 1
-    if not ok:
-        _llm_failures += 1
+    with _llm_lock:
+        _llm_attempts += 1
+        if not ok:
+            _llm_failures += 1
 
 
 def alert_if_narration_dead(job: str, log_name: str) -> None:
@@ -1387,7 +1408,7 @@ def _record_neurons(neurons: "float | None") -> None:
     line = json.dumps({"day": _utc_day(), "neurons": round(float(neurons), 2),
                        "job": os.path.basename(sys.argv[0]) or "?"})
     try:
-        with open(WORKERS_AI_LEDGER, "a", encoding="utf-8") as f:
+        with _llm_lock, open(WORKERS_AI_LEDGER, "a", encoding="utf-8") as f:
             f.write(line + "\n")
     except OSError as exc:
         log.warning("could not record Workers AI usage: %s", exc)
@@ -1654,6 +1675,32 @@ def _parse_form4(xml_bytes: bytes) -> "tuple[str | None, list]":
     return _xml_text(root, "issuer/issuerCik"), rows
 
 
+FORM4_CACHE_DIR = os.path.join(ROOT, "asr", "cache", "form4")
+
+
+def _form4_cached(cik: str, accn: str, doc: str) -> "tuple[str | None, list]":
+    """_parse_form4 of one filing, cached on disk by accession number.
+
+    A filed Form 4 never changes (a correction is a separate 4/A), so the
+    parse is cached for good: MSFT/GOOGL's 75-94 filings took up to 140 s
+    per Category 1 run when all were fetched each time.
+    """
+    path = os.path.join(FORM4_CACHE_DIR, f"{accn}.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            issuer, rows = json.load(f)
+        for r in rows:
+            r["line"] = tuple(r["line"])  # JSON has no tuples; _insiders keys dicts on it
+        return issuer, rows
+    except (OSError, ValueError):
+        pass
+    issuer, rows = _parse_form4(_sec_get(_filing_url(cik, accn, doc)))
+    os.makedirs(FORM4_CACHE_DIR, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump([issuer, rows], f)
+    return issuer, rows
+
+
 def _insider_transactions(cik: str, subs: dict, since: dt.date) -> "tuple[list, int]":
     """Every Form 4 row dated on/after `since` where this company is the issuer.
 
@@ -1669,11 +1716,11 @@ def _insider_transactions(cik: str, subs: dict, since: dt.date) -> "tuple[list, 
     for i, form in enumerate(recent.get("form", [])):
         if form != "4" or recent["filingDate"][i] < since.isoformat():
             continue
-        doc = recent["primaryDocument"][i].split("/")[-1]
+        accn = recent["accessionNumber"][i]
         try:
-            issuer, parsed = _parse_form4(_sec_get(_filing_url(cik, recent["accessionNumber"][i], doc)))
+            issuer, parsed = _form4_cached(cik, accn, recent["primaryDocument"][i].split("/")[-1])
         except Exception as exc:
-            log.warning("form 4 %s unreadable: %s", recent["accessionNumber"][i], exc)
+            log.warning("form 4 %s unreadable: %s", accn, exc)
             continue
         if not issuer or int(issuer) != int(cik):
             continue

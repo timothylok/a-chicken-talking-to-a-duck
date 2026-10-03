@@ -251,6 +251,12 @@ import notify  # noqa: E402
 import stock_fundamentals as sf  # noqa: E402
 import stock_risk_dashboard as srd  # noqa: E402
 
+# Its module-level FileHandler points at the live asr/logs/stock_risk_dashboard-<date>.log;
+# the guard's 'skipped' warnings below must not land in the real run history.
+for _h in list(srd.log.handlers):
+    srd.log.removeHandler(_h)
+srd.log.addHandler(logging.NullHandler())
+
 with tempfile.TemporaryDirectory() as tmp:
     sf.WORKERS_AI_LEDGER = os.path.join(tmp, "ledger.jsonl")
     with open(sf.WORKERS_AI_LEDGER, "w", encoding="utf-8") as f:
@@ -269,7 +275,8 @@ with tempfile.TemporaryDirectory() as tmp:
     notify.notify = lambda *a, **k: pushes.append(a) or True
 
     out = srd.research_notes()  # 1200.5 used + 3 x 300 + 1500 reserve fits in 10,000
-    check("notes run when the budget fits", (len(out["notes"]), calls), (3, ["AAA", "BBB", "CCC"]))
+    check("notes run when the budget fits, published in watchlist order",
+          ([n["ticker"] for n in out["notes"]], sorted(calls)), (["AAA", "BBB", "CCC"], ["AAA", "BBB", "CCC"]))
 
     sf._record_neurons(7000)  # an earnings night: 8200.5 used
     calls.clear()

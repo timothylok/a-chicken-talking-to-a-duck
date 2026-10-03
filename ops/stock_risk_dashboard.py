@@ -59,6 +59,7 @@ are silent no-ops (--tickers still computes/prints if configured).
 """
 
 import argparse
+import concurrent.futures
 import datetime as dt
 import json
 import logging
@@ -1091,6 +1092,7 @@ NOTES_DATA_PATH = os.path.join(ROOT, "dashboard", "data", "notes.json")
 # so they are what gives way after a multi-filing earnings night.
 NOTES_NEURONS_PER_TICKER = 300
 NOTES_NEURON_RESERVE = 1500
+NOTES_WORKERS = 4
 NOTE_ACTIONS = {"Buy", "Hold", "Sell"}
 NOTE_CONVICTIONS = {"Low", "Medium", "High"}
 _NUMBER = re.compile(r"-?\d+(?:,\d{3})*(?:\.\d+)?")
@@ -1229,7 +1231,6 @@ def research_notes() -> dict:
     sectors = _load_json(SECTORS_DATA_PATH, {})
     factors = _load_json(FACTORS_DATA_PATH, {})
     vol = _load_json(VOLATILITY_DATA_PATH, {})
-    notes = []
     scored = [r for r in rows if r.get("composite") is not None]
     used = sf.workers_ai_neurons_today()
     need = len(scored) * NOTES_NEURONS_PER_TICKER
@@ -1241,14 +1242,19 @@ def research_notes() -> dict:
         notify("研究筆記今日跳過", f"Research notes skipped to protect the free tier: {reason}. "
                                   "Yesterday's notes stay up.", priority=3)
         return {"generatedAt": None, "model": sf.WORKERS_AI_MODEL, "notes": [], "skipped": reason}
-    for row in rows:
-        if row.get("composite") is None:
-            continue
+    def one(row: dict) -> "dict | None":
         try:
             note = _research_note(row, _fact_sheet(row, drawdowns, sectors, factors, vol))
-            notes.append({"ticker": row["ticker"], "composite": row["composite"], **note})
+            return {"ticker": row["ticker"], "composite": row["composite"], **note}
         except Exception as exc:
             log.error("%s: research note failed: %s", row["ticker"], exc)
+            return None
+
+    # Independent Workers AI calls: 4 at a time took the 9 notes from ~150 s
+    # sequential to well under a minute; same prompts, same neuron spend.
+    # map() keeps the watchlist order.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=NOTES_WORKERS) as pool:
+        notes = [n for n in pool.map(one, scored) if n]
     return {"generatedAt": dt.datetime.now(NZ_TZ).strftime("%Y-%m-%d %H:%M"), "model": sf.WORKERS_AI_MODEL,
             "notes": notes}
 
