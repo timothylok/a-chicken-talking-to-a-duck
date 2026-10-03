@@ -6,22 +6,26 @@ Defaults to STOCK_WATCHLIST (same env var as stock_daily.py) minus SPCX,
 which is excluded here: it's the SpaceX-linked ticker, not a traditional
 SEC reporting company, so it has no 10-K/proxy filings to pull from.
 
-16-section report (Timeliness Flag through Red/Yellow/Green Flags), all
-anchored to one company's latest 10-K accession:
-  1. Timeliness Flag         9. Insider Ownership & Share Structure
-  2. Business in Plain English  10. Management Incentives
-  3. Key Financials            11. Risk Factor Highlights
-  4. Segment Revenue Breakdown 12. Durability & Moat Notes
-  5. Margin Trajectory         13. Forward Watchlist
-  6. Balance Sheet Health      14. Quality of Earnings
-  7. Capital Allocation        15. Valuation Snapshot
-  8. Share Count Trend         16. Red/Yellow/Green Flags
+17-section report (Timeliness Flag through Red/Yellow/Green Flags), all
+anchored to one company's latest 10-K accession except Insider Activity,
+which reads the last 6 months of Form 4s:
+  1. Timeliness Flag         10. Insider Activity (6 months)
+  2. Business in Plain English  11. Management Incentives
+  3. Key Financials            12. Risk Factor Highlights
+  4. Segment Revenue Breakdown 13. Durability & Moat Notes
+  5. Margin Trajectory         14. Forward Watchlist
+  6. Balance Sheet Health      15. Quality of Earnings
+  7. Capital Allocation        16. Valuation Snapshot
+  8. Share Count Trend         17. Red/Yellow/Green Flags
+  9. Insider Ownership & Share Structure
 
-10 of 16 sections are fully deterministic Python (XBRL numbers + a little
+10 of 17 sections are fully deterministic Python (XBRL numbers + a little
 live market data) -- no LLM, no hallucination risk on the figures
-themselves. Only 6 sections need local-LLM synthesis grounded in filing
-text: Business (2), Insider Ownership (9), Management Incentives (10),
-Risk Factor Highlights (11), Durability & Moat (12), Forward Watchlist (13).
+themselves. Insider Activity (10) is deterministic too, with a short LLM
+narration of its finished table. 6 sections need LLM synthesis grounded in
+filing text: Business (2), Insider Ownership (9), Management Incentives
+(11), Risk Factor Highlights (12), Durability & Moat (13), Forward
+Watchlist (14).
 
 Pipeline per ticker:
   1. SEC EDGAR company_tickers.json -> CIK
@@ -50,16 +54,19 @@ rather than force-fitting a parser tuned for a different company's table.
 
 import argparse
 import atexit
+import collections
 import datetime as dt
 import html as html_lib
 import json
 import logging
 import os
 import re
+import statistics
 import sys
 import time
 import urllib.error
 import urllib.request
+import xml.etree.ElementTree as ET
 from zoneinfo import ZoneInfo
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -1521,6 +1528,300 @@ def _section_ownership(ticker: str, tenk_text: str, tenk_accn: str, tenk_filed: 
     return html + _cite(f"{source}, accession {cite_accn}, filed {cite_filed}"), flagged
 
 
+INSIDER_WINDOW_DAYS = 183
+CLUSTER_DAYS = 30
+CLUSTER_MIN_INSIDERS = 3
+
+
+def _xml_text(node, path: str) -> "str | None":
+    el = node.find(path)
+    return el.text.strip() if el is not None and el.text and el.text.strip() else None
+
+
+def _xml_float(node, path: str) -> "float | None":
+    val = _xml_text(node, path)
+    try:
+        return float(val) if val is not None else None
+    except ValueError:
+        return None
+
+
+def _parse_form4(xml_bytes: bytes) -> "tuple[str | None, list]":
+    """(issuer CIK, rows) from one Form 4.
+
+    Rows are non-derivative transactions plus holdings-only lines (code None,
+    shares 0), each tagged with its ownership line so an insider's whole
+    stake can be summed across direct and indirect vehicles.
+    """
+    root = ET.fromstring(xml_bytes)
+    owners = []
+    for ro in root.findall("reportingOwner"):
+        name = _xml_text(ro, "reportingOwnerId/rptOwnerName") or "unknown"
+        rel = ro.find("reportingOwnerRelationship")
+        role = []
+        if rel is not None:
+            if _xml_text(rel, "isDirector") in ("true", "1"):
+                role.append("Director")
+            if _xml_text(rel, "isOfficer") in ("true", "1"):
+                role.append(_xml_text(rel, "officerTitle") or "Officer")
+            if _xml_text(rel, "isTenPercentOwner") in ("true", "1"):
+                role.append("10% owner")
+        owners.append((name, ", ".join(role) or "Other"))
+    owner = "; ".join(n for n, _ in owners) or "unknown"
+    role = "; ".join(r for _, r in owners) or "Other"
+    footnotes = {fn.get("id"): "".join(fn.itertext()) for fn in root.findall("footnotes/footnote")}
+    plan_footnotes = {k for k, v in footnotes.items() if re.search(r"10b5-?1", v, re.I)}
+    filing_planned = _xml_text(root, "aff10b5One") in ("true", "1")
+    period = _xml_text(root, "periodOfReport")
+
+    def line(node):
+        nature = node.find("ownershipNature/natureOfOwnership")
+        nature_ids = sorted(f.get("id") for f in nature.iter("footnoteId")) if nature is not None else []
+        return (_xml_text(node, "securityTitle/value"),
+                _xml_text(node, "ownershipNature/directOrIndirectOwnership/value"),
+                _xml_text(node, "ownershipNature/natureOfOwnership/value")
+                or " ".join(footnotes.get(i, "") for i in nature_ids))
+
+    rows = []
+    for tx in root.findall("nonDerivativeTable/nonDerivativeTransaction"):
+        shares = _xml_float(tx, "transactionAmounts/transactionShares/value")
+        if not shares:
+            continue
+        fn_ids = {f.get("id") for f in tx.iter("footnoteId")}
+        rows.append({
+            "owner": owner, "role": role, "line": line(tx),
+            "date": _xml_text(tx, "transactionDate/value"),
+            "code": _xml_text(tx, "transactionCoding/transactionCode"),
+            "shares": shares,
+            "price": _xml_float(tx, "transactionAmounts/transactionPricePerShare/value"),
+            "after": _xml_float(tx, "postTransactionAmounts/sharesOwnedFollowingTransaction/value"),
+            "planned": filing_planned or bool(fn_ids & plan_footnotes),
+        })
+    for h in root.findall("nonDerivativeTable/nonDerivativeHolding"):
+        rows.append({
+            "owner": owner, "role": role, "line": line(h), "date": period, "code": None,
+            "shares": 0.0, "price": None, "planned": False,
+            "after": _xml_float(h, "postTransactionAmounts/sharesOwnedFollowingTransaction/value"),
+        })
+    return _xml_text(root, "issuer/issuerCik"), rows
+
+
+def _insider_transactions(cik: str, subs: dict, since: dt.date) -> "tuple[list, int]":
+    """Every Form 4 row dated on/after `since` where this company is the issuer.
+
+    Uses the raw form4.xml, not the xslF345X06/ rendered page that
+    primaryDocument points at. A company's submissions also list Form 4s it
+    files as a *holder* of another issuer -- GOOGL's carried ~400 rows of GV
+    selling a ~$19 portfolio stock -- so the issuer CIK must match. 4/A
+    amendments are skipped: they restate an original that is already
+    counted. Returns (rows oldest-filing-first, filings_read).
+    """
+    recent = subs.get("filings", {}).get("recent", {})
+    rows, read = [], 0
+    for i, form in enumerate(recent.get("form", [])):
+        if form != "4" or recent["filingDate"][i] < since.isoformat():
+            continue
+        doc = recent["primaryDocument"][i].split("/")[-1]
+        try:
+            issuer, parsed = _parse_form4(_sec_get(_filing_url(cik, recent["accessionNumber"][i], doc)))
+        except Exception as exc:
+            log.warning("form 4 %s unreadable: %s", recent["accessionNumber"][i], exc)
+            continue
+        if not issuer or int(issuer) != int(cik):
+            continue
+        read += 1
+        rows[:0] = [r for r in parsed if r["date"] and r["date"] >= since.isoformat()]
+    return rows, read
+
+
+def _clusters(rows: list) -> list:
+    """Windows of CLUSTER_DAYS in which CLUSTER_MIN_INSIDERS+ distinct people traded."""
+    rows = sorted(rows, key=lambda r: r["date"])
+    found = []
+    for i, start in enumerate(rows):
+        end = dt.date.fromisoformat(start["date"]) + dt.timedelta(days=CLUSTER_DAYS)
+        names = {r["owner"] for r in rows[i:] if dt.date.fromisoformat(r["date"]) <= end}
+        if len(names) >= CLUSTER_MIN_INSIDERS:
+            if not found or start["date"] > found[-1][1]:
+                found.append((start["date"], end.isoformat(), len(names)))
+    return found
+
+
+def _insiders(rows: list) -> list:
+    """Per-insider totals, with trades sized against the whole reported stake.
+
+    Stake = sum of each ownership line's latest reported balance in the
+    window. Per-line sizing read Zuckerberg emptying one holding entity as
+    "sold 100%" while he held far more through others. Lines never traded or
+    restated in the window are invisible, so the stake can still be
+    understated (and % sold overstated) for insiders with many vehicles.
+    """
+    people = {}
+    for r in sorted(rows, key=lambda r: r["date"]):
+        p = people.setdefault(r["owner"], {"owner": r["owner"], "role": r["role"], "lines": {},
+                                           "bought": 0.0, "sold": 0.0, "disc_sold": 0.0,
+                                           "buy_value": 0.0, "sell_value": 0.0, "planned_value": 0.0})
+        if r["after"] is not None:
+            p["lines"][r["line"]] = r["after"]
+        value = r["shares"] * r["price"] if r["price"] else 0.0
+        if r["code"] == "P":
+            p["bought"] += r["shares"]
+            p["buy_value"] += value
+        elif r["code"] == "S":
+            p["sold"] += r["shares"]
+            p["sell_value"] += value
+            if r["planned"]:
+                p["planned_value"] += value
+            else:
+                p["disc_sold"] += r["shares"]
+    out = []
+    for p in people.values():
+        if not (p["bought"] or p["sold"]):
+            continue
+        start = sum(p["lines"].values()) + p["sold"] - p["bought"]
+        p["pct_sold"] = p["sold"] / start * 100 if p["sold"] and start > 0 else None
+        p["pct_disc_sold"] = p["disc_sold"] / start * 100 if p["disc_sold"] and start > 0 else None
+        p["pct_bought"] = p["bought"] / start * 100 if p["bought"] and start > 0 else None
+        out.append(p)
+    return sorted(out, key=lambda p: -(p["buy_value"] + p["sell_value"]))
+
+
+def _insider_summary(rows: list) -> dict:
+    buys = [r for r in rows if r["code"] == "P"]
+    sells = [r for r in rows if r["code"] == "S"]
+    planned = [r for r in sells if r["planned"]]
+    discretionary = [r for r in sells if not r["planned"]]
+    people = _insiders(rows)
+
+    def value(rs):
+        return sum(r["shares"] * r["price"] for r in rs if r["price"])
+
+    buy_clusters = _clusters(buys)
+    disc_sellers = {r["owner"] for r in discretionary}
+    big_disc = [p for p in people if (p["pct_disc_sold"] or 0) >= 25]
+    if buy_clusters:
+        verdict = ("Bullish", f"cluster buying: {buy_clusters[0][2]} insiders bought within "
+                              f"{CLUSTER_DAYS} days of {buy_clusters[0][0]}")
+    elif buys:
+        verdict = ("Mildly bullish", f"{len({r['owner'] for r in buys})} insider(s) bought on the open market, "
+                                     "but not as a cluster")
+    elif big_disc:
+        verdict = ("Bearish-leaning", f"{len(big_disc)} insider(s) sold 25%+ of their stake outside a 10b5-1 plan")
+    elif len(disc_sellers) >= CLUSTER_MIN_INSIDERS:
+        verdict = ("Bearish-leaning", f"{len(disc_sellers)} insiders sold outside a 10b5-1 plan")
+    elif discretionary:
+        verdict = ("Neutral", f"{_fmt_usd(value(discretionary))} sold outside 10b5-1 plans, but by "
+                              f"{len(disc_sellers)} insider(s), none of them 25%+ of their stake; "
+                              "no open-market buying")
+    elif sells:
+        verdict = ("Neutral", "all selling was pre-scheduled under 10b5-1 plans; no open-market buying")
+    else:
+        verdict = ("Neutral", "no open-market purchases or sales in the window")
+    return {
+        "buys": buys, "sells": sells, "planned": planned, "discretionary": discretionary,
+        "people": people,
+        "buy_value": value(buys), "sell_value": value(sells),
+        "planned_value": value(planned), "discretionary_value": value(discretionary),
+        "buy_sizes": [p["pct_bought"] for p in people if p["pct_bought"] is not None],
+        "sell_sizes": [p["pct_sold"] for p in people if p["pct_sold"] is not None],
+        "buy_clusters": buy_clusters, "sell_clusters": _clusters(sells),
+        "other_codes": collections.Counter(r["code"] for r in rows if r["code"] not in ("P", "S", None)),
+        "verdict": verdict,
+    }
+
+
+INSIDER_PROMPT = (
+    "Act as an equity analyst. Below is a computed summary of {ticker}'s SEC "
+    "Form 4 insider transactions over the past 6 months. The numbers and the "
+    "verdict are final -- do not recompute, contradict or add to them. In 3-4 "
+    "plain-English sentences, explain what the pattern suggests: whether "
+    "insiders are net buyers or sellers, whether activity is clustered, how "
+    "large it is against their stakes, and how much of the selling is "
+    "pre-scheduled 10b5-1. Pre-scheduled 10b5-1 sales by executives are "
+    "common and often mean little; sales outside a plan are the more "
+    "informative kind, so never call those routine.\n\n{summary}"
+)
+
+
+def _section_insider_activity(ticker: str, cik: str, subs: dict) -> str:
+    # "Insider Signal Reader" prompt. Every number here is parsed from Form 4
+    # XML; the LLM only narrates the finished summary. Codes P and S are the
+    # only open-market trades -- grants (A), tax withholding (F), option
+    # exercises (M), conversions (C) and gifts (G) are counted but carry no
+    # buy/sell signal.
+    since = dt.date.today() - dt.timedelta(days=INSIDER_WINDOW_DAYS)
+    rows, read = _insider_transactions(cik, subs, since)
+    if not read:
+        return f"<p>N/A -- no Form 4 filings for this issuer since {since.isoformat()}.</p>"
+    s = _insider_summary(rows)
+
+    def pct(x):
+        return f"{x:.1f}%" if x is not None else "N/A"
+
+    def med(xs):
+        return pct(statistics.median(xs)) if xs else "N/A"
+
+    table = _table(["Measure", "Open-market buys (P)", "Open-market sales (S)"], [
+        ["Transactions", str(len(s["buys"])), str(len(s["sells"]))],
+        ["Distinct insiders", str(len({r["owner"] for r in s["buys"]})), str(len({r["owner"] for r in s["sells"]}))],
+        ["Value", _fmt_usd(s["buy_value"]), _fmt_usd(s["sell_value"])],
+        ["Of which 10b5-1 planned", "--", f"{len(s['planned'])} trades, {_fmt_usd(s['planned_value'])}"],
+        ["Discretionary", f"{len(s['buys'])} trades", f"{len(s['discretionary'])} trades, {_fmt_usd(s['discretionary_value'])}"],
+        ["Median insider's trades vs. stake", med(s["buy_sizes"]), med(s["sell_sizes"])],
+        ["Largest insider's trades vs. stake", pct(max(s["buy_sizes"])) if s["buy_sizes"] else "N/A",
+         pct(max(s["sell_sizes"])) if s["sell_sizes"] else "N/A"],
+        [f"Clusters ({CLUSTER_MIN_INSIDERS}+ insiders in {CLUSTER_DAYS} days)",
+         str(len(s["buy_clusters"])), str(len(s["sell_clusters"]))],
+    ])
+    net = s["buy_value"] - s["sell_value"]
+    other = ", ".join(f"{c} x{n}" for c, n in sorted(s["other_codes"].items())) or "none"
+    label, reason = s["verdict"]
+    color = {"Bullish": PALETTE["LEAN_BULLISH"], "Mildly bullish": PALETTE["LEAN_BULLISH"],
+             "Bearish-leaning": PALETTE["LEAN_BEARISH"]}.get(label, PALETTE["LEAN_NEUTRAL"])
+    people_rows = [[p["owner"], p["role"], _fmt_usd(p["buy_value"]) if p["bought"] else "--",
+                    _fmt_usd(p["sell_value"]) if p["sold"] else "--",
+                    _fmt_usd(p["planned_value"]) if p["sold"] else "--",
+                    pct(p["pct_bought"]) if p["bought"] else "--", pct(p["pct_sold"]) if p["sold"] else "--"]
+                   for p in s["people"][:8]]
+    largest = "; ".join(
+        f"{p['owner']} ({p['role']}) sold {_fmt_usd(p['sell_value'])} = {pct(p['pct_sold'])} of stake, "
+        f"{_fmt_usd(p['planned_value'])} of it 10b5-1" if p["sold"] else
+        f"{p['owner']} ({p['role']}) bought {_fmt_usd(p['buy_value'])} = +{pct(p['pct_bought'])}"
+        for p in s["people"][:3]) or "none"
+
+    summary = (
+        f"Window: {since.isoformat()} to today, {read} Form 4 filings.\n"
+        f"Open-market buys: {len(s['buys'])} by {len({r['owner'] for r in s['buys']})} insiders, {_fmt_usd(s['buy_value'])}.\n"
+        f"Open-market sales: {len(s['sells'])} by {len({r['owner'] for r in s['sells']})} insiders, {_fmt_usd(s['sell_value'])} "
+        f"({len(s['planned'])} under 10b5-1 plans, {_fmt_usd(s['planned_value'])}).\n"
+        f"Net open-market flow: {_fmt_usd(net)}.\n"
+        f"Median seller sold {med(s['sell_sizes'])} of their stake; median buyer added {med(s['buy_sizes'])}.\n"
+        f"Buy clusters: {len(s['buy_clusters'])}; sell clusters: {len(s['sell_clusters'])}.\n"
+        f"Largest insiders by value: {largest}.\n"
+        f"Non-trade entries (grants/withholding/exercises/conversions/gifts): {other}.\n"
+        f"Verdict: {label} -- {reason}."
+    )
+    try:
+        narrative, _ = _llm_html(_ollama_generate(INSIDER_PROMPT.format(ticker=ticker, summary=summary), 400))
+    except Exception as exc:
+        log.warning("%s: insider narration failed: %s", ticker, exc)
+        narrative = f"<p>N/A -- narration failed ({_esc(exc)}); the tables above are complete.</p>"
+
+    return (
+        f"<p>{_pill(label, color)} {_esc(reason)}. Net open-market flow {_esc(_fmt_usd(net))}.</p>"
+        + table
+        + (("<p class=\"mt-3 text-sm font-semibold\">By insider (largest first)</p>"
+            + _table(["Insider", "Role", "Bought", "Sold", "Sold under 10b5-1", "Added to stake", "Sold of stake"],
+                     people_rows))
+           if people_rows else "")
+        + f"<p class=\"text-sm text-slate-600\">Non-trade entries: {_esc(other)} (A grant, F tax withholding, "
+          "M option exercise, C conversion, G gift). Stake is the sum of each ownership line the insider reported "
+          "in the window, so vehicles never reported here are missing and % of stake can read high.</p>"
+        + narrative
+        + _cite(f"SEC Form 4, {read} filings since {since.isoformat()}")
+    )
+
+
 _COMP_TERMS = re.compile(
     r"base salary|annual (cash )?incentive|long[- ]term incentive|equity award|"
     r"restricted stock|performance[- ]based|RSU|target bonus|payout|vesting|"
@@ -1601,6 +1902,7 @@ SECTION_TITLES = [
     "Capital Allocation",
     "Share Count Trend",
     "Insider Ownership & Share Structure",
+    "Insider Activity (6 months)",
     "Management Incentives",
     "Risk Factor Highlights",
     "Durability & Moat Notes",
@@ -1708,6 +2010,7 @@ def build_report(ticker: str) -> "str | None":
                                        market_cap, accn, filed, facts, current_price, shares_out)
     sec8 = _section_share_count_trend(shares)
     sec9, ownership_flag = _section_ownership(ticker, tenk_text, accn, filed, proxy_text, proxy_accn, proxy_filed)
+    sec9a = _section_insider_activity(ticker, cik, subs)
     sec9b = _section_management_incentives(ticker, proxy_text, proxy_accn, proxy_filed)
     sec10, concentration_flag = _section_risk_highlights(ticker, risk_text, accn, filed) if risk_text else (
         "<p>N/A -- could not locate the 'Item 1A. Risk Factors' section in the filing text.</p>", False)
@@ -1727,7 +2030,7 @@ def build_report(ticker: str) -> "str | None":
     sec15 = _section_flags(signals)
 
     return _html_page(ticker, cik, accn, filed, tenk_url, [
-        sec1, sec2, sec3, sec4, sec5, sec6, sec7, sec8, sec9, sec9b,
+        sec1, sec2, sec3, sec4, sec5, sec6, sec7, sec8, sec9, sec9a, sec9b,
         sec10, sec11, sec12, sec13, sec14, sec15,
     ])
 
