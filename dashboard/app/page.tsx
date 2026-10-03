@@ -1,4 +1,6 @@
 import TickerCard from "./components/TickerCard";
+import TickerLogo from "./components/TickerLogo";
+import TrafficLight from "./components/TrafficLight";
 import SectorTable from "./components/SectorTable";
 import { loadDashboardData } from "./lib/data";
 import { loadSectors } from "./lib/sectors";
@@ -27,18 +29,38 @@ export default function Dashboard() {
   }
 
   const latest = rows.reduce((max, r) => (r.generatedAt > max ? r.generatedAt : max), rows[0].generatedAt);
+  // Highest composite (lowest risk) first; unscored tickers last, alphabetically.
+  const ranked = [...rows].sort(
+    (a, b) => (b.composite ?? -1) - (a.composite ?? -1) || a.ticker.localeCompare(b.ticker),
+  );
+  const rankOf = (r: (typeof rows)[number]) => (r.composite != null ? ranked.indexOf(r) + 1 : null);
 
   return (
     <main>
       <a className="back-link" href="https://a-chicken-talking-to-a-duck.vercel.app/">← Home</a>
       <h1>Mag 7 Risk Dashboard</h1>
       <p className="tagline">
-        10 KPIs, computed by a local pipeline from SEC/Yahoo data (no cloud AI). Static snapshot published
-        {" "}{latest} NZT -- republish by running the generator locally, then <code>vercel --prod</code>.
+        10 KPIs scored from SEC/Yahoo data by a local pipeline; only the one-paragraph summaries are written by
+        Cloudflare Workers AI. Ranked by composite score, higher = lower risk. Static snapshot published {latest} NZT.
       </p>
+      <ol className="ranking">
+        {ranked.map((row) => (
+          <li key={row.ticker}>
+            <a href={`#${row.ticker}`}>
+              <span className="rank">{rankOf(row) != null ? `#${rankOf(row)}` : "--"}</span>
+              <TickerLogo ticker={row.ticker} />
+              <span className="ticker">{row.ticker}</span>
+              <span className="rank-score">
+                <TrafficLight light={row.compositeLight} />
+                {row.composite != null ? row.composite.toFixed(1) : "N/A"}
+              </span>
+            </a>
+          </li>
+        ))}
+      </ol>
       <div className="grid">
-        {rows.map((row) => (
-          <TickerCard key={row.ticker} row={row} />
+        {ranked.map((row) => (
+          <TickerCard key={row.ticker} row={row} rank={rankOf(row)} />
         ))}
       </div>
       {sectors && <SectorTable snapshot={sectors} />}

@@ -283,3 +283,87 @@ footer {
 .call.Neutral {
   color: var(--muted);
 }
+/* Logos, rank badges and the ranking strip */
+.ticker-id {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  flex: none;
+  border-radius: 8px;
+  background: #ffffff;
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.logo.dark {
+  background: #1a1a1a;
+}
+
+.logo img {
+  width: 1.6rem;
+  height: 1.6rem;
+  object-fit: contain;
+}
+
+.logo-letter {
+  font-weight: 700;
+  color: #1a1a1a;
+}
+
+.rank {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  min-width: 1.6rem;
+}
+
+.ranking {
+  list-style: none;
+  padding: 0;
+  margin: 1.5rem 0 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11.5rem, 1fr));
+  gap: 0.5rem;
+}
+
+.ranking a {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card-bg);
+  color: var(--fg);
+  text-decoration: none;
+}
+
+.ranking a:hover {
+  border-color: var(--accent);
+}
+
+.ranking .ticker {
+  font-size: 0.9rem;
+}
+
+.rank-score {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.card {
+  scroll-margin-top: 1rem;
+}

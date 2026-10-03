@@ -1,12 +1,17 @@
 import TrafficLight from "./TrafficLight";
 import KpiTile from "./KpiTile";
+import TickerLogo from "./TickerLogo";
 import { KPI_ORDER, type TickerRow } from "../lib/types";
 
-export default function TickerCard({ row }: { row: TickerRow }) {
+export default function TickerCard({ row, rank }: { row: TickerRow; rank: number | null }) {
   return (
-    <div className="card">
+    <div className="card" id={row.ticker}>
       <div className="card-head">
-        <span className="ticker">{row.ticker}</span>
+        <span className="ticker-id">
+          {rank != null && <span className="rank">#{rank}</span>}
+          <TickerLogo ticker={row.ticker} />
+          <span className="ticker">{row.ticker}</span>
+        </span>
         <span className="composite">
           <TrafficLight light={row.compositeLight} /> {row.composite != null ? `${row.composite}/10` : "N/A"}
         </span>
