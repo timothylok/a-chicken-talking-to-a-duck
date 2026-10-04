@@ -27,7 +27,7 @@ Say something in Cantonese to an iOS Shortcut and it speaks the answer back:
 - **分析股票 AAPL** — ticker price, technicals (RSI, moving averages), and a local LLM's spoken 買入/持有/沽出 take — explicitly not investment advice
 - **今日金句 / 電影金句** — Stephen Chow and HK movie quotes, because a voice assistant should have some personality
 - **畫 一隻太空貓** (Slack only) — a local Stable Diffusion model (LCM, CPU — the GPU stays reserved for speech + chat) draws it and the image lands in the channel about a minute later, fully offline
-- **系統狀態 / 重啟語音系統 / 重新部署** — system health, voice-triggered service restart, and a deploy hook (destructive commands demand a spoken 確認 within 60 seconds)
+- **系統狀態 / 重啟語音系統** — system health and voice-triggered service restart
 
 Anything that isn't a command falls through to a local LLM that replies in genuine Hong Kong 口語 — and by design its output can *never* trigger a command.
 

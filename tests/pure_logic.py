@@ -50,7 +50,7 @@ def check_true(label, value):
 # --- command table -----------------------------------------------------------
 # Guards the pre-commit hook's contract: the homepage and CLAUDE.md are
 # generated from COMMANDS, so a silent shrink means both drift.
-check_true("COMMANDS should hold at least 27 entries", len(r.COMMANDS) >= 27)
+check_true("COMMANDS should hold at least 26 entries", len(r.COMMANDS) >= 26)
 
 
 # --- TTS pauses --------------------------------------------------------------

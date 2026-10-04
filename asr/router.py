@@ -1447,14 +1447,6 @@ def _morning_briefing() -> str:
     return "早晨！" + "。".join(sections)
 
 
-def _trigger_deploy() -> str:
-    hook = os.environ.get("DEPLOY_HOOK_URL")
-    if not hook:
-        return "deploy hook not configured"
-    with urllib.request.urlopen(hook, data=b"") as resp:
-        return f"deploy triggered ({resp.status})"
-
-
 # Public web-chat entry point (gateway/public/chat.html -> /api/webchat,
 # source == "web") can only ever reach this subset — no destructive,
 # personal-calendar, or compute-heavy commands, and no LLM chat fallback
@@ -1756,11 +1748,6 @@ COMMANDS = {
         ],
         "destructive": False,
         "run": _restart_service,
-    },
-    "TRIGGER_DEPLOY": {
-        "phrases": ["重新部署", "重新部署網站", "redeploy", "deploy"],
-        "destructive": True,
-        "run": _trigger_deploy,
     },
 }
 

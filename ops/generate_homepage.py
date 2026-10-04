@@ -45,7 +45,6 @@ DESCRIPTIONS = {
     "PINE_STRATEGY": "本機AI生成TradingView Pine Script v5回測策略代碼（淨係Slack或者文字介面用得）：講「pine strategy:」加埋想要嘅策略邏輯，固定用0.1%手續費、10%資金比例、一萬蚊本金——AI生成代碼未經TradingView編譯器驗證，只係草稿",
     "GENERATE_IMAGE": "本機AI畫圖（淨係Slack用得）：講「畫」加內容（例：畫 一隻太空貓），約一分鐘後張圖出現喺Slack",
     "RESTART_ASR": "重新啟動語音系統（約三十秒後恢復）",
-    "TRIGGER_DEPLOY": "重新部署網站",
 }
 
 # Home-page grouping (presentation only — the router knows no categories).
@@ -56,7 +55,7 @@ CATEGORIES = [
     ("生活資訊", ["FUEL_PRICES", "BIN_DAY", "MILK_PRICES", "MORTGAGE_RATES", "STOCK_ANALYSIS", "PINE_INDICATOR", "PINE_STRATEGY", "EARTHQUAKES", "NEWS_HEADLINES"]),
     ("日程提醒", ["MORNING_BRIEFING", "SCHEDULE_TODAY", "CREATE_REMINDER"]),
     ("玩吓", ["QUOTE_OF_DAY", "MOVIE_QUOTE", "GENERATE_IMAGE"]),
-    ("系統", ["SYSTEM_STATUS", "LIST_COMMANDS", "RESTART_ASR", "TRIGGER_DEPLOY"]),
+    ("系統", ["SYSTEM_STATUS", "LIST_COMMANDS", "RESTART_ASR"]),
 ]
 
 # Non-voice automations shown on the home page; the dashboard count derives

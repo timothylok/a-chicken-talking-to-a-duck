@@ -69,8 +69,7 @@ The deny ACEs make the separation enforcement, not convention: even with
 read access to the repo, the service account cannot open the three secret
 files.
 
-**Future commands that need secrets** (e.g. `TRIGGER_DEPLOY` +
-`DEPLOY_HOOK_URL`) must use a hand-off pattern instead of putting the
+**Future commands that need secrets** (e.g. a Vercel deploy hook URL) must use a hand-off pattern instead of putting the
 credential in the service env: the router writes a "requested" marker file
 under `asr\logs`, and a scheduled task running as the user watches for the
 marker and performs the privileged action. Costs up to a minute of latency;
