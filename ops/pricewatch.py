@@ -53,9 +53,10 @@ public search only).
 
 Also watches plain retailer product URLs: PRICEWATCH_URLS env var,
 comma-separated (default: the same Aberlour 12YO at The Bottle-O Glenfield and
-Super Liquor, so a drop at either shop pages). These are shops PriceSpy does not
-index -- it covers electronics, not spirits -- so there is no skill CLI to lean
-on and the page is read directly. Only schema.org product data is parsed, never
+Super Liquor, so a drop at either shop pages, plus the men's Jordan 1 Mid SE at
+Foot Locker NZ). These are products PriceSpy has no usable data for -- it
+covers electronics, not spirits, and its shoe pages publish no offers -- so
+there is no skill CLI to lean on and the page is read directly. Only schema.org product data is parsed, never
 visible page text: both encodings of it (JSON-LD for The Bottle-O, microdata
 <meta itemprop> tags for Super Liquor) are machine-readable contracts a shop
 publishes for Google Shopping, so they carry name, price, currency *and*
@@ -106,7 +107,8 @@ def _parse_trademe_searches(raw: str) -> list[tuple[str, float]]:
 TRADEME_SEARCHES = _parse_trademe_searches(os.environ.get("PRICEWATCH_TRADEME_SEARCHES", "Nintendo Switch 2|400"))
 DEFAULT_URLS = (
     "https://glenfield.shop.thebottleo.co.nz/lines/aberlour-12-year-old-double-cask-matured-700ml,"
-    "https://www.superliquor.co.nz/aberlour-12yo-double-cask-matured-single-malt-700ml"
+    "https://www.superliquor.co.nz/aberlour-12yo-double-cask-matured-single-malt-700ml,"
+    "https://www.footlocker.co.nz/en/product/jordan-1-mid-se-men-shoes/284106302504.html"
 )
 URLS = [u.strip() for u in os.environ.get("PRICEWATCH_URLS", DEFAULT_URLS).split(",") if u.strip()]
 # Minimum day-over-day fall, in percent, before an alert is worth sending.
