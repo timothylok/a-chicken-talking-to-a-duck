@@ -142,16 +142,16 @@ def _run_skill(cli: str, *args: str, timeout: int = 30) -> dict:
         raise RuntimeError(f"{os.path.basename(cli)} gave unparseable output ({exc}); stderr: {stderr}") from exc
 
 
-def _lowest_available_price(data: dict) -> float | None:
+def _cheapest_available_offer(data: dict) -> dict | None:
     # PriceSpy's own current_lowest_price counts out-of-stock offers, so a
     # dead listing that keeps flickering on and off the page reads as a
     # repeated price drop (Kingston Fury 2026-09-06: a $299 OutOfStock offer
     # vanished for a day and came back, alerting a $470.35 -> $299 "drop"
     # that never existed). Only OutOfStock is excluded, not everything that
     # isn't InStock -- some merchants report Unknown and are still buyable.
-    prices = [o["price"] for o in data.get("offers", [])
+    offers = [o for o in data.get("offers", [])
               if o.get("price") is not None and o.get("stock_status") != "OutOfStock"]
-    return min(prices) if prices else None
+    return min(offers, key=lambda o: o["price"]) if offers else None
 
 
 def _schema_nodes(doc):
@@ -358,13 +358,21 @@ def main() -> None:
     for product_id in PRODUCTS:
         try:
             data = _run_skill(CLI, "product", product_id, "--json")
-            price = _lowest_available_price(data)
+            offer = _cheapest_available_offer(data)
             title = data.get("title", product_id)
-            if price is None:
+            if offer is None:
                 log.warning("%s: no in-stock offer in response", product_id)
                 _mark_out_of_stock(state, product_id, title)
                 continue
-            _check_and_alert(notify, state, today, product_id, title, price, data.get("url", ""))
+            # One product id can still be a different offer each day -- another
+            # shop, or a bundle listed under the same product (The Warehouse's
+            # "Switch 2 + Pokemon Legends Z-A" on the Switch 2 page). The
+            # merchant is the identity, so a switch reads as 有新平嘅盤 /
+            # 最平嘅盤冇咗 rather than as one shop's price moving.
+            merchant = offer.get("merchant") or "?"
+            _check_and_alert(notify, state, today, product_id, f"{title}（{merchant}）",
+                             offer["price"], data.get("url", ""),
+                             identity=str(offer.get("merchant_id") or merchant))
         except Exception:
             log.exception("%s: check failed", product_id)
         finally:
