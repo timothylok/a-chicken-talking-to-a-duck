@@ -224,7 +224,7 @@ Text → Command Router → Agents
 - **NZ data commands** run the vetted TheColab skill CLIs (clone at `D:\ai\thecolab-skills`, junctioned into `.claude/skills`, gitignored; update with `git -C D:\ai\thecolab-skills pull`) as subprocesses. Location values must be disambiguated — bare suburb names have fuzzy-matched Sydney (fuel) and Papakura (bins).
 - **Replies** pass `_pause_english()` (Chinese comma between adjacent English words for iOS TTS pauses); executed replies are logged to `service.log` (UTF-8 — PowerShell 5.1 needs `Get-Content -Encoding UTF8`).
 - **Chat fallback** — unmatched speech → local Ollama (`OLLAMA_MODEL`, default `gemma3:4b` — best spoken Cantonese of the local models), spoken reply returned. Reply-only by design: LLM output is never routed back into `COMMANDS` (prompt-injection guard).
-- **Planned agents** — Notion updates, Vercel deploy hooks, MCP pipelines, quant analysis jobs (`RUN_DEMARK_SCAN`).
+- **Planned agents** — Notion updates, MCP pipelines, quant analysis jobs (`RUN_DEMARK_SCAN`).
 
 This layer is the automation brain.
 
