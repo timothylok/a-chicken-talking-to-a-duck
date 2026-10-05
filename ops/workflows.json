@@ -15,6 +15,12 @@
       "then": [{"ntfy": {"title": "聽日收垃圾", "message": "今晚記住擺垃圾出去。{reply}", "priority": 4}}]
     },
     {
+      "id": "briefing-prewarm",
+      "enabled": true,
+      "trigger": {"schedule": {"at": "09:55"}},
+      "then": [{"command": {"text": "早晨"}}]
+    },
+    {
       "id": "command-error-alert",
       "enabled": true,
       "trigger": {"history": {"status": "error"}},

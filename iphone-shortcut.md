@@ -151,7 +151,7 @@ Shortcuts app → **Automation** tab → **+**:
 
 Notes:
 - Speak Text plays through the speaker even with the silent switch on (it's media audio); volume follows the media volume, not the ringer.
-- The briefing takes a few seconds to generate (weather + buses + news translation) — the pause before speech is normal.
+- A fresh briefing takes ~20 s to generate (weather + news translation), long enough for iOS to time out a background automation. The `briefing-prewarm` workflow (`ops/workflows.json`) builds it at 09:55 and the server reuses it for 10 minutes, so a 10:00 automation answers instantly — move both times together if you change the automation's time.
 - Running it twice within a minute returns "duplicate request ignored" — identical text bodies inside 60 s are treated as a network retry.
 
 ## Leaving-home jacket check automation (location trigger)

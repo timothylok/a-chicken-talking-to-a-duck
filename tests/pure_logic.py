@@ -93,6 +93,7 @@ for label, bad in [
     ("Korean (shrimp)", "攞 새우 俷旅遊體驗"),
     ("Arabic-Indic digits", "賺咗１٧٦ million"),
     ("Japanese kana", "ロボット開始工作"),
+    ("Turkish dotless i", "撥款削減， hazırlan，針對物價上限"),
 ]:
     check_true(f"_FOREIGN_SCRIPT should catch {label}", r._FOREIGN_SCRIPT.search(bad))
 
@@ -100,6 +101,8 @@ for label, bad in [
 # digits, CJK punctuation and leaked plain English (a separate, tolerated issue).
 for label, ok in [
     ("Maori macrons", "Whangārei今日落大雨"),
+    ("capital macrons", "Ōtaki同Ākaroa"),
+    ("Latin-1 accents", "Pokémon新作"),
     ("placeholders", "【1】喺【2】贏咗選舉"),
     ("fullwidth digits", "賺咗１７６ million"),
     ("CJK punctuation", "Dunne嘅「蟲」幫過佢 — 但係…"),

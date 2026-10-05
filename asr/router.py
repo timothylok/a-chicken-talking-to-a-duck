@@ -731,11 +731,13 @@ def _mask_names(title: str) -> tuple[str, dict[str, str]]:
 # Korean 새우, "176" in Arabic-Indic digits ١٧٦. Correct translations, wrong
 # language, and iOS TTS reads them as noise. Kana (U+3040-30FF) is excluded
 # deliberately while CJK punctuation (U+3000-303F, including the 【】 the
-# placeholders use) is kept.
+# placeholders use) is kept. Latin Extended-A is cut down to the macron vowels:
+# the whole block let Turkish "hazırlan" (dotless ı) through 2026-10-06.
 _FOREIGN_SCRIPT = re.compile(
     "[^"
     "\u0020-\u007E"   # ASCII
-    "\u00A0-\u024F"   # Latin-1 + Latin Extended-A/B (Maori macrons)
+    "\u00A0-\u00FF"   # Latin-1 (accented loanwords: café, Pokémon)
+    "\u0100\u0101\u0112\u0113\u012A\u012B\u014C\u014D\u016A\u016B"  # Maori macrons
     "\u2000-\u206F"   # general punctuation (dashes, quotes, ellipsis)
     "\u3000-\u303F"   # CJK punctuation, incl. the placeholder brackets
     "\u3400-\u4DBF"   # CJK Extension A
@@ -1520,7 +1522,26 @@ def _briefing_bins() -> str:
     return ""
 
 
+# The iPhone's 10:00 briefing automation runs in the background, where iOS
+# times the shortcut out before a ~20 s build finishes (2026-10-06). The
+# "briefing-prewarm" workflow (ops/workflows.json, 09:55) builds it first;
+# any 早晨 within BRIEFING_CACHE_TTL reuses that reply instantly.
+BRIEFING_CACHE_TTL = dt.timedelta(minutes=10)
+_briefing_cache: "tuple[dt.datetime, str] | None" = None
+
+
 def _morning_briefing() -> str:
+    global _briefing_cache
+    now = dt.datetime.now(NZ_TZ)
+    if _briefing_cache and now - _briefing_cache[0] < BRIEFING_CACHE_TTL:
+        return _briefing_cache[1]
+    reply = _build_morning_briefing()
+    if reply != "攞唔到簡報資料":
+        _briefing_cache = (now, reply)
+    return reply
+
+
+def _build_morning_briefing() -> str:
     # Compose existing sections; a failed source drops out instead of
     # killing the whole briefing.
     sections = []
