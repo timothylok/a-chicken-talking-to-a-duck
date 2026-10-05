@@ -124,6 +124,12 @@ export async function POST(request: Request): Promise<Response> {
     headers["CF-Access-Client-Secret"] = cfSecret;
   }
 
+  // 502s are logged (no audio, transcript or body) so a failed phone request
+  // can be told apart afterwards: timeout vs network vs Cloudflare/ASR refusal.
+  const started = Date.now();
+  const fail = (reason: string, extra: Record<string, unknown> = {}) =>
+    console.error("upstream 502", JSON.stringify({ reason, ms: Date.now() - started, ...extra }));
+
   let upstream: Response;
   try {
     upstream = await fetch(targetUrl, {
@@ -132,7 +138,9 @@ export async function POST(request: Request): Promise<Response> {
       body,
       signal: AbortSignal.timeout(isText ? TEXT_COMMAND_TIMEOUT_MS : UPSTREAM_TIMEOUT_MS),
     });
-  } catch {
+  } catch (err) {
+    const e = err as Error & { cause?: { code?: string } };
+    fail("unreachable", { name: e?.name, message: e?.message, cause: e?.cause?.code });
     return Response.json({ error: "asr service unreachable" }, { status: 502 });
   }
 
@@ -141,6 +149,12 @@ export async function POST(request: Request): Promise<Response> {
       .json()
       .then((body) => body?.detail)
       .catch(() => undefined);
+    fail("upstream status", {
+      status: upstream.status,
+      contentType: upstream.headers.get("content-type"),
+      cfRay: upstream.headers.get("cf-ray"),
+      detail: typeof detail === "string" ? detail : undefined,
+    });
     return Response.json(
       {
         error: typeof detail === "string" ? detail : "asr service error",
@@ -152,6 +166,7 @@ export async function POST(request: Request): Promise<Response> {
 
   const result = await upstream.json().catch(() => null);
   if (!result || typeof result.text !== "string") {
+    fail("invalid response", { contentType: upstream.headers.get("content-type") });
     return Response.json({ error: "invalid asr response" }, { status: 502 });
   }
 
