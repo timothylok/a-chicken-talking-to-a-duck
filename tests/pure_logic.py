@@ -32,6 +32,7 @@ import datetime as dt  # noqa: E402
 import flightwatch as fw  # noqa: E402
 import pricewatch as pw  # noqa: E402
 import polywatch as poly  # noqa: E402
+import premarket_watch as prem  # noqa: E402
 import router as r  # noqa: E402
 import stock_earnings as se  # noqa: E402
 
@@ -123,6 +124,33 @@ for label, bid, ask, ok in [
     ("already hit (0.999/1)", 0.999, 1.0, True),
 ]:
     check_true(f"tradeable {label}", poly.tradeable({"best_bid": bid, "best_ask": ask}) is ok)
+
+# --- US pre-market watch ------------------------------------------------------
+# Yahoo reports 0 extended-hours volume, so activity = 5-minute bars that exist.
+# Shapes from 2026-10-06: liquid names traded every slot; AON printed 4 bars to
+# +2.07% and closed +0.96% -- a thin book must not alert.
+_PRE0 = 1_790_000_000  # any pre-market start (epoch s)
+
+
+def _pre_chart(n_bars, last_price, prev=100.0, every=300):
+    ts = [_PRE0 + i * every for i in range(n_bars)]
+    return {"meta": {"chartPreviousClose": prev,
+                     "currentTradingPeriod": {"pre": {"start": _PRE0, "end": _PRE0 + 19800}}},
+            "timestamp": ts,
+            "indicators": {"quote": [{"close": [prev] * (n_bars - 1) + [last_price]}]}}
+
+
+_at = dt.datetime.fromtimestamp(_PRE0 + 90 * 60, dt.timezone.utc)  # 22:30-equivalent
+for label, chart, want in [
+    ("liquid +3% alerts", _pre_chart(19, 103.0), "alert"),
+    ("liquid -2.5% alerts", _pre_chart(19, 97.5), "alert"),
+    ("liquid +1% quiet", _pre_chart(19, 101.0), "quiet"),
+    ("AON-shaped thin +2.07%", _pre_chart(4, 102.07, every=1500), "thin"),
+    ("active, but last trade 30 min old", _pre_chart(13, 105.0), "stale"),
+]:
+    check_true(f"premarket {label}", prem.assess("X", chart, _at)["status"] == want)
+check_true("premarket outside window is closed",
+           prem.assess("X", _pre_chart(19, 110.0), _at + dt.timedelta(hours=6))["status"] == "closed")
 
 # --- price-watch listing identity -------------------------------------------
 # A Trade Me search's cheapest match is a different auction most days, so a
