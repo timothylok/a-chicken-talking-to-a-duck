@@ -25,7 +25,11 @@ rules as ops/pricewatch.py: the job records its own daily observation (never an
 upstream history series), a same-day rerun doesn't overwrite the baseline, and
 a failed push leaves the alerted baselines alone so the move re-raises next run.
 Zero-volume markets are skipped: with no trades the listed price is a default,
-not a crowd estimate.
+not a crowd estimate. So are markets whose order book is one-sided or wider than
+MAX_SPREAD: the listed price is the bid/ask midpoint, and "META dips to $600"
+read 40% on a book of no bid / 81c ask while the busier $620 rung sat at 9%
+(2026-10-06). A skipped market keeps its last good baseline. Full rationale:
+polymarket-spread-filter.md.
 
 Data via the owner's read-only skill D:\\ai\\polymarket-skill (keyless public APIs).
 
@@ -74,6 +78,7 @@ NZ_ELECTION_EVENTS = {
 # catches the election-night move; after it the family stops being fetched.
 NZ_ELECTION_LAST_DAY = dt.date(2026, 11, 8)
 MAX_LINES = 10
+MAX_SPREAD = 0.10  # Yes-book ask minus bid; wider and the midpoint is guesswork
 STATE_KEEP_DAYS = 40  # rolled-over monthly/weekly markets age out of the state file
 
 os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
@@ -87,6 +92,12 @@ log = logging.getLogger("polywatch")
 # ---------------------------------------------------------------------------
 # Discovery (network, via the polymarket skill)
 # ---------------------------------------------------------------------------
+def tradeable(m: dict) -> bool:
+    """Both sides of the Yes book quoted, no wider than MAX_SPREAD."""
+    bid, ask = m.get("best_bid"), m.get("best_ask")
+    return bid is not None and ask is not None and round(ask - bid, 4) <= MAX_SPREAD
+
+
 def _observations(event: dict, family: str, ticker: "str | None") -> list:
     obs = []
     for m in event["markets"]:
@@ -99,7 +110,7 @@ def _observations(event: dict, family: str, ticker: "str | None") -> list:
             if tkr is None:
                 continue  # Saudi Aramco, SpaceX, placeholder "Company B" rows
         price = m["outcomes"][0]["price"]
-        if price is None:
+        if price is None or not tradeable(m):
             continue
         obs.append({"key": m["slug"], "family": family, "ticker": tkr, "label": label,
                     "price": price, "event": event["title"], "url": event["url"]})

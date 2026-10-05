@@ -31,6 +31,7 @@ import datetime as dt  # noqa: E402
 
 import flightwatch as fw  # noqa: E402
 import pricewatch as pw  # noqa: E402
+import polywatch as poly  # noqa: E402
 import router as r  # noqa: E402
 import stock_earnings as se  # noqa: E402
 
@@ -109,6 +110,19 @@ for label, ok in [
 ]:
     check_true(f"_FOREIGN_SCRIPT must not flag {label}", not r._FOREIGN_SCRIPT.search(ok))
 
+
+# --- Polymarket spread filter -----------------------------------------------
+# outcomePrices is the bid/ask midpoint: "META dips to $600" read 40% on a book
+# of no bid / 81c ask (2026-10-06). Real books from that day's alerts.
+for label, bid, ask, ok in [
+    ("META $600: no bid", None, 0.81, False),
+    ("TSLA $390: 29-pt spread", 0.71, 1.0, False),
+    ("META mcap: 20-pt spread", 0.22, 0.42, False),
+    ("NVDA $232: tight", 0.65, 0.69, True),
+    ("exactly 10 pts", 0.61, 0.71, True),
+    ("already hit (0.999/1)", 0.999, 1.0, True),
+]:
+    check_true(f"tradeable {label}", poly.tradeable({"best_bid": bid, "best_ask": ask}) is ok)
 
 # --- price-watch listing identity -------------------------------------------
 # A Trade Me search's cheapest match is a different auction most days, so a
