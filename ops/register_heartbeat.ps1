@@ -1,5 +1,5 @@
 # Registers the "VoiceOS Heartbeat" scheduled task. Run from an ELEVATED
-# PowerShell. Runs ops/heartbeat.ps1 hourly as the logged-in user (S4U, so it
+# PowerShell. Runs ops/heartbeat.ps1 every 15 minutes as the logged-in user (S4U, so it
 # fires whether or not anyone is logged on) to ping healthchecks.io while the
 # voice stack — local ASR, the Cloudflared service, AND the ASR /health route
 # through the public tunnel — is healthy; pings /fail with a reason otherwise.
@@ -15,6 +15,10 @@
 # New-ScheduledTaskSettingsSet parameters, because that cmdlet's parameter set
 # varies by Windows build (this box rejects -MultipleInstancesPolicy and
 # -DisallowStartIfOnBatteries); the CIM properties are stable across builds.
+# Every 15 min, not hourly (2026-10-06): a failure pings /fail at once, so the
+# interval is the detection delay -- hourly let a sub-hour outage (the 11-min
+# one on 2026-09-07) pass unseen. The healthchecks.io period (1 h) needs no
+# change: more frequent success pings only reset it sooner.
 # HEALTHCHECKS_PING_URL is read by heartbeat.ps1 from the User env var, not
 # passed here, to keep the ping URL out of the task's visible action string.
 
@@ -31,7 +35,7 @@ $script = "D:\ai\voice-ecosystem\ops\heartbeat.ps1"
 $action = New-ScheduledTaskAction -Execute "powershell.exe" `
     -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$script`"" `
     -WorkingDirectory "D:\ai\voice-ecosystem"
-$trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Hours 1)
+$trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 15)
 $principal = New-ScheduledTaskPrincipal -UserId "timlo" -LogonType S4U -RunLevel Limited
 
 $settings = New-ScheduledTaskSettingsSet

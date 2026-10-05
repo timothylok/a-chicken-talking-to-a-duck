@@ -13,7 +13,8 @@ Rule shape (all "if" fields optional, AND-ed; see ops/workflows.json):
    "then": [{"ntfy": {"title": "帶遮", "message": "{reply}"}}]}
 
 Triggers:
-  schedule {at, days?}   — fires once per day when now >= at (late catch-up ok)
+  schedule {at, days?}   — fires once per day when now >= at (late catch-up ok);
+                           a failed run retries each minute, SCHEDULE_ATTEMPTS max
   history  {command?, status?, source?, text_contains?}
                          — new history.jsonl entries, byte cursor
 Conditions ("if"): command (phrase to run for its reply/data — schedule rules
@@ -48,6 +49,7 @@ sys.path.insert(0, os.path.join(ROOT, "ops"))
 
 NZ_TZ = ZoneInfo("Pacific/Auckland")
 DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+SCHEDULE_ATTEMPTS = 5  # one per minute: rides out a ~30 s VoiceASR restart
 
 os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
 logging.basicConfig(
@@ -126,9 +128,11 @@ def _condition_passes(cond: dict, outcome: dict) -> bool:
     return ok
 
 
-def _run_actions(rule: dict, outcome: dict) -> None:
+def _run_actions(rule: dict, outcome: dict) -> bool:
+    """Run every action; False if any raised or its ntfy didn't send."""
     from notify import notify
 
+    ok = True
     for action in rule.get("then", []):
         try:
             if "ntfy" in action:
@@ -142,6 +146,7 @@ def _run_actions(rule: dict, outcome: dict) -> None:
                     int(spec.get("priority", 3)),
                 )
                 log.info("%s: ntfy %s", rule["id"], "sent" if sent else "NOT sent")
+                ok &= sent
             elif "command" in action:
                 text = action["command"]["text"]
                 resolved = _resolve_command(text)
@@ -169,9 +174,12 @@ def _run_actions(rule: dict, outcome: dict) -> None:
                     log.info("%s: webhook %s -> %d", rule["id"], spec["url"], resp.status)
         except Exception as exc:
             log.error("%s: action failed: %s", rule["id"], exc)  # next action still runs
+            ok = False
+    return ok
 
 
-def _fire(rule: dict, outcome: dict) -> None:
+def _fire(rule: dict, outcome: dict) -> bool:
+    """False = worth retrying (condition command or an action failed)."""
     cond = rule.get("if") or {}
     # Schedule rules may name a command to run as their condition source.
     if cond.get("command"):
@@ -179,11 +187,11 @@ def _fire(rule: dict, outcome: dict) -> None:
             outcome = _run_command(cond["command"])
         except Exception as exc:
             log.error("%s: condition command failed: %s", rule["id"], exc)
-            return
+            return False
     if not _condition_passes(cond, outcome):
         log.info("%s: condition not met", rule["id"])
-        return
-    _run_actions(rule, outcome)
+        return True
+    return _run_actions(rule, outcome)
 
 
 def _check_schedules(rules: list, state: dict, now: dt.datetime) -> None:
@@ -196,9 +204,22 @@ def _check_schedules(rules: list, state: dict, now: dt.datetime) -> None:
         at = dt.datetime.strptime(sched["at"], "%H:%M").time()
         today = now.date().isoformat()
         if now.time() >= at and state["last_fired"].get(rule["id"]) != today:
-            state["last_fired"][rule["id"]] = today
-            log.info("%s: schedule trigger fired", rule["id"])
-            _fire(rule, {})
+            # A failed run retries on the next minute's run, up to
+            # SCHEDULE_ATTEMPTS: briefing-prewarm's first run (2026-10-06)
+            # hit a VoiceASR restart and was marked done for the day.
+            attempts = state.setdefault("attempts", {})
+            prev = attempts.get(rule["id"])
+            n = prev[1] + 1 if prev and prev[0] == today else 1
+            log.info("%s: schedule trigger fired%s", rule["id"],
+                     f" (attempt {n}/{SCHEDULE_ATTEMPTS})" if n > 1 else "")
+            ok = _fire(rule, {})
+            if ok or n >= SCHEDULE_ATTEMPTS:
+                state["last_fired"][rule["id"]] = today
+                attempts.pop(rule["id"], None)
+                if not ok:
+                    log.error("%s: giving up for today after %d attempts", rule["id"], n)
+            else:
+                attempts[rule["id"]] = [today, n]
 
 
 def _check_history(rules: list, state: dict) -> None:

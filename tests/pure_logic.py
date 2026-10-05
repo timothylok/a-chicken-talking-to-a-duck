@@ -35,6 +35,7 @@ import polywatch as poly  # noqa: E402
 import premarket_watch as prem  # noqa: E402
 import router as r  # noqa: E402
 import stock_earnings as se  # noqa: E402
+import workflows as wf  # noqa: E402
 
 failures = []
 
@@ -151,6 +152,30 @@ for label, chart, want in [
     check_true(f"premarket {label}", prem.assess("X", chart, _at)["status"] == want)
 check_true("premarket outside window is closed",
            prem.assess("X", _pre_chart(19, 110.0), _at + dt.timedelta(hours=6))["status"] == "closed")
+
+# --- workflow schedule retry ---------------------------------------------------
+# A failed scheduled run retries next minute, up to SCHEDULE_ATTEMPTS, instead
+# of being marked done for the day (briefing-prewarm vs a VoiceASR restart).
+_rule = {"id": "r", "trigger": {"schedule": {"at": "09:55"}}}
+_t = dt.datetime(2026, 10, 7, 9, 56)
+_orig_fire = wf._fire
+try:
+    _st = {"last_fired": {}}
+    wf._fire = lambda rule, outcome: False
+    for _ in range(wf.SCHEDULE_ATTEMPTS - 1):
+        wf._check_schedules([_rule], _st, _t)
+    check_true("workflow failure leaves rule unfired for retry", "r" not in _st["last_fired"])
+    wf._fire = lambda rule, outcome: True
+    wf._check_schedules([_rule], _st, _t)
+    check_true("workflow retry success marks fired", _st["last_fired"].get("r") == "2026-10-07")
+    check_true("workflow success clears attempts", "r" not in _st["attempts"])
+    _st = {"last_fired": {}}
+    wf._fire = lambda rule, outcome: False
+    for _ in range(wf.SCHEDULE_ATTEMPTS):
+        wf._check_schedules([_rule], _st, _t)
+    check_true("workflow gives up after max attempts", _st["last_fired"].get("r") == "2026-10-07")
+finally:
+    wf._fire = _orig_fire
 
 # --- price-watch listing identity -------------------------------------------
 # A Trade Me search's cheapest match is a different auction most days, so a
