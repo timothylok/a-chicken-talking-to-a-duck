@@ -81,7 +81,7 @@ AUTOMATIONS = [
 
 # Stock-related automations get their own visual timeline on the home page
 # (see STOCK_TIMELINE_INTRO + the .timeline CSS/render logic below) instead
-# of living in the generic AUTOMATIONS table above — six real scheduled
+# of living in the generic AUTOMATIONS table above — seven real scheduled
 # tasks plus Category 1's reactive refresh, in actual chronological order.
 # Times/scripts confirmed live via `Get-ScheduledTask` 2026-09-29 — keep in
 # sync if a task's trigger time ever changes. The triggers are anchored to a
@@ -104,6 +104,8 @@ STOCK_TIMELINE = [
      "計算10個KPI風險評分（0-1分同紅黃綠燈），三句總結由Cloudflare Workers AI生成，寫落Notion，然後自動出版去<a href=\"/dashboard\">網頁儀表板</a>——生成失敗就唔會出版，唔會俾舊儀表板落線"),
     ("11:25", "朝早", "—", "每日股價範圍 Stock Day Range",
      "即時攞Yahoo Finance數據計50/200日均線、RSI、支持阻力位，加上20日歷史波幅推算出嘅預期浮動範圍，再讀返Category 6嘅風險評分做參考，Cloudflare Workers AI寫低每隻股票嘅簡短分析——純粹技術/波幅參考，唔係價錢預測，都唔係投資建議，存做本機HTML報告"),
+    ("11:45", "朝早", "—", "Polymarket 賠率監察",
+     "睇Polymarket預測市場對Mag 7（NVDA、MSFT、GOOGL、AAPL、AMZN、META、TSLA）嘅賠率：全球最大公司、業績勝預期、本月股價、市值，每日自動搵返最新嘅盤；賠率比上次記錄郁得多先推送通知去手機，新業績盤一開都會通知——係市場價錢，唔係預測，都唔係投資建議"),
 ]
 
 PAGE = """<!DOCTYPE html>
