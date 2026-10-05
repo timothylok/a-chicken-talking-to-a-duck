@@ -1312,9 +1312,18 @@ def _stock_analysis(text: str) -> dict:
 POLYMARKET_CLI = "D:/ai/polymarket-skill/scripts/polymarket.py"
 POLYMARKET_PREFIXES = ("polymarket", "預測市場", "预测市场")
 _POLYMARKET_TRIGGER_RE = re.compile(r"poly\s*market|預測市場|预测市场", re.IGNORECASE)
+# Bare 加息/減息 means the Fed unless another bank or country is named: as
+# "rate hike" alone, search ranked the Bank of Canada market first (2026-10-05).
+_RATE_MOVE_RE = re.compile(r"加息|減息|减息")
+_OTHER_BANK_RE = re.compile(
+    r"聯儲|联储|央行|銀行|银行|儲備|储备|加拿大|英倫|英國|英国|歐洲|欧洲|日本|澳洲|"
+    r"紐西蘭|纽西兰|新西蘭|新西兰|中國|中国|香港|\b(?:fed|fomc|boc|ecb|boe|boj|rba|rbnz)\b",
+    re.IGNORECASE)
 
 
 def _polymarket_query(topic: str) -> str:
+    if _RATE_MOVE_RE.search(topic) and not _OTHER_BANK_RE.search(topic):
+        topic = "聯儲局" + topic
     if not _CJK_RE.search(topic):
         return topic
     payload = json.dumps({
