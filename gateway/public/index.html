@@ -5,70 +5,116 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>雞同鴨講 — 廣東話語音OS</title>
 <style>
-  :root { --bg: #ffffff; --fg: #1a1a1a; --muted: #666; --line: #e0e0e0; --accent: #b45309; }
+  :root { --bg: #ffffff; --card: #ffffff; --fg: #1a1a1a; --muted: #5f6368; --line: #e3e3e3;
+          --ink-mix: #000; --ink-pct: 70%; --tint-pct: 10%; }
   @media (prefers-color-scheme: dark) {
-    :root { --bg: #16181d; --fg: #e8e8e8; --muted: #9a9a9a; --line: #333; --accent: #f59e0b; }
+    :root { --bg: #16181d; --card: #1d2026; --fg: #e8e8e8; --muted: #a0a4ab; --line: #30343b;
+            --ink-mix: #fff; --ink-pct: 62%; --tint-pct: 18%; }
   }
-  body { margin: 0 auto; max-width: 44rem; padding: 2rem 1.25rem 4rem;
+  /* Every coloured block sets --c (its Pantone); ink/tint derive from it so
+     text keeps contrast in both themes. */
+  [style*="--c"] { --ink: color-mix(in srgb, var(--c) var(--ink-pct), var(--ink-mix));
+                   --tint: color-mix(in srgb, var(--c) var(--tint-pct), var(--bg)); }
+  * { box-sizing: border-box; }
+  body { margin: 0 auto; max-width: 62rem; padding: 1.5rem 1rem 4rem;
          background: var(--bg); color: var(--fg);
          font-family: -apple-system, "PingFang HK", "Microsoft JhengHei", sans-serif;
-         line-height: 1.75; }
-  h1 { font-size: 1.6rem; margin-bottom: 0.25rem; }
-  h2 { font-size: 1.15rem; margin-top: 2.5rem; border-bottom: 1px solid var(--line);
-       padding-bottom: 0.35rem; }
-  .tagline { color: var(--muted); margin-top: 0; }
-  .translate { font-size: 0.85rem; margin-top: 0.25rem; }
+         line-height: 1.7; }
+  a { color: var(--ink, inherit); }
+  .top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 1rem; }
+  h1 { font-size: 1.7rem; margin: 0; line-height: 1.2; }
+  .tagline { color: var(--muted); margin: 0.2rem 0 0; }
+  .translate { font-size: 0.8rem; margin: 0.2rem 0 0; }
   .translate a { color: var(--muted); }
-  .nav { display: flex; gap: 1.25rem; margin-top: 1rem; }
-  .nav a { color: var(--accent); font-weight: 600; text-decoration: none; }
+  .stats { display: flex; gap: 0.6rem; }
+  .stat { border: 1px solid var(--line); border-top: 4px solid var(--c); border-radius: 10px;
+          padding: 0.35rem 0.9rem; text-align: center; text-decoration: none; color: var(--fg);
+          background: var(--card); min-width: 5.5rem; }
+  .stat .num { display: block; font-size: 1.5rem; font-weight: 700; color: var(--ink); line-height: 1.2; }
+  .stat .label { color: var(--muted); font-size: 0.8rem; }
+  .nav { display: flex; flex-wrap: wrap; gap: 0.4rem 1.1rem; margin: 0.9rem 0 0; font-size: 0.95rem; }
+  .nav a { font-weight: 600; text-decoration: none; color: var(--fg); }
   .nav a:hover { text-decoration: underline; }
-  .flow { color: var(--muted); font-size: 0.9rem; overflow-x: auto; white-space: nowrap; }
-  table { border-collapse: collapse; width: 100%; margin-top: 1rem; }
-  th, td { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--line);
-           vertical-align: top; }
-  th { font-size: 0.85rem; color: var(--muted); font-weight: 600; }
-  .phrase { font-weight: 600; white-space: nowrap; }
-  .alt { color: var(--muted); font-size: 0.85rem; }
-  .confirm { color: var(--accent); font-size: 0.85rem; white-space: nowrap; }
-  .filters { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem; }
-  .chip { border: 1px solid var(--line); border-radius: 999px; background: none;
-          color: var(--fg); font: inherit; font-size: 0.9rem; padding: 0.2rem 0.85rem;
-          cursor: pointer; }
-  .chip.active { border-color: var(--accent); color: var(--accent); font-weight: 600; }
-  .cmd-group h3 { font-size: 1rem; margin: 1.75rem 0 0; color: var(--muted); }
-  .cmd-group table { margin-top: 0.5rem; }
-  .stats { display: flex; gap: 1rem; margin-top: 1.5rem; }
-  .stat { flex: 1; border: 1px solid var(--line); border-radius: 8px;
-          padding: 0.75rem 1rem; text-align: center; }
-  .stat .num { font-size: 2rem; font-weight: 700; color: var(--accent); line-height: 1.2; }
-  .stat .label { color: var(--muted); font-size: 0.85rem; }
-  footer { margin-top: 3rem; color: var(--muted); font-size: 0.8rem;
-           border-top: 1px solid var(--line); padding-top: 1rem; }
-  h3.timeline-title { font-size: 1rem; margin: 2rem 0 0.15rem; }
-  .timeline-caption { color: var(--muted); font-size: 0.85rem; margin: 0 0 1.25rem; }
-  .timeline { display: flex; flex-direction: column; }
+  .swatch { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.68rem;
+            letter-spacing: 0.02em; color: var(--muted); white-space: nowrap; font-weight: 500; }
+  .swatch i { width: 0.9rem; height: 0.9rem; border-radius: 3px; background: var(--c); }
+  .about { margin-top: 1.25rem; background: var(--tint); border-left: 5px solid var(--c);
+           border-radius: 10px; padding: 0.9rem 1.1rem; }
+  .about p { margin: 0 0 0.5rem; }
+  .about .head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.5rem;
+                 align-items: baseline; }
+  .about h2 { font-size: 1.05rem; margin: 0 0 0.35rem; color: var(--ink); }
+  .flow { color: var(--muted); font-size: 0.85rem; overflow-x: auto; white-space: nowrap; margin: 0; }
+  .tabs { position: sticky; top: 0; z-index: 5; display: flex; gap: 0.4rem; overflow-x: auto;
+          margin: 1.5rem -1rem 0; padding: 0.6rem 1rem; background: var(--bg);
+          border-bottom: 1px solid var(--line); }
+  .tab { flex: none; text-decoration: none; color: var(--fg); font-weight: 600; font-size: 0.95rem;
+         border: 1px solid var(--line); border-bottom: 3px solid var(--c); border-radius: 8px;
+         padding: 0.3rem 0.9rem; background: var(--card); }
+  .tab .n { color: var(--muted); font-weight: 500; font-size: 0.8rem; margin-left: 0.3rem; }
+  .tab.active { background: var(--c); color: #fff; border-color: var(--c); }
+  .tab.active .n { color: rgba(255,255,255,0.85); }
+  .panel { padding-top: 0.5rem; scroll-margin-top: 4rem; }
+  .panel-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline;
+                gap: 0.5rem; margin: 1rem 0 0.25rem; border-bottom: 3px solid var(--c); padding-bottom: 0.3rem; }
+  .panel-head h2 { font-size: 1.15rem; margin: 0; color: var(--ink); }
+  .note { color: var(--muted); font-size: 0.85rem; margin: 0.5rem 0 0; }
+  .filters { display: flex; flex-wrap: wrap; gap: 0.45rem; margin-top: 0.9rem; }
+  .chip { border: 1px solid var(--line); border-radius: 999px; background: var(--card);
+          color: var(--fg); font: inherit; font-size: 0.88rem; padding: 0.15rem 0.8rem;
+          cursor: pointer; display: inline-flex; align-items: center; gap: 0.35rem; }
+  .chip::before { content: ""; width: 0.6rem; height: 0.6rem; border-radius: 50%; background: var(--c, var(--fg)); }
+  .chip .n { color: var(--muted); font-size: 0.75rem; }
+  .chip.active { border-color: var(--c, var(--fg)); background: var(--tint, var(--card)); font-weight: 700; }
+  .cmd-group { margin-top: 1.4rem; }
+  .group-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.6rem; margin-bottom: 0.6rem; }
+  .group-head h3 { font-size: 1rem; margin: 0; color: var(--ink); }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(16.5rem, 1fr)); gap: 0.7rem; }
+  .card { background: var(--card); border: 1px solid var(--line); border-top: 4px solid var(--c);
+          border-radius: 10px; padding: 0.7rem 0.9rem; min-width: 0; }
+  .card .phrase { font-weight: 700; font-size: 1.05rem; color: var(--ink); }
+  .card .desc { margin: 0.25rem 0 0; font-size: 0.9rem; }
+  .card details { margin-top: 0.4rem; font-size: 0.8rem; color: var(--muted); }
+  .card summary { cursor: pointer; }
+  .confirm { color: var(--ink); font-size: 0.8rem; }
+  .when { display: inline-block; font-weight: 700; font-size: 0.8rem; color: #fff; background: var(--c);
+          border-radius: 999px; padding: 0 0.6rem; }
+  .clamp { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+  .clamp.open { display: block; }
+  .more { border: none; background: none; padding: 0; margin-top: 0.15rem; font: inherit;
+          font-size: 0.8rem; color: var(--ink); cursor: pointer; font-weight: 600; }
+  .timeline { display: flex; flex-direction: column; margin-top: 1rem; }
   .t-row { display: flex; gap: 0.9rem; }
-  .t-time { flex: 0 0 3.4rem; text-align: right; font-weight: 700;
-            color: var(--accent); font-size: 0.85rem; padding-top: 0.15rem;
-            white-space: nowrap; }
+  .t-time { flex: 0 0 3.4rem; text-align: right; font-weight: 700; color: var(--ink);
+            font-size: 0.85rem; padding-top: 0.15rem; white-space: nowrap; }
   .t-rail { flex: 0 0 0.7rem; display: flex; flex-direction: column; align-items: center; }
-  .t-dot { width: 0.65rem; height: 0.65rem; border-radius: 50%;
-           background: var(--accent); flex: none; margin-top: 0.22rem; }
-  .t-line { flex: 1; width: 2px; background: var(--line); margin-top: 0.15rem; }
+  .t-dot { width: 0.7rem; height: 0.7rem; border-radius: 50%; background: var(--c); flex: none; margin-top: 0.3rem; }
+  .t-line { flex: 1; width: 2px; background: var(--tint); margin-top: 0.15rem; }
   .t-row:last-child .t-line { display: none; }
-  .t-card { flex: 1; padding-bottom: 1.4rem; }
-  .t-head { display: flex; align-items: baseline; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.2rem; }
-  .t-cat { font-size: 0.72rem; font-weight: 700; color: var(--bg); background: var(--accent);
+  .t-card { flex: 1; padding-bottom: 1.1rem; min-width: 0; }
+  .t-head { display: flex; align-items: baseline; gap: 0.5rem; flex-wrap: wrap; }
+  .t-cat { font-size: 0.7rem; font-weight: 700; color: #fff; background: var(--c);
            border-radius: 999px; padding: 0.05rem 0.55rem; white-space: nowrap; }
   .t-name { font-weight: 600; font-size: 0.95rem; }
-  .t-desc { margin: 0; color: var(--muted); font-size: 0.85rem; }
-  .t-desc a { color: var(--accent); }
+  .t-desc { margin: 0.15rem 0 0; color: var(--muted); font-size: 0.85rem; }
+  footer { margin-top: 2.5rem; color: var(--muted); font-size: 0.8rem;
+           border-top: 1px solid var(--line); padding-top: 1rem; }
+  @media (max-width: 30rem) { h1 { font-size: 1.45rem; } .stat { min-width: 0; padding: 0.3rem 0.6rem; } }
 </style>
 </head>
 <body>
+<header class="top">
+<div>
 <h1>雞同鴨講</h1>
 <p class="tagline">私人廣東話語音OS</p>
 <p class="translate"><a href="https://translate.google.com/translate?sl=auto&amp;tl=en&amp;u=https://a-chicken-talking-to-a-duck.vercel.app/" rel="nofollow">Translate to English (Google Translate)</a></p>
+</div>
+<div class="stats">
+  <a class="stat" href="#commands" data-tab="commands" style="--c:#6667AB"><span class="num">27</span><span class="label">語音指令</span></a>
+  <a class="stat" href="#automations" data-tab="automations" style="--c:#009473"><span class="num">13</span><span class="label">自動功能</span></a>
+  <a class="stat" href="#stocks" data-tab="stocks" style="--c:#BB2649"><span class="num">9</span><span class="label">股票程序</span></a>
+</div>
+</header>
 <nav class="nav">
 <a href="/dashboard">📊 風險儀表板</a>
 <a href="/dashboard/ai">🤖 AI精選</a>
@@ -76,122 +122,120 @@
 <a href="/snake.html">🐍 食蛇</a>
 </nav>
 
-<div class="stats">
-  <div class="stat"><div class="num">27</div><div class="label">語音指令</div></div>
-  <div class="stat"><div class="num">13</div><div class="label">自動功能</div></div>
-</div>
-
-<h2>呢個係乜嘢嚟？</h2>
-<p>一個自己屋企自己搞掂嘅語音助手。喺iPhone對住個捷徑講廣東話，
-段聲音會經加密通道送返屋企部Windows機，用本地模型認出你講乜，
-再執行指令；唔係指令嘅嘢就交畀本地AI同你傾偈。</p>
-<p>成個過程語音同文字都留喺自己機度做辨識，唔會送去第三方雲端AI，
-指令仲要一字不差先會執行，危險動作重要講「確認」先做。</p>
+<section class="about" style="--c:#0F4C81">
+<div class="head"><h2>呢個係乜嘢嚟？</h2><span class="swatch" style="--c:#0F4C81"><i></i>PANTONE 19-4052 Classic Blue</span></div>
+<p>一個自己屋企自己搞掂嘅語音助手。喺iPhone對住個捷徑講廣東話，段聲音經加密通道送返屋企部Windows機，
+用本地模型認出你講乜再執行指令；唔係指令嘅嘢就交畀本地AI同你傾偈。語音同文字都留喺自己機度做辨識，
+唔會送去第三方雲端AI，指令要一字不差先會執行。</p>
 <p class="flow">iPhone 🎤 → Vercel → Cloudflare Tunnel → 屋企Win11（語音辨識）→ 指令／AI傾偈 → 講返畀你聽</p>
+</section>
 
-<h2>指令一覽</h2>
+<nav class="tabs" aria-label="分頁">
+<a class="tab" href="#commands" data-tab="commands" style="--c:#6667AB">指令一覽<span class="n">27</span></a>
+<a class="tab" href="#automations" data-tab="automations" style="--c:#009473">自動功能<span class="n">13</span></a>
+<a class="tab" href="#stocks" data-tab="stocks" style="--c:#BB2649">股票時間表<span class="n">9</span></a>
+</nav>
+
+<section class="panel" id="commands" style="--c:#6667AB">
+<div class="panel-head"><h2>指令一覽</h2><span class="swatch" style="--c:#6667AB"><i></i>PANTONE 17-3938 Very Peri</span></div>
 <div class="filters">
 <button class="chip active" data-cat="all">全部</button>
-<button class="chip" data-cat="天氣出行">天氣出行</button>
-<button class="chip" data-cat="生活資訊">生活資訊</button>
-<button class="chip" data-cat="日程提醒">日程提醒</button>
-<button class="chip" data-cat="玩吓">玩吓</button>
-<button class="chip" data-cat="系統">系統</button>
-<button class="chip" data-cat="其他">其他</button>
+<button class="chip" data-cat="天氣出行" style="--c:#53B0AE">天氣出行<span class="n">5</span></button>
+<button class="chip" data-cat="生活資訊" style="--c:#DD4124">生活資訊<span class="n">10</span></button>
+<button class="chip" data-cat="日程提醒" style="--c:#A47864">日程提醒<span class="n">3</span></button>
+<button class="chip" data-cat="玩吓" style="--c:#FF6F61">玩吓<span class="n">3</span></button>
+<button class="chip" data-cat="系統" style="--c:#939597">系統<span class="n">3</span></button>
+<button class="chip" data-cat="其他" style="--c:#88B04B">其他<span class="n">3</span></button>
 </div>
-<section class="cmd-group" data-cat="天氣出行">
-<h3>天氣出行</h3>
-<table>
-<tr><th>噉樣講</th><th>做乜嘢</th><th>其他講法</th></tr>
-<tr><td class="phrase">今日天氣</td><td>報告奧克蘭今日天氣：氣溫、天色、最高最低溫、落雨機會</td><td class="alt">今日天气、今天天氣、今天天气、今日天氣如何、今日天气如何、今日天氣點樣、天氣報告、天气报告、weather today、today&#x27;s weather、weather report、weather</td></tr>
-<tr><td class="phrase">同琴日比</td><td>同琴日嘅紀錄比較今日天氣：最高最低差幾多度（要有琴日紀錄先得）</td><td class="alt">同尋日比、今日同琴日比、天氣比較、比較天氣、今日凍啲定熱啲、compare weather、compare with yesterday、weather compare</td></tr>
-<tr><td class="phrase">帶唔帶遮</td><td>出門前檢查：而家有冇落雨、兩個鐘內會唔會落雨，話你知使唔使帶遮帶褸</td><td class="alt">使唔使帶遮、使唔使带遮、需唔需要帶遮、帶遮、帶褸、出門檢查、出门检查、jacket check、need a jacket、need an umbrella、umbrella check</td></tr>
-<tr><td class="phrase">巴士</td><td>報告Glenfield Mall嚟緊嘅三班巴士：路線同幾多分鐘後開</td><td class="alt">巴士幾時、幾時有巴士、巴士時間、巴士时间、巴士班次、巴西、bus、bus times、bus time、when is the bus、next bus</td></tr>
-<tr><td class="phrase">潮汐</td><td>報告奧克蘭下次潮漲潮退嘅時間同水位</td><td class="alt">潮漲、潮退、幾時潮漲、幾時潮退、潮水、潮汐時間、潮漲潮退、何時潮漲、何時潮退、超值、超值時間、何時朝退、幾時朝章、撤退、潮推、朝夕、潮漬、超積、潮涨、潮汐时间、潮涨潮退、tide、tides、tide times、high tide、next tide</td></tr>
-</table>
+<section class="cmd-group" data-cat="天氣出行" style="--c:#53B0AE">
+<div class="group-head"><h3>天氣出行</h3><span class="swatch" style="--c:#53B0AE"><i></i>PANTONE 15-5217 Blue Turquoise</span></div>
+<div class="cards">
+<article class="card"><div class="phrase">今日天氣</div><div class="desc clamp">報告奧克蘭今日天氣：氣溫、天色、最高最低溫、落雨機會</div><details><summary>其他講法（12）</summary>今日天气、今天天氣、今天天气、今日天氣如何、今日天气如何、今日天氣點樣、天氣報告、天气报告、weather today、today&#x27;s weather、weather report、weather</details></article>
+<article class="card"><div class="phrase">同琴日比</div><div class="desc clamp">同琴日嘅紀錄比較今日天氣：最高最低差幾多度（要有琴日紀錄先得）</div><details><summary>其他講法（8）</summary>同尋日比、今日同琴日比、天氣比較、比較天氣、今日凍啲定熱啲、compare weather、compare with yesterday、weather compare</details></article>
+<article class="card"><div class="phrase">帶唔帶遮</div><div class="desc clamp">出門前檢查：而家有冇落雨、兩個鐘內會唔會落雨，話你知使唔使帶遮帶褸</div><details><summary>其他講法（11）</summary>使唔使帶遮、使唔使带遮、需唔需要帶遮、帶遮、帶褸、出門檢查、出门检查、jacket check、need a jacket、need an umbrella、umbrella check</details></article>
+<article class="card"><div class="phrase">巴士</div><div class="desc clamp">報告Glenfield Mall嚟緊嘅三班巴士：路線同幾多分鐘後開</div><details><summary>其他講法（11）</summary>巴士幾時、幾時有巴士、巴士時間、巴士时间、巴士班次、巴西、bus、bus times、bus time、when is the bus、next bus</details></article>
+<article class="card"><div class="phrase">潮汐</div><div class="desc clamp">報告奧克蘭下次潮漲潮退嘅時間同水位</div><details><summary>其他講法（26）</summary>潮漲、潮退、幾時潮漲、幾時潮退、潮水、潮汐時間、潮漲潮退、何時潮漲、何時潮退、超值、超值時間、何時朝退、幾時朝章、撤退、潮推、朝夕、潮漬、超積、潮涨、潮汐时间、潮涨潮退、tide、tides、tide times、high tide、next tide</details></article>
+</div>
 </section>
-<section class="cmd-group" data-cat="生活資訊">
-<h3>生活資訊</h3>
-<table>
-<tr><th>噉樣講</th><th>做乜嘢</th><th>其他講法</th></tr>
-<tr><td class="phrase">油價</td><td>報告附近最平嘅95汽油油站同價錢，最平排最先</td><td class="alt">油价、油價幾多、今日油價、汽油價錢、汽油价钱、邊度入油平、入油、fuel price、fuel prices、petrol price、gas price、有加、casaprice、油家、油㗎</td></tr>
-<tr><td class="phrase">幾時收垃圾</td><td>報告屋企下次收垃圾、廚餘同回收嘅日子</td><td class="alt">邊日收垃圾、收垃圾、倒垃圾、垃圾日、垃圾、幾時倒垃圾、rubbish day、bin day、rubbish collection、when is rubbish day</td></tr>
-<tr><td class="phrase">牛奶價錢</td><td>比較附近超市3公升標準牛奶價錢，最平排最先</td><td class="alt">牛奶价钱、牛奶幾錢、牛奶几钱、邊度牛奶平、比較牛奶、比较牛奶、奶價、奶价、牛奶、牛奶加錢、牛奶加钱、milk price、milk prices、milk</td></tr>
-<tr><td class="phrase">按揭利率</td><td>比較五大銀行一年定息按揭利率，最平排最先</td><td class="alt">按揭息率、利率、息率、按揭、供樓利率、供楼利率、房貸利率、房贷利率、利率幾多、利率几多、mortgage rates、mortgage rate、interest rates、interest rate、home loan rates</td></tr>
-<tr><td class="phrase">分析股票</td><td>分析股票代號嘅現價、技術指標（RSI、平均線）同AI睇法：講「分析股票」加埋代號（例：分析股票 AAPL）——AI意見僅供參考，唔係投資建議</td><td class="alt">股票分析、analyze stock、stock analysis</td></tr>
-<tr><td class="phrase">預測市場</td><td>查Polymarket預測市場對某件事嘅估計機會率：講「預測市場」加埋題目（例：預測市場 聯儲局減息）——係市場價錢，唔係事實</td><td class="alt">预测市场、polymarket</td></tr>
-<tr><td class="phrase">pine indicator</td><td>本機AI生成TradingView Pine Script v5指標代碼（淨係Slack或者文字介面用得）：講「pine indicator:」加埋想要嘅指標邏輯——AI生成代碼未經TradingView編譯器驗證，只係草稿</td><td class="alt">pine script</td></tr>
-<tr><td class="phrase">pine strategy</td><td>本機AI生成TradingView Pine Script v5回測策略代碼（淨係Slack或者文字介面用得）：講「pine strategy:」加埋想要嘅策略邏輯，固定用0.1%手續費、10%資金比例、一萬蚊本金——AI生成代碼未經TradingView編譯器驗證，只係草稿</td><td class="alt">pine backtest</td></tr>
-<tr><td class="phrase">地震</td><td>報告紐西蘭最近一次有感地震：幾耐之前、邊度、幾多級、幾深</td><td class="alt">有冇地震、最近地震、最近有冇地震、地震消息、earthquake、earthquakes、recent earthquakes、any earthquakes</td></tr>
-<tr><td class="phrase">新聞</td><td>用廣東話讀出紐西蘭今日三條頭條新聞（人名地名保留英文）</td><td class="alt">新闻、今日新聞、今日新闻、有咩新聞、新聞頭條、news、news headlines、headlines、what&#x27;s the news</td></tr>
-</table>
+<section class="cmd-group" data-cat="生活資訊" style="--c:#DD4124">
+<div class="group-head"><h3>生活資訊</h3><span class="swatch" style="--c:#DD4124"><i></i>PANTONE 17-1463 Tangerine Tango</span></div>
+<div class="cards">
+<article class="card"><div class="phrase">油價</div><div class="desc clamp">報告附近最平嘅95汽油油站同價錢，最平排最先</div><details><summary>其他講法（15）</summary>油价、油價幾多、今日油價、汽油價錢、汽油价钱、邊度入油平、入油、fuel price、fuel prices、petrol price、gas price、有加、casaprice、油家、油㗎</details></article>
+<article class="card"><div class="phrase">幾時收垃圾</div><div class="desc clamp">報告屋企下次收垃圾、廚餘同回收嘅日子</div><details><summary>其他講法（10）</summary>邊日收垃圾、收垃圾、倒垃圾、垃圾日、垃圾、幾時倒垃圾、rubbish day、bin day、rubbish collection、when is rubbish day</details></article>
+<article class="card"><div class="phrase">牛奶價錢</div><div class="desc clamp">比較附近超市3公升標準牛奶價錢，最平排最先</div><details><summary>其他講法（14）</summary>牛奶价钱、牛奶幾錢、牛奶几钱、邊度牛奶平、比較牛奶、比较牛奶、奶價、奶价、牛奶、牛奶加錢、牛奶加钱、milk price、milk prices、milk</details></article>
+<article class="card"><div class="phrase">按揭利率</div><div class="desc clamp">比較五大銀行一年定息按揭利率，最平排最先</div><details><summary>其他講法（15）</summary>按揭息率、利率、息率、按揭、供樓利率、供楼利率、房貸利率、房贷利率、利率幾多、利率几多、mortgage rates、mortgage rate、interest rates、interest rate、home loan rates</details></article>
+<article class="card"><div class="phrase">分析股票</div><div class="desc clamp">分析股票代號嘅現價、技術指標（RSI、平均線）同AI睇法：講「分析股票」加埋代號（例：分析股票 AAPL）——AI意見僅供參考，唔係投資建議</div><details><summary>其他講法（3）</summary>股票分析、analyze stock、stock analysis</details></article>
+<article class="card"><div class="phrase">預測市場</div><div class="desc clamp">查Polymarket預測市場對某件事嘅估計機會率：講「預測市場」加埋題目（例：預測市場 聯儲局減息）——係市場價錢，唔係事實</div><details><summary>其他講法（2）</summary>预测市场、polymarket</details></article>
+<article class="card"><div class="phrase">pine indicator</div><div class="desc clamp">本機AI生成TradingView Pine Script v5指標代碼（淨係Slack或者文字介面用得）：講「pine indicator:」加埋想要嘅指標邏輯——AI生成代碼未經TradingView編譯器驗證，只係草稿</div><details><summary>其他講法（1）</summary>pine script</details></article>
+<article class="card"><div class="phrase">pine strategy</div><div class="desc clamp">本機AI生成TradingView Pine Script v5回測策略代碼（淨係Slack或者文字介面用得）：講「pine strategy:」加埋想要嘅策略邏輯，固定用0.1%手續費、10%資金比例、一萬蚊本金——AI生成代碼未經TradingView編譯器驗證，只係草稿</div><details><summary>其他講法（1）</summary>pine backtest</details></article>
+<article class="card"><div class="phrase">地震</div><div class="desc clamp">報告紐西蘭最近一次有感地震：幾耐之前、邊度、幾多級、幾深</div><details><summary>其他講法（8）</summary>有冇地震、最近地震、最近有冇地震、地震消息、earthquake、earthquakes、recent earthquakes、any earthquakes</details></article>
+<article class="card"><div class="phrase">新聞</div><div class="desc clamp">用廣東話讀出紐西蘭今日三條頭條新聞（人名地名保留英文）</div><details><summary>其他講法（9）</summary>新闻、今日新聞、今日新闻、有咩新聞、新聞頭條、news、news headlines、headlines、what&#x27;s the news</details></article>
+</div>
 </section>
-<section class="cmd-group" data-cat="日程提醒">
-<h3>日程提醒</h3>
-<table>
-<tr><th>噉樣講</th><th>做乜嘢</th><th>其他講法</th></tr>
-<tr><td class="phrase">早晨</td><td>一次過講晒：今日天氣、嚟緊嘅巴士、收垃圾提醒（今日或聽日先講）同三條新聞</td><td class="alt">早晨簡報、今日簡報、簡報、早安、good morning、morning briefing、briefing、daily briefing</td></tr>
-<tr><td class="phrase">今日行程</td><td>讀出你Google日曆今日嘅安排：幾點、咩事，冇嘢就話你知冇安排</td><td class="alt">行程、今日有咩安排、有咩安排、今日有乜安排、今日日程、日程、今日有咩會、今日開唔開會、今日有什麼安排、今日有什么安排、今日安排、schedule、today&#x27;s schedule、my schedule、agenda、what&#x27;s on today、calendar</td></tr>
-<tr><td class="phrase">提我</td><td>喺你部iPhone加提醒事項：講「提我」加內容同時間（例：提我聽日朝早九點買牛奶）</td><td class="alt">提醒我、remind me</td></tr>
-</table>
+<section class="cmd-group" data-cat="日程提醒" style="--c:#A47864">
+<div class="group-head"><h3>日程提醒</h3><span class="swatch" style="--c:#A47864"><i></i>PANTONE 17-1230 Mocha Mousse</span></div>
+<div class="cards">
+<article class="card"><div class="phrase">早晨</div><div class="desc clamp">一次過講晒：今日天氣、嚟緊嘅巴士、收垃圾提醒（今日或聽日先講）同三條新聞</div><details><summary>其他講法（8）</summary>早晨簡報、今日簡報、簡報、早安、good morning、morning briefing、briefing、daily briefing</details></article>
+<article class="card"><div class="phrase">今日行程</div><div class="desc clamp">讀出你Google日曆今日嘅安排：幾點、咩事，冇嘢就話你知冇安排</div><details><summary>其他講法（17）</summary>行程、今日有咩安排、有咩安排、今日有乜安排、今日日程、日程、今日有咩會、今日開唔開會、今日有什麼安排、今日有什么安排、今日安排、schedule、today&#x27;s schedule、my schedule、agenda、what&#x27;s on today、calendar</details></article>
+<article class="card"><div class="phrase">提我</div><div class="desc clamp">喺你部iPhone加提醒事項：講「提我」加內容同時間（例：提我聽日朝早九點買牛奶）</div><details><summary>其他講法（2）</summary>提醒我、remind me</details></article>
+</div>
 </section>
-<section class="cmd-group" data-cat="玩吓">
-<h3>玩吓</h3>
-<table>
-<tr><th>噉樣講</th><th>做乜嘢</th><th>其他講法</th></tr>
-<tr><td class="phrase">今日金句</td><td>隨機講一句周星馳電影金句</td><td class="alt">每日金句、金句、星爺金句、講句金句、quote of the day、quote</td></tr>
-<tr><td class="phrase">電影金句</td><td>隨機講一句港產片對白，會講埋戲名同角色</td><td class="alt">戲入面嗰句、電影對白、港產片金句、講句戲入面嘅嘢、movie quote、film quote</td></tr>
-<tr><td class="phrase">畫</td><td>本機AI畫圖（淨係Slack用得）：講「畫」加內容（例：畫 一隻太空貓），約一分鐘後張圖出現喺Slack</td><td class="alt">draw、image</td></tr>
-</table>
+<section class="cmd-group" data-cat="玩吓" style="--c:#FF6F61">
+<div class="group-head"><h3>玩吓</h3><span class="swatch" style="--c:#FF6F61"><i></i>PANTONE 16-1546 Living Coral</span></div>
+<div class="cards">
+<article class="card"><div class="phrase">今日金句</div><div class="desc clamp">隨機講一句周星馳電影金句</div><details><summary>其他講法（6）</summary>每日金句、金句、星爺金句、講句金句、quote of the day、quote</details></article>
+<article class="card"><div class="phrase">電影金句</div><div class="desc clamp">隨機講一句港產片對白，會講埋戲名同角色</div><details><summary>其他講法（6）</summary>戲入面嗰句、電影對白、港產片金句、講句戲入面嘅嘢、movie quote、film quote</details></article>
+<article class="card"><div class="phrase">畫</div><div class="desc clamp">本機AI畫圖（淨係Slack用得）：講「畫」加內容（例：畫 一隻太空貓），約一分鐘後張圖出現喺Slack</div><details><summary>其他講法（2）</summary>draw、image</details></article>
+</div>
 </section>
-<section class="cmd-group" data-cat="系統">
-<h3>系統</h3>
-<table>
-<tr><th>噉樣講</th><th>做乜嘢</th><th>其他講法</th></tr>
-<tr><td class="phrase">系統狀態</td><td>報告系統狀態：模型、設備、已運行幾耐</td><td class="alt">系统状态、系統狀況、系统状况、檢查系統狀態、检查系统状态、健康檢查、健康检查、system status、system health、status、health check</td></tr>
-<tr><td class="phrase">有咩指令</td><td>讀出所有可用指令</td><td class="alt">有什麼指令、有什么指令、指令列表、list commands、what commands</td></tr>
-<tr><td class="phrase">重啟語音系統</td><td>重新啟動語音系統（約三十秒後恢復）</td><td class="alt">重启语音系统、重新啟動語音系統、重新启动语音系统、重啟语音系统、重置語音系統、重置语音系统、系統重置、系统重置、重啟系統、重启系统、重启系統、restart voice system</td></tr>
-</table>
+<section class="cmd-group" data-cat="系統" style="--c:#939597">
+<div class="group-head"><h3>系統</h3><span class="swatch" style="--c:#939597"><i></i>PANTONE 17-5104 Ultimate Gray</span></div>
+<div class="cards">
+<article class="card"><div class="phrase">系統狀態</div><div class="desc clamp">報告系統狀態：模型、設備、已運行幾耐</div><details><summary>其他講法（11）</summary>系统状态、系統狀況、系统状况、檢查系統狀態、检查系统状态、健康檢查、健康检查、system status、system health、status、health check</details></article>
+<article class="card"><div class="phrase">有咩指令</div><div class="desc clamp">讀出所有可用指令</div><details><summary>其他講法（5）</summary>有什麼指令、有什么指令、指令列表、list commands、what commands</details></article>
+<article class="card"><div class="phrase">重啟語音系統</div><div class="desc clamp">重新啟動語音系統（約三十秒後恢復）</div><details><summary>其他講法（12）</summary>重启语音系统、重新啟動語音系統、重新启动语音系统、重啟语音系统、重置語音系統、重置语音系统、系統重置、系统重置、重啟系統、重启系统、重启系統、restart voice system</details></article>
+</div>
 </section>
-<section class="cmd-group" data-cat="其他">
-<h3>其他</h3>
-<table>
-<tr><th>噉樣講</th><th>做乜嘢</th><th>其他講法</th></tr>
-<tr><td class="phrase">出門模式</td><td>出門前一次過check：使唔使帶遮、下班車幾耐到、附近邊度油最平</td><td class="alt">leaving home</td></tr>
-<tr><td class="phrase">屋企資訊</td><td>屋企日常一次過check：幾時收垃圾、邊度牛奶最平</td><td class="alt">house check</td></tr>
-<tr><td class="phrase">瞓覺前</td><td>瞓覺前輕鬆一下：一句電影金句加一句對白</td><td class="alt">wind down</td></tr>
-</table>
+<section class="cmd-group" data-cat="其他" style="--c:#88B04B">
+<div class="group-head"><h3>其他</h3><span class="swatch" style="--c:#88B04B"><i></i>PANTONE 15-0343 Greenery</span></div>
+<div class="cards">
+<article class="card"><div class="phrase">出門模式</div><div class="desc clamp">出門前一次過check：使唔使帶遮、下班車幾耐到、附近邊度油最平</div><details><summary>其他講法（1）</summary>leaving home</details></article>
+<article class="card"><div class="phrase">屋企資訊</div><div class="desc clamp">屋企日常一次過check：幾時收垃圾、邊度牛奶最平</div><details><summary>其他講法（1）</summary>house check</details></article>
+<article class="card"><div class="phrase">瞓覺前</div><div class="desc clamp">瞓覺前輕鬆一下：一句電影金句加一句對白</div><details><summary>其他講法（1）</summary>wind down</details></article>
+</div>
 </section>
-<p>危險指令會先讀返你嘅指令出嚟，六十秒之內講「<strong>確認</strong>」先會執行，講「<strong>取消</strong>」就唔做。</p>
-<p>講其他嘢？唔使指令，直接問 — 本地AI會用廣東話答你。</p>
+<p class="note">危險指令會先讀返你嘅指令出嚟，六十秒之內講「<strong>確認</strong>」先會執行，講「<strong>取消</strong>」就唔做。講其他嘢？唔使指令，直接問 — 本地AI會用廣東話答你。</p>
+</section>
 
-<h2>自動功能（唔使出聲）</h2>
-<table>
-<tr><th>幾時</th><th>做乜嘢</th></tr>
-<tr><td class="phrase">每個鐘</td><td>系統心跳檢查 — 條通道或者語音服務死咗，手機即刻收到高優先通知</td></tr>
-<tr><td class="phrase">每五分鐘</td><td>指令紀錄自動同步去Notion（傾偈內容唔會離開屋企部機）</td></tr>
-<tr><td class="phrase">每分鐘</td><td>檢查提醒事項，到咗指定時間就推送通知去手機</td></tr>
-<tr><td class="phrase">每分鐘</td><td>執行自訂工作流規則：聽日收垃圾今晚提你、指令出錯即刻通知</td></tr>
-<tr><td class="phrase">每十五分鐘</td><td>同步Google日曆，淨係攞今日同聽日嘅行程標題同時間，俾「今日行程」指令用</td></tr>
-<tr><td class="phrase">凌晨4點32分</td><td>自動清理舊紀錄：傾偈內容留30日，系統日誌留90日，指令紀錄長期保存</td></tr>
-<tr><td class="phrase">朝早6點20分</td><td>落雨機率高過7成就推送通知提你帶遮</td></tr>
-<tr><td class="phrase">朝早7點半</td><td>整理每日AI精選：Google News嘅AI新聞同OpenAI、Anthropic狀態頁嘅故障，每條都連返原文，放上 /dashboard/ai</td></tr>
-<tr><td class="phrase">朝早8點15分</td><td>監察香港直飛奧克蘭來回機票（國泰／紐航，經濟艙，一位成人）：12月26至31號出發、玩14至21日，每日喺Google Flights搜齊48個日期組合，用港幣記錄，生成價格日曆報告；任何組合平過琴日10%或者創新低就推送通知去手機</td></tr>
-<tr><td class="phrase">朝早九點</td><td>檢查牛奶價錢，如果今日最平嘅3公升奶平過琴日，推送通知去手機</td></tr>
-<tr><td class="phrase">朝早九點</td><td>收集NVIDIA相關新聞，本機AI生成每日報告草稿</td></tr>
-<tr><td class="phrase">朝早十點</td><td>iPhone自動攞當日簡報然後讀出嚟：天氣、巴士、收垃圾提醒、新聞</td></tr>
-<tr><td class="phrase">朝早10點05分</td><td>監察價錢：PriceSpy上面嘅Nintendo Switch 2、Kingston Fury Beast Black DDR4記憶體、G.Skill Ripjaws V Black DDR4記憶體、Pokemon Pokopia (Switch 2)、Zelda: Tears of the Kingdom (Switch 2)、Zelda: Ocarina of Time (Switch 2)、Asus GeForce RTX 5050顯示卡、Nintendo Switch 2薩爾達40週年特別版主機；Trade Me上面嘅Nintendo Switch 2；仲有Bottle-O同Super Liquor嘅Aberlour 12年威士忌。只計有貨嘅價錢，平過或者貴過上次記錄最少1%就推送通知去手機；缺貨嘅貨品一返貨都會即刻通知</td></tr>
-</table>
+<section class="panel" id="automations" style="--c:#009473">
+<div class="panel-head"><h2>自動功能（唔使出聲）</h2><span class="swatch" style="--c:#009473"><i></i>PANTONE 17-5641 Emerald</span></div>
+<div class="cards" style="margin-top:1rem">
+<article class="card"><span class="when">每個鐘</span><p class="desc clamp">系統心跳檢查 — 條通道或者語音服務死咗，手機即刻收到高優先通知</p></article>
+<article class="card"><span class="when">每五分鐘</span><p class="desc clamp">指令紀錄自動同步去Notion（傾偈內容唔會離開屋企部機）</p></article>
+<article class="card"><span class="when">每分鐘</span><p class="desc clamp">檢查提醒事項，到咗指定時間就推送通知去手機</p></article>
+<article class="card"><span class="when">每分鐘</span><p class="desc clamp">執行自訂工作流規則：聽日收垃圾今晚提你、指令出錯即刻通知</p></article>
+<article class="card"><span class="when">每十五分鐘</span><p class="desc clamp">同步Google日曆，淨係攞今日同聽日嘅行程標題同時間，俾「今日行程」指令用</p></article>
+<article class="card"><span class="when">凌晨4點32分</span><p class="desc clamp">自動清理舊紀錄：傾偈內容留30日，系統日誌留90日，指令紀錄長期保存</p></article>
+<article class="card"><span class="when">朝早6點20分</span><p class="desc clamp">落雨機率高過7成就推送通知提你帶遮</p></article>
+<article class="card"><span class="when">朝早7點半</span><p class="desc clamp">整理每日AI精選：Google News嘅AI新聞同OpenAI、Anthropic狀態頁嘅故障，每條都連返原文，放上 /dashboard/ai</p></article>
+<article class="card"><span class="when">朝早8點15分</span><p class="desc clamp">監察香港直飛奧克蘭來回機票（國泰／紐航，經濟艙，一位成人）：12月26至31號出發、玩14至21日，每日喺Google Flights搜齊48個日期組合，用港幣記錄，生成價格日曆報告；任何組合平過琴日10%或者創新低就推送通知去手機</p></article>
+<article class="card"><span class="when">朝早九點</span><p class="desc clamp">檢查牛奶價錢，如果今日最平嘅3公升奶平過琴日，推送通知去手機</p></article>
+<article class="card"><span class="when">朝早九點</span><p class="desc clamp">收集NVIDIA相關新聞，本機AI生成每日報告草稿</p></article>
+<article class="card"><span class="when">朝早十點</span><p class="desc clamp">iPhone自動攞當日簡報然後讀出嚟：天氣、巴士、收垃圾提醒、新聞</p></article>
+<article class="card"><span class="when">朝早10點05分</span><p class="desc clamp">監察價錢：PriceSpy上面嘅Nintendo Switch 2、Kingston Fury Beast Black DDR4記憶體、G.Skill Ripjaws V Black DDR4記憶體、Pokemon Pokopia (Switch 2)、Zelda: Tears of the Kingdom (Switch 2)、Zelda: Ocarina of Time (Switch 2)、Asus GeForce RTX 5050顯示卡、Nintendo Switch 2薩爾達40週年特別版主機；Trade Me上面嘅Nintendo Switch 2；仲有Bottle-O同Super Liquor嘅Aberlour 12年威士忌。只計有貨嘅價錢，平過或者貴過上次記錄最少1%就推送通知去手機；缺貨嘅貨品一返貨都會即刻通知</p></article>
+</div>
+</section>
 
-<h3 class="timeline-title">股票分析自動化時間表</h3>
-<p class="timeline-caption">六個獨立股票分析程序，由凌晨到朝早自動接力執行，資料寫落Notion</p>
+<section class="panel" id="stocks" style="--c:#BB2649">
+<div class="panel-head"><h2>股票分析自動化時間表</h2><span class="swatch" style="--c:#BB2649"><i></i>PANTONE 18-1750 Viva Magenta</span></div>
+<p class="note">股票相關程序由凌晨到朝早自動接力執行，資料寫落Notion</p>
 <div class="timeline">
 <div class="t-row">
 <div class="t-time">02:00<br>凌晨</div>
 <div class="t-rail"><span class="t-dot"></span><span class="t-line"></span></div>
 <div class="t-card">
 <div class="t-head"><span class="t-cat">Category 2</span><span class="t-name">業績監察 Earnings Watch</span></div>
-<p class="t-desc">監察定咗嗰啲股票嘅SEC新聞稿（8-K），一有新季度業績就自動生成分析報告——EPS對比市場預期、前瞻指引、四季分部趨勢（加速定減速由程式計，唔係AI估）——寫落Notion；文字分析由Cloudflare Workers AI生成，失敗就自動轉返屋企部機嘅本機AI</p>
+<p class="t-desc clamp">監察定咗嗰啲股票嘅SEC新聞稿（8-K），一有新季度業績就自動生成分析報告——EPS對比市場預期、前瞻指引、四季分部趨勢（加速定減速由程式計，唔係AI估）——寫落Notion；文字分析由Cloudflare Workers AI生成，失敗就自動轉返屋企部機嘅本機AI</p>
 </div>
 </div>
 <div class="t-row">
@@ -199,7 +243,7 @@
 <div class="t-rail"><span class="t-dot"></span><span class="t-line"></span></div>
 <div class="t-card">
 <div class="t-head"><span class="t-cat">Category 3</span><span class="t-name">估值分析 Valuation Watch</span></div>
-<p class="t-desc">同一個觸發條件，自動跑齊DCF現金流折現、倍數法、反推隱含增長率、同業比較等多種估值模型，寫落Notion；文字分析同樣由Cloudflare Workers AI生成，失敗就轉返本機AI</p>
+<p class="t-desc clamp">同一個觸發條件，自動跑齊DCF現金流折現、倍數法、反推隱含增長率、同業比較等多種估值模型，寫落Notion；文字分析同樣由Cloudflare Workers AI生成，失敗就轉返本機AI</p>
 </div>
 </div>
 <div class="t-row">
@@ -207,7 +251,7 @@
 <div class="t-rail"><span class="t-dot"></span><span class="t-line"></span></div>
 <div class="t-card">
 <div class="t-head"><span class="t-cat">Category 5</span><span class="t-name">風險紅旗 Risk Watch</span></div>
-<p class="t-desc">監察定咗嗰啲股票有冇新年報（10-K），揪出主要風險因素、資產負債表外負債、商譽減值、應收帳款同存貨趨勢等鑑證式分析，寫落Notion；文字分析同樣由Cloudflare Workers AI生成，失敗就轉返本機AI</p>
+<p class="t-desc clamp">監察定咗嗰啲股票有冇新年報（10-K），揪出主要風險因素、資產負債表外負債、商譽減值、應收帳款同存貨趨勢等鑑證式分析，寫落Notion；文字分析同樣由Cloudflare Workers AI生成，失敗就轉返本機AI</p>
 </div>
 </div>
 <div class="t-row">
@@ -215,7 +259,7 @@
 <div class="t-rail"><span class="t-dot"></span><span class="t-line"></span></div>
 <div class="t-card">
 <div class="t-head"><span class="t-cat">Category 1</span><span class="t-name">基本面快照刷新</span></div>
-<p class="t-desc">Category 2／3／5 一有新報告成功生成，即刻觸發，重新整理返嗰隻股票嘅基本面快照（現價、時效標記），確保資料新鮮</p>
+<p class="t-desc clamp">Category 2／3／5 一有新報告成功生成，即刻觸發，重新整理返嗰隻股票嘅基本面快照（現價、時效標記），確保資料新鮮</p>
 </div>
 </div>
 <div class="t-row">
@@ -223,15 +267,15 @@
 <div class="t-rail"><span class="t-dot"></span><span class="t-line"></span></div>
 <div class="t-card">
 <div class="t-head"><span class="t-cat">Category 4</span><span class="t-name">技術分析 Technicals Daily</span></div>
-<p class="t-desc">讀週線同日線走勢圖、成交量、對大盤（SPY）強弱、業績波幅，每日生成技術分析報告寫落Notion；文字分析由Cloudflare Workers AI（Llama 3.3 70B）生成，快好多之餘唔再佔用屋企部機嘅GPU</p>
+<p class="t-desc clamp">讀週線同日線走勢圖、成交量、對大盤（SPY）強弱、業績波幅，每日生成技術分析報告寫落Notion；文字分析由Cloudflare Workers AI（Llama 3.3 70B）生成，快好多之餘唔再佔用屋企部機嘅GPU</p>
 </div>
 </div>
 <div class="t-row">
 <div class="t-time">11:00<br>朝早</div>
 <div class="t-rail"><span class="t-dot"></span><span class="t-line"></span></div>
 <div class="t-card">
-<div class="t-head"><span class="t-cat">—</span><span class="t-name">業績報告通知</span></div>
-<p class="t-desc">如果凌晨嗰輪監察到新嘅季度業績報告，推送手機通知話你知——刻意同生成分開幾個鐘，唔會半夜嘈醒你</p>
+<div class="t-head"><span class="t-name">業績報告通知</span></div>
+<p class="t-desc clamp">如果凌晨嗰輪監察到新嘅季度業績報告，推送手機通知話你知——刻意同生成分開幾個鐘，唔會半夜嘈醒你</p>
 </div>
 </div>
 <div class="t-row">
@@ -239,29 +283,61 @@
 <div class="t-rail"><span class="t-dot"></span><span class="t-line"></span></div>
 <div class="t-card">
 <div class="t-head"><span class="t-cat">Category 6</span><span class="t-name">風險評分儀表板 Risk Dashboard</span></div>
-<p class="t-desc">計算10個KPI風險評分（0-1分同紅黃綠燈），三句總結由Cloudflare Workers AI生成，寫落Notion，然後自動出版去<a href="/dashboard">網頁儀表板</a>——生成失敗就唔會出版，唔會俾舊儀表板落線</p>
+<p class="t-desc clamp">計算10個KPI風險評分（0-1分同紅黃綠燈），三句總結由Cloudflare Workers AI生成，寫落Notion，然後自動出版去<a href="/dashboard">網頁儀表板</a>——生成失敗就唔會出版，唔會俾舊儀表板落線</p>
 </div>
 </div>
 <div class="t-row">
 <div class="t-time">11:25<br>朝早</div>
 <div class="t-rail"><span class="t-dot"></span><span class="t-line"></span></div>
 <div class="t-card">
-<div class="t-head"><span class="t-cat">—</span><span class="t-name">每日股價範圍 Stock Day Range</span></div>
-<p class="t-desc">即時攞Yahoo Finance數據計50/200日均線、RSI、支持阻力位，加上20日歷史波幅推算出嘅預期浮動範圍，再讀返Category 6嘅風險評分做參考，Cloudflare Workers AI寫低每隻股票嘅簡短分析——純粹技術/波幅參考，唔係價錢預測，都唔係投資建議，存做本機HTML報告</p>
+<div class="t-head"><span class="t-name">每日股價範圍 Stock Day Range</span></div>
+<p class="t-desc clamp">即時攞Yahoo Finance數據計50/200日均線、RSI、支持阻力位，加上20日歷史波幅推算出嘅預期浮動範圍，再讀返Category 6嘅風險評分做參考，Cloudflare Workers AI寫低每隻股票嘅簡短分析——純粹技術/波幅參考，唔係價錢預測，都唔係投資建議，存做本機HTML報告</p>
 </div>
 </div>
 <div class="t-row">
 <div class="t-time">11:45<br>朝早</div>
 <div class="t-rail"><span class="t-dot"></span><span class="t-line"></span></div>
 <div class="t-card">
-<div class="t-head"><span class="t-cat">—</span><span class="t-name">Polymarket 賠率監察</span></div>
-<p class="t-desc">睇Polymarket預測市場對Mag 7（NVDA、MSFT、GOOGL、AAPL、AMZN、META、TSLA）嘅賠率：全球最大公司、業績勝預期、本月股價、市值，每日自動搵返最新嘅盤；11月8號之前仲會睇埋紐西蘭大選（最多議席、執政聯盟、總理、各黨議席、投票率等）；賠率比上次記錄郁得多先推送通知去手機，新業績盤一開都會通知——係市場價錢，唔係預測，都唔係投資建議</p>
+<div class="t-head"><span class="t-name">Polymarket 賠率監察</span></div>
+<p class="t-desc clamp">睇Polymarket預測市場對Mag 7（NVDA、MSFT、GOOGL、AAPL、AMZN、META、TSLA）嘅賠率：全球最大公司、業績勝預期、本月股價、市值，每日自動搵返最新嘅盤；11月8號之前仲會睇埋紐西蘭大選（最多議席、執政聯盟、總理、各黨議席、投票率等）；賠率比上次記錄郁得多先推送通知去手機，新業績盤一開都會通知——係市場價錢，唔係預測，都唔係投資建議</p>
 </div>
 </div>
 </div>
+</section>
 
-<footer>私人系統：所有指令都要有授權金鑰先用得。呢頁由 asr/router.py 嘅指令表自動生成。</footer>
+<footer>私人系統：所有指令都要有授權金鑰先用得。呢頁由 asr/router.py 嘅指令表自動生成。顏色取自歷年 PANTONE Color of the Year（近似值）。</footer>
 <script>
+// Progressive enhancement: without JS every panel shows and the tabs are
+// plain jump links; with it, one panel at a time.
+const panels = [...document.querySelectorAll(".panel")];
+const tabLinks = [...document.querySelectorAll("[data-tab]")];
+function addMoreButtons(root) {
+  root.querySelectorAll(".clamp:not([data-checked])").forEach((el) => {
+    el.dataset.checked = "1";
+    if (el.scrollHeight <= el.clientHeight + 2) return;
+    const btn = document.createElement("button");
+    btn.className = "more"; btn.type = "button"; btn.textContent = "展開 ▾";
+    btn.addEventListener("click", () => {
+      const open = el.classList.toggle("open");
+      btn.textContent = open ? "收埋 ▴" : "展開 ▾";
+    });
+    el.after(btn);
+  });
+}
+function show(id) {
+  if (!panels.some((p) => p.id === id)) id = "commands";
+  panels.forEach((p) => { p.hidden = p.id !== id; });
+  document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === id));
+  addMoreButtons(document.getElementById(id));
+}
+tabLinks.forEach((a) => a.addEventListener("click", (e) => {
+  e.preventDefault();
+  history.replaceState(null, "", "#" + a.dataset.tab);
+  show(a.dataset.tab);
+  document.querySelector(".tabs").scrollIntoView({ block: "start" });
+}));
+show(location.hash.slice(1));
+
 const chips = document.querySelectorAll(".chip");
 chips.forEach((chip) => chip.addEventListener("click", () => {
   chips.forEach((c) => c.classList.toggle("active", c === chip));
