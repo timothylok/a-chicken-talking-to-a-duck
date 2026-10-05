@@ -15,7 +15,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "asr"))
 
-from router import COMMANDS, MACRO_DESCRIPTIONS  # noqa: E402
+from router import COMMANDS, MACRO_DESCRIPTIONS, WEB_COMMANDS  # noqa: E402
 
 OUT_PATH = os.path.join(ROOT, "gateway", "public", "index.html")
 
@@ -253,10 +253,10 @@ PAGE = """<!DOCTYPE html>
 
 <section class="about" style="--c:{c_about}">
 <div class="head"><h2>呢個係乜嘢嚟？</h2>{sw_about}</div>
-<p>一個自己屋企自己搞掂嘅語音助手。喺iPhone對住個捷徑講廣東話，段聲音經加密通道送返屋企部Windows機，
-用本地模型認出你講乜再執行指令；唔係指令嘅嘢就交畀本地AI同你傾偈。語音同文字都留喺自己機度做辨識，
-唔會送去第三方雲端AI，指令要一字不差先會執行。</p>
-<p class="flow">iPhone 🎤 → Vercel → Cloudflare Tunnel → 屋企Win11（語音辨識）→ 指令／AI傾偈 → 講返畀你聽</p>
+<p>一個自己屋企自己搞掂嘅廣東話語音助手。喺iPhone捷徑講廣東話，段錄音經Vercel同Cloudflare加密通道轉送返屋企部Windows機，由本地Whisper廣東話模型（GPU）認出你講乜，再對照指令表執行；唔係指令嘅嘢就交畀本地AI（gemma3）用廣東話同你傾偈，答案由iPhone讀返出嚟。喺Slack @個bot 都係行同一條路。</p>
+<p>語音辨識同AI傾偈全部喺屋企部機做；本地AI淨係識答，唔可以觸發任何指令，傾偈內容亦唔會離開屋企。查天氣、油價、巴士、股價、預測市場呢類指令會向相關公開網站攞資料；指令紀錄（唔包傾偈）會同步去Notion，提醒同監察通知經ntfy推送去手機；股票報告同AI精選嘅文字摘要由Cloudflare Workers AI寫，只會送公開財務數據同新聞。</p>
+<p>大部分指令要講啱觸發詞先會執行；提我、畫、分析股票、預測市場、pine 呢幾個就係觸發詞後面跟住你想講嘅內容。<a href="/chat.html">網頁打字版</a>係公開嘅，淨係開放{web_count}個資訊類指令，冇AI傾偈；英文咪用你瀏覽器自己嘅語音辨識。</p>
+<p class="flow">iPhone 🎤／Slack／網頁打字 → Vercel → Cloudflare Tunnel → 屋企Win11（本地Whisper認廣東話）→ 指令表／本地AI傾偈 → iPhone讀返出嚟</p>
 </section>
 
 <nav class="tabs" aria-label="分頁">
@@ -271,7 +271,7 @@ PAGE = """<!DOCTYPE html>
 {filter_chips}
 </div>
 {command_groups}
-<p class="note">危險指令會先讀返你嘅指令出嚟，六十秒之內講「<strong>確認</strong>」先會執行，講「<strong>取消</strong>」就唔做。講其他嘢？唔使指令，直接問 — 本地AI會用廣東話答你。</p>
+<p class="note">講其他嘢？唔使指令，直接問 — 本地AI會用廣東話答你（網頁打字版除外）。</p>
 </section>
 
 <section class="panel" id="automations" style="--c:{c_automations}">
@@ -410,6 +410,7 @@ def render() -> str:
         command_count=len(COMMANDS),
         automation_count=len(AUTOMATIONS),
         stock_count=len(STOCK_TIMELINE),
+        web_count=len(WEB_COMMANDS),
         **colours, **swatches,
     )
 
