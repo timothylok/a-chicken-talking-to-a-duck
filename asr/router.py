@@ -1303,6 +1303,88 @@ def _stock_analysis(text: str) -> dict:
     }
 
 
+# POLYMARKET_ODDS: prediction-market odds for a spoken topic, matched by prefix
+# in route() like STOCK_ANALYSIS. Read-only, keyless public API via the
+# owner's own skill (D:\ai\polymarket-skill, github timothylok/polymarket-skill).
+# Polymarket search is English-only, so a Cantonese topic is translated to
+# English keywords by gemma — data only: the result is a search-query argument,
+# never routed as a command. The odds themselves are API numbers, never LLM text.
+POLYMARKET_CLI = "D:/ai/polymarket-skill/scripts/polymarket.py"
+POLYMARKET_PREFIXES = ("polymarket", "預測市場", "预测市场")
+_POLYMARKET_TRIGGER_RE = re.compile(r"poly\s*market|預測市場|预测市场", re.IGNORECASE)
+
+
+def _polymarket_query(topic: str) -> str:
+    if not _CJK_RE.search(topic):
+        return topic
+    payload = json.dumps({
+        "model": OLLAMA_MODEL,
+        "messages": [{"role": "user", "content":
+            "將呢個題目翻譯做兩至五個英文搜尋關鍵字，用嚟搜尋預測市場，"
+            "例如：聯儲局減息 → Fed rate cut；比特幣 → bitcoin。"
+            "只准輸出英文關鍵字，唔好加引號、唔好解釋：\n" + topic}],
+        "stream": False,
+        "keep_alive": "24h",
+    }).encode()
+    req = urllib.request.Request(
+        f"{OLLAMA_URL}/api/chat", data=payload,
+        headers={"Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        reply = json.loads(resp.read())["message"]["content"]
+    line = next(ln for ln in reply.strip().splitlines() if ln.strip())
+    return line.strip().strip('"「」')
+
+
+def _speak_pct(price: "float | None") -> str:
+    if price is None:
+        return "未知"
+    return "少過1%" if price < 0.01 else f"{round(price * 100)}%"
+
+
+def _polymarket_odds(text: str) -> dict:
+    topic = _POLYMARKET_TRIGGER_RE.sub("", text, count=1).strip(" :：,，、。?？")
+    if not topic:
+        return {"command": "POLYMARKET_ODDS", "status": "error",
+                "reply": "想查咩題目？例如：預測市場 聯儲局減息"}
+    try:
+        query = _polymarket_query(topic)
+        events = _run_skill(POLYMARKET_CLI, "--json", "search", query, "--limit", "3")
+    except Exception as exc:
+        log.error("polymarket lookup failed for %r: %s", topic, exc)
+        return {"command": "POLYMARKET_ODDS", "status": "error",
+                "reply": "攞唔到預測市場資料，遲啲再試"}
+    markets = [m for m in (events[0]["markets"] if events else []) if not m["closed"]]
+    if not markets:
+        return {"command": "POLYMARKET_ODDS", "status": "executed",
+                "reply": f"預測市場搵唔到關於{topic}嘅盤", "data": {"query": query, "event": None}}
+    event = events[0]
+    # Spoken in English on purpose: gemma mistranslates market questions
+    # (tested 2026-10-05: "Brazil Presidential Election" came back with an
+    # invented 尖沙咀), and a wrong title would attach real odds to the wrong claim.
+    title = event["title"]
+    yes_no = [m for m in markets if [o["name"] for o in m["outcomes"]] == ["Yes", "No"]]
+    if len(yes_no) > 1:
+        # Multi-market event (one Yes/No market per option): speak the three
+        # likeliest. Threshold ladders ("Bitcoin above X?") are mostly settled
+        # at ~0%/~100%, which says nothing — skip those when others remain.
+        yes_no.sort(key=lambda m: -(m["outcomes"][0]["price"] or 0))
+        live = [m for m in yes_no if 0.01 < (m["outcomes"][0]["price"] or 0) < 0.99] or yes_no
+        odds = "最大機會：" + "，".join(
+            f"{m['label'] or m['question']} {_speak_pct(m['outcomes'][0]['price'])}" for m in live[:3])
+    elif yes_no and len(markets) == 1:
+        odds = f"市場估計有{_speak_pct(yes_no[0]['outcomes'][0]['price'])}機會成真"
+    else:
+        # Named outcomes (e.g. a game's two teams): the event's first market is
+        # the headline one; the rest are props.
+        odds = "，".join(f"{o['name']} {_speak_pct(o['price'])}" for o in markets[0]["outcomes"])
+    data = {"query": query, "event": event["slug"], "url": event["url"],
+            "markets": [{"label": m["label"] or m["question"],
+                         "outcomes": {o["name"]: o["price"] for o in m["outcomes"]}} for m in markets[:10]]}
+    return {"command": "POLYMARKET_ODDS", "status": "executed",
+            "reply": f"預測市場，{title}：{odds}", "data": data}
+
+
 # Pine Script generation (prompts 25/26): free-form code from a plain-English
 # description, not a fixed watchlist -- doesn't fit ops/stock_technicals.py's
 # daily report, so it's a separate on-demand command instead. Broader than
@@ -1722,6 +1804,13 @@ COMMANDS = {
         "destructive": False,
         "run": lambda: "講分析股票加埋代號，例如：分析股票 AAPL",
     },
+    "POLYMARKET_ODDS": {
+        # Matched by prefix in route(), not exact phrase — listed here so it
+        # appears in LIST_COMMANDS, the home page, and the Whisper prompt.
+        "phrases": ["預測市場", "预测市场", "polymarket"],
+        "destructive": False,
+        "run": lambda: "講預測市場加埋題目，例如：預測市場 聯儲局減息",
+    },
     "PINE_INDICATOR": {
         # Matched by prefix in route(), not exact phrase — listed here so it
         # appears in LIST_COMMANDS, the home page, and the Whisper prompt.
@@ -1789,7 +1878,7 @@ _MACROS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "o
 # Real dispatch for these 5 is intercepted by regex before the COMMANDS loop
 # (see route()); their registered "run" is just a usage-hint lambda, so
 # chaining them would silently produce a nonsense reply, not an error.
-_MACRO_STUB_IDS = {"CREATE_REMINDER", "GENERATE_IMAGE", "STOCK_ANALYSIS", "PINE_INDICATOR", "PINE_STRATEGY"}
+_MACRO_STUB_IDS = {"CREATE_REMINDER", "GENERATE_IMAGE", "STOCK_ANALYSIS", "POLYMARKET_ODDS", "PINE_INDICATOR", "PINE_STRATEGY"}
 # Not "destructive" but its run() schedules os._exit(0) via a 2s timer and
 # returns immediately, assuming "reply first, then exit" is atomic -- chained
 # with slower steps after it, the process can exit mid-macro.
@@ -2167,6 +2256,9 @@ def route(text: str, source: str = "voice", lang: str = "yue") -> dict:
 
     if source != "web" and phrase.startswith(STOCK_PREFIXES):
         return _stock_analysis(text)
+
+    if source != "web" and phrase.startswith(POLYMARKET_PREFIXES):
+        return _polymarket_odds(text)
 
     pine_indicator_match = _PINE_INDICATOR_RE.match(text)
     if pine_indicator_match:

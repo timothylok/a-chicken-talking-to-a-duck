@@ -41,6 +41,7 @@ DESCRIPTIONS = {
     "SCHEDULE_TODAY": "讀出你Google日曆今日嘅安排：幾點、咩事，冇嘢就話你知冇安排",
     "CREATE_REMINDER": "喺你部iPhone加提醒事項：講「提我」加內容同時間（例：提我聽日朝早九點買牛奶）",
     "STOCK_ANALYSIS": "分析股票代號嘅現價、技術指標（RSI、平均線）同AI睇法：講「分析股票」加埋代號（例：分析股票 AAPL）——AI意見僅供參考，唔係投資建議",
+    "POLYMARKET_ODDS": "查Polymarket預測市場對某件事嘅估計機會率：講「預測市場」加埋題目（例：預測市場 聯儲局減息）——係市場價錢，唔係事實",
     "PINE_INDICATOR": "本機AI生成TradingView Pine Script v5指標代碼（淨係Slack或者文字介面用得）：講「pine indicator:」加埋想要嘅指標邏輯——AI生成代碼未經TradingView編譯器驗證，只係草稿",
     "PINE_STRATEGY": "本機AI生成TradingView Pine Script v5回測策略代碼（淨係Slack或者文字介面用得）：講「pine strategy:」加埋想要嘅策略邏輯，固定用0.1%手續費、10%資金比例、一萬蚊本金——AI生成代碼未經TradingView編譯器驗證，只係草稿",
     "GENERATE_IMAGE": "本機AI畫圖（淨係Slack用得）：講「畫」加內容（例：畫 一隻太空貓），約一分鐘後張圖出現喺Slack",
@@ -52,7 +53,7 @@ DESCRIPTIONS = {
 # unlisted falls into an automatic 其他 group so the hook never breaks.
 CATEGORIES = [
     ("天氣出行", ["WEATHER_TODAY", "WEATHER_COMPARE", "JACKET_CHECK", "BUS_TIMES", "TIDE_TIMES"]),
-    ("生活資訊", ["FUEL_PRICES", "BIN_DAY", "MILK_PRICES", "MORTGAGE_RATES", "STOCK_ANALYSIS", "PINE_INDICATOR", "PINE_STRATEGY", "EARTHQUAKES", "NEWS_HEADLINES"]),
+    ("生活資訊", ["FUEL_PRICES", "BIN_DAY", "MILK_PRICES", "MORTGAGE_RATES", "STOCK_ANALYSIS", "POLYMARKET_ODDS", "PINE_INDICATOR", "PINE_STRATEGY", "EARTHQUAKES", "NEWS_HEADLINES"]),
     ("日程提醒", ["MORNING_BRIEFING", "SCHEDULE_TODAY", "CREATE_REMINDER"]),
     ("玩吓", ["QUOTE_OF_DAY", "MOVIE_QUOTE", "GENERATE_IMAGE"]),
     ("系統", ["SYSTEM_STATUS", "LIST_COMMANDS", "RESTART_ASR"]),
