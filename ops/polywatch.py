@@ -12,6 +12,13 @@ of them over weekly/monthly (a fixed slug list would go stale within a month):
   mcap     "<X>'s Market Cap end of ..." -- year-end bands where they exist;
            Meta only has monthly ones and Tesla none (checked 2026-10-05).
 
+Plus, until the 7 Nov 2026 NZ general election is over (NZ_ELECTION_LAST_DAY):
+  nzelect  nine fixed election events (most seats, coalition, PM, seat counts,
+           vote margin, turnout, 2nd/3rd place) -- these don't roll over, so
+           they're a slug list. "Which parties will be part of the next
+           government" is left out: $2.8k traded and its odds didn't add up
+           (three parties each ~67% in government, 2026-10-05).
+
 Silent unless a market's Yes odds moved at least MIN_MOVE_PTS for its family
 since the last day it was recorded; then ONE combined ntfy push. Same baseline
 rules as ops/pricewatch.py: the job records its own daily observation (never an
@@ -46,8 +53,26 @@ COMPANIES = {
 }
 # Percentage points per family. A price-ladder rung swings 10+ points on an
 # ordinary 3% stock day, while the $7M largest-company market rarely moves 5.
-MIN_MOVE_PTS = {"largest": 5, "earnings": 10, "mcap": 10, "pricehit": 15}
-FAMILY_YUE = {"largest": "全球最大公司", "earnings": "業績勝預期", "mcap": "市值", "pricehit": "本月股價"}
+MIN_MOVE_PTS = {"largest": 5, "earnings": 10, "mcap": 10, "pricehit": 15, "nzelect": 10}
+FAMILY_YUE = {"largest": "全球最大公司", "earnings": "業績勝預期", "mcap": "市值", "pricehit": "本月股價",
+              "nzelect": "紐西蘭大選"}
+
+# Event slug -> short Cantonese name, spoken before the option label because
+# "Labour Party" alone is ambiguous across most-seats / 2nd / 3rd place.
+NZ_ELECTION_EVENTS = {
+    "new-zealand-legislative-election-winner": "最多議席",
+    "which-coalition-will-form-the-next-new-zealand-government": "執政聯盟",
+    "next-prime-minister-of-new-zealand-174": "總理",
+    "nz-election-national-party-of-seats": "國家黨議席",
+    "nz-election-labour-party-of-seats": "工黨議席",
+    "nz-election-popular-vote-margin-of-victory": "得票差距",
+    "new-zealand-election-turnout": "投票率",
+    "new-zealand-election-2nd-place-393": "第二大黨",
+    "new-zealand-election-3rd-place": "第三大黨",
+}
+# The markets close 17:59 NZT on 8 Nov, so the 11:45 run that day still
+# catches the election-night move; after it the family stops being fetched.
+NZ_ELECTION_LAST_DAY = dt.date(2026, 11, 8)
 MAX_LINES = 10
 STATE_KEEP_DAYS = 40  # rolled-over monthly/weekly markets age out of the state file
 
@@ -110,6 +135,12 @@ def discover(pm, today: dt.date) -> list:
                     obs += _observations(e, "mcap", tkr)
         except pm.PolymarketError as exc:
             log.warning("%s search failed: %s", tkr, exc)
+
+    if today <= NZ_ELECTION_LAST_DAY:
+        for slug, short in NZ_ELECTION_EVENTS.items():
+            ev = fetch_event(slug)
+            if ev:
+                obs += _observations(ev, "nzelect", short)
     return obs
 
 
@@ -144,7 +175,8 @@ def format_alert(a: dict) -> str:
     if a["move"] is None:
         return f"{a['ticker']} {fam}新盤：{a['event']} → Yes {_pct(a['price'])}"
     label = "" if a["family"] in ("earnings", "largest") else f" {a['label']}"
-    return (f"{a['ticker']} {fam}{label}：{_pct(a['prev'])} → {_pct(a['price'])}"
+    head = f"{fam} {a['ticker']}" if a["family"] == "nzelect" else f"{a['ticker']} {fam}"
+    return (f"{head}{label}：{_pct(a['prev'])} → {_pct(a['price'])}"
             f"（{a['move']:+.0f}點）")
 
 
