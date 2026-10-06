@@ -99,7 +99,13 @@ def _fetch(ticker: str) -> dict:
 
 
 def main() -> None:
-    from notify import notify
+    from notify import notify as push, notify_discord
+
+    def notify(title: str, message: str, priority: int = 3) -> bool:
+        sent = push(title, message, priority)
+        if not notify_discord(title, message):
+            log.warning("discord post failed or not configured")
+        return sent
 
     dry = "--dry" in sys.argv
     now = dt.datetime.now(dt.timezone.utc)

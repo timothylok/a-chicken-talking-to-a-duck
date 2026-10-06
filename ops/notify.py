@@ -47,6 +47,32 @@ def notify(title: str, message: str, priority: int = 3) -> bool:
         return False
 
 
+def notify_discord(title: str, message: str) -> bool:
+    """Post to the Discord webhook in DISCORD_WEBHOOK_URL (repo-root .env). False = not sent."""
+    url = os.environ.get("DISCORD_WEBHOOK_URL", "")
+    if not url:
+        try:
+            with open(os.path.join(os.path.dirname(CONFIG), "..", ".env"), encoding="utf-8") as f:
+                for line in f:
+                    key, _, value = line.strip().partition("=")
+                    if key == "DISCORD_WEBHOOK_URL":
+                        url = value.strip().strip('"')
+        except OSError:
+            pass
+    if not url:
+        return False
+    req = urllib.request.Request(
+        url,
+        data=json.dumps({"content": (f"**{title}**" + chr(10) + message)[:2000]}).encode("utf-8"),
+        headers={"Content-Type": "application/json", "User-Agent": "voice-ecosystem-notify"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15):
+            return True
+    except OSError:
+        return False
+
+
 if __name__ == "__main__":
     if len(sys.argv) < 3:
         sys.exit("usage: notify.py <title> <message> [priority 1-5]")
