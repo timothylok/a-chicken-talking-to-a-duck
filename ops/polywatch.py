@@ -225,9 +225,10 @@ def election_headlines(limit: int = 3) -> list:
         out = subprocess.run(
             [sys.executable, NEWS_CLI, "search", "--keyword", "election", "--since-hours", "24",
              "--limit", "30", "--json"],
-            capture_output=True, text=True, encoding="utf-8", timeout=60, check=True).stdout
+            capture_output=True, text=True, encoding="utf-8", timeout=60, check=True,
+            env={**os.environ, "PYTHONIOENCODING": "utf-8"}).stdout
         items = json.loads(out)["items"]
-    except (OSError, ValueError, KeyError, subprocess.SubprocessError) as exc:
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as exc:
         log.warning("election headlines unavailable: %s", exc)
         return []
     hits = [i for i in items if NEWS_PARTIES.search(i["title"] + " " + i.get("summary", ""))]
