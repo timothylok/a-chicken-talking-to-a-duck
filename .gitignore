@@ -20,7 +20,7 @@ content/stock-fundamentals/
 content/stock-technicals/
 # generated daily price-range/lean synthesis for ops/stock_day_range.py — same reasoning
 content/StockDayRange/
-# generated daily HKG-AKL fare reports for ops/flightwatch.py — same reasoning
+# leftover HKG-AKL fare reports from the removed flight watch
 content/flight-tracker/
 # local session log, not version controlled — see CLAUDE.md § Project Memory
 SESSIONS.md

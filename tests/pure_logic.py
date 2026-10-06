@@ -1,4 +1,4 @@
-"""Assertions over the dependency-free logic in router.py, pricewatch.py and flightwatch.py.
+"""Assertions over the dependency-free logic in router.py, and pricewatch.py.
 
 Run: python tests/pure_logic.py
 
@@ -29,7 +29,6 @@ sys.path.insert(0, os.path.join(ROOT, "ops"))
 
 import datetime as dt  # noqa: E402
 
-import flightwatch as fw  # noqa: E402
 import pricewatch as pw  # noqa: E402
 import polywatch as poly  # noqa: E402
 import premarket_watch as prem  # noqa: E402
@@ -271,20 +270,6 @@ sent, st = alert_for(same, 800.0, "111", delivered=True)
 check("a delivered push still advances the baseline", st["price"], 800.0)
 
 
-# --- flight watch alerts ----------------------------------------------------
-D = dt.date
-c1, c2, c3 = (D(2026, 12, 1), D(2026, 12, 15)), (D(2026, 12, 2), D(2026, 12, 16)), (D(2026, 12, 3), D(2026, 12, 17))
-hist = {c1: [("2026-10-01", 9000), ("2026-10-02", 10000)],
-        c2: [("2026-10-01", 9200), ("2026-10-02", 10000)],
-        c3: [("2026-10-02", 10000)]}
-got = fw.find_alerts({c1: 8900, c2: 9500, c3: 9000, (D(2026, 12, 4), D(2026, 12, 18)): 5000}, hist)
-check("alerts fire on >=10% drop and new low; 5% drop at a non-low and first sighting stay quiet",
-      [(a["combo"], a["reasons"]) for a in got],
-      [(c1, ["-11% vs 2026-10-02", "new low"]), (c3, ["-10% vs 2026-10-02", "new low"])])
-check("a 5% drop that is also a new low still alerts",
-      [a["reasons"] for a in fw.find_alerts({c2: 9500}, {c2: [("2026-10-01", 10000)]})], [["new low"]])
-
-
 # --- stock_earnings: segment trends are computed, never LLM-judged ------------
 # Real AAPL Q3 FY26 10-Q table text (2026-10-02): Llama 3.3 70B called the
 # rising Americas/Europe growth "decelerating" when given this raw text.
@@ -348,12 +333,16 @@ with tempfile.TemporaryDirectory() as tmp:
     check("notes run when the budget fits, published in watchlist order",
           ([n["ticker"] for n in out["notes"]], sorted(calls)), (["AAA", "BBB", "CCC"], ["AAA", "BBB", "CCC"]))
 
-    sf._record_neurons(7000)  # an earnings night: 8200.5 used
+    sf._record_neurons(7000)  # an earnings night: 8200.5 used, crossing 80% of the free tier
+    check("the call that crosses 80% pushes one usage alert", len(pushes), 1)
+    sf._record_neurons(100)
+    check("later calls the same day stay quiet", len(pushes), 1)
+    pushes.clear()
     calls.clear()
     out = srd.research_notes()
     check("notes skip, without any model call, when the budget does not fit",
           (out["notes"], calls, len(pushes)), ([], [], 1))
-    check_true("the skip reason names the usage", "8200 of 10000" in out["skipped"])
+    check_true("the skip reason names the usage", "8300 of 10000" in out["skipped"])
 
 
 # --- research-note invented-number check ------------------------------------

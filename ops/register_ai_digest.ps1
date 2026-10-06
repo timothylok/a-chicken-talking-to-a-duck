@@ -3,7 +3,7 @@
 # as the logged-in user (ops/ai_digest.py -- holds the Workers AI
 # credentials from the repo-root .env, so never the VoiceASR service) and
 # republishes the dashboard app with it. Same principal/settings convention
-# as ops/register_flightwatch.ps1 (S4U, Limited, Hidden, StartWhenAvailable).
+# as a sibling register_*.ps1 (S4U, Limited, Hidden, StartWhenAvailable).
 
 $ErrorActionPreference = "Stop"
 

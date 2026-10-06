@@ -2,7 +2,7 @@
 # PowerShell. Checks US pre-market prices for STOCK_WATCHLIST at 22:30 NZT as the
 # logged-in user (ops/premarket_watch.py, ~5 s, no LLM) -- 60-90 min into US
 # pre-market in both DST regimes (21:00 NZDT / 22:00 after US DST ends). Same
-# principal/settings convention as ops/register_flightwatch.ps1 (S4U, Limited,
+# principal/settings convention as a sibling register_*.ps1 (S4U, Limited,
 # Hidden, StartWhenAvailable so a sleeping laptop catches up on wake).
 
 $ErrorActionPreference = "Stop"

@@ -1396,6 +1396,7 @@ def workers_ai_generate(prompt: str, max_tokens: int, json_schema: "dict | None"
 # dashboard and day-range jobs can both write while overlapping.
 WORKERS_AI_DAILY_NEURONS = 10_000
 WORKERS_AI_LEDGER = os.path.join(ROOT, "asr", "logs", "workers_ai_usage.jsonl")
+WORKERS_AI_ALERT_FRACTION = 0.8
 
 
 def _utc_day() -> str:
@@ -1412,6 +1413,17 @@ def _record_neurons(neurons: "float | None") -> None:
             f.write(line + "\n")
     except OSError as exc:
         log.warning("could not record Workers AI usage: %s", exc)
+        return
+    used = workers_ai_neurons_today()
+    limit = WORKERS_AI_DAILY_NEURONS * WORKERS_AI_ALERT_FRACTION
+    if used - float(neurons) < limit <= used:  # the call that crosses 80% pushes, once per UTC day
+        try:
+            from notify import notify
+            notify("Workers AI 用量警告",
+                   f"今日已用 {used:.0f} / {WORKERS_AI_DAILY_NEURONS} neurons "
+                   f"({used / WORKERS_AI_DAILY_NEURONS:.0%})，13:00 NZDT 重置", priority=4)
+        except Exception as exc:
+            log.warning("could not push Workers AI usage alert: %s", exc)
 
 
 def workers_ai_neurons_today() -> float:

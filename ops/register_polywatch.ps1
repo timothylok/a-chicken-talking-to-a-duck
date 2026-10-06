@@ -2,7 +2,7 @@
 # PowerShell. Checks Mag 7 Polymarket odds once a day at 11:45 NZT as the
 # logged-in user (ops/polywatch.py, ~15 s, no LLM) -- after the US close in
 # both DST regimes and clear of the 10:00-11:30 stock-report window. Same
-# principal/settings convention as ops/register_flightwatch.ps1 (S4U, Limited,
+# principal/settings convention as a sibling register_*.ps1 (S4U, Limited,
 # Hidden, StartWhenAvailable so a sleeping laptop catches up on wake).
 
 $ErrorActionPreference = "Stop"
