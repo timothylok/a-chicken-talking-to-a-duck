@@ -41,12 +41,14 @@ import datetime as dt
 import json
 import logging
 import os
+import re
 import sys
 from zoneinfo import ZoneInfo
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SKILL_DIR = "D:/ai/polymarket-skill/scripts"
 STATE_PATH = os.path.join(ROOT, "asr", "logs", "polywatch_state.json")
+POLL_PATH = os.path.join(ROOT, "ops", "nz_poll_baseline.json")
 LOG_PATH = os.path.join(ROOT, "asr", "logs", f"polywatch-{dt.date.today():%Y-%m-%d}.log")
 NZ_TZ = ZoneInfo("Pacific/Auckland")
 
@@ -191,6 +193,31 @@ def format_alert(a: dict) -> str:
             f"（{a['move']:+.0f}點）")
 
 
+# Events whose options are parties finishing in a fixed position.
+NZ_POSITION_EVENTS = {"最多議席": 1, "第二大黨": 2, "第三大黨": 3}
+
+
+def poll_note(a: dict, poll: dict) -> str:
+    """Poll seat projection for a party option, vs the position this market asks about."""
+    pos = NZ_POSITION_EVENTS.get(a["ticker"])
+    if a["family"] != "nzelect" or pos is None:
+        return ""
+    ranked = sorted(poll["parties"].items(), key=lambda kv: -kv[1]["seats"])
+    for rank, (name, p) in enumerate(ranked, 1):
+        if re.search(rf"\b(?:{p['match']})\b", a["label"], re.I):
+            verdict = "同市場一致" if rank == pos else f"民調排第{rank}"
+            return f"（民調 {name} {p['vote']}%／{p['seats']}席，{verdict}）"
+    return ""
+
+
+def _load_poll() -> dict:
+    try:
+        with open(POLL_PATH, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {"parties": {}}
+
+
 def update_state(state: dict, obs: list, today: str, held: set) -> dict:
     for o in obs:
         if o["key"] in held:
@@ -244,7 +271,8 @@ def main() -> None:
     alerts = find_alerts(obs, state, today)
     held = set()
     if alerts:
-        lines = [format_alert(a) for a in alerts[:MAX_LINES]]
+        poll = _load_poll()
+        lines = [format_alert(a) + poll_note(a, poll) for a in alerts[:MAX_LINES]]
         if len(alerts) > MAX_LINES:
             lines.append(f"仲有 {len(alerts) - MAX_LINES} 個")
         message = "\n".join(lines)

@@ -1,0 +1,12 @@
+{
+  "source": "RNZ-Reid Research, fieldwork 24 Sep - 1 Oct 2026, published 6 Oct 2026, n=1000, MoE +/-3.1",
+  "parties": {
+    "Labour":        {"match": "labour",              "vote": 30.8, "seats": 37},
+    "National":      {"match": "national",            "vote": 25.9, "seats": 32},
+    "Greens":        {"match": "green",               "vote": 14.8, "seats": 18},
+    "NZ First":      {"match": "new zealand first|nz first", "vote": 10.6, "seats": 13},
+    "ACT":           {"match": "act",                 "vote": 9.0,  "seats": 11},
+    "Opportunity":   {"match": "opportunity",         "vote": 5.5,  "seats": 7},
+    "Te Pati Maori": {"match": "m[aā]ori",            "vote": 2.0,  "seats": 2}
+  }
+}
