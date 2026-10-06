@@ -21,6 +21,18 @@
       "then": [{"command": {"text": "早晨"}}]
     },
     {
+      "id": "debate-nzherald-2026-10-14",
+      "enabled": true,
+      "trigger": {"schedule": {"at": "19:00", "date": "2026-10-14"}},
+      "then": [{"ntfy": {"title": "大選辯論開始", "message": "Luxon 對 Hipkins，NZ Herald 領袖辯論而家開始（Three／ThreeNow／Newstalk ZB）。", "priority": 4}}]
+    },
+    {
+      "id": "debate-stuff-2026-10-20",
+      "enabled": true,
+      "trigger": {"schedule": {"at": "19:30", "date": "2026-10-20"}},
+      "then": [{"ntfy": {"title": "大選辯論開始", "message": "Luxon 對 Hipkins，Stuff 領袖辯論而家開始（stuff.co.nz）。", "priority": 4}}]
+    },
+    {
       "id": "command-error-alert",
       "enabled": true,
       "trigger": {"history": {"status": "error"}},

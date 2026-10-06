@@ -13,8 +13,11 @@ Rule shape (all "if" fields optional, AND-ed; see ops/workflows.json):
    "then": [{"ntfy": {"title": "帶遮", "message": "{reply}"}}]}
 
 Triggers:
-  schedule {at, days?}   — fires once per day when now >= at (late catch-up ok);
-                           a failed run retries each minute, SCHEDULE_ATTEMPTS max
+  schedule {at, days?, date?} — fires once per day when now >= at (late catch-up ok);
+                           a failed run retries each minute, SCHEDULE_ATTEMPTS max.
+                           "date" (YYYY-MM-DD) limits it to that one day and drops a
+                           catch-up more than DATED_GRACE_MIN late (an event alert
+                           that arrives after the event is worse than none)
   history  {command?, status?, source?, text_contains?}
                          — new history.jsonl entries, byte cursor
 Conditions ("if"): command (phrase to run for its reply/data — schedule rules
@@ -50,6 +53,7 @@ sys.path.insert(0, os.path.join(ROOT, "ops"))
 NZ_TZ = ZoneInfo("Pacific/Auckland")
 DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 SCHEDULE_ATTEMPTS = 5  # one per minute: rides out a ~30 s VoiceASR restart
+DATED_GRACE_MIN = 15  # a "date" rule this late after its time is skipped, not fired
 
 os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
 logging.basicConfig(
@@ -201,8 +205,12 @@ def _check_schedules(rules: list, state: dict, now: dt.datetime) -> None:
             continue
         if sched.get("days") and DAYS[now.weekday()] not in sched["days"]:
             continue
-        at = dt.datetime.strptime(sched["at"], "%H:%M").time()
         today = now.date().isoformat()
+        if sched.get("date") and sched["date"] != today:
+            continue
+        at = dt.datetime.strptime(sched["at"], "%H:%M").time()
+        if sched.get("date") and now - dt.datetime.combine(now.date(), at, now.tzinfo) > dt.timedelta(minutes=DATED_GRACE_MIN):
+            continue
         if now.time() >= at and state["last_fired"].get(rule["id"]) != today:
             # A failed run retries on the next minute's run, up to
             # SCHEDULE_ATTEMPTS: briefing-prewarm's first run (2026-10-06)
