@@ -42,6 +42,7 @@ import json
 import logging
 import os
 import re
+import subprocess
 import sys
 from zoneinfo import ZoneInfo
 
@@ -49,6 +50,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SKILL_DIR = "D:/ai/polymarket-skill/scripts"
 STATE_PATH = os.path.join(ROOT, "asr", "logs", "polywatch_state.json")
 POLL_PATH = os.path.join(ROOT, "ops", "nz_poll_baseline.json")
+NEWS_CLI = "D:/ai/thecolab-skills/skills/nz-news/scripts/cli.py"
 LOG_PATH = os.path.join(ROOT, "asr", "logs", f"polywatch-{dt.date.today():%Y-%m-%d}.log")
 NZ_TZ = ZoneInfo("Pacific/Auckland")
 
@@ -210,6 +212,28 @@ def poll_note(a: dict, poll: dict) -> str:
     return ""
 
 
+NEWS_PARTIES = re.compile(r"luxon|hipkins|peters|swarbrick|seymour|national|labour|greens?|nz first|act|opportunity|te p[aā]ti m[aā]ori", re.I)
+
+
+def election_headlines(limit: int = 3) -> list:
+    """Latest NZ election headlines (English, as published) from the nz-news skill.
+
+    Substring "election" also hits Fiji/US stories, so a headline must name a
+    NZ party or leader too. Any failure returns [] -- headlines are garnish.
+    """
+    try:
+        out = subprocess.run(
+            [sys.executable, NEWS_CLI, "search", "--keyword", "election", "--since-hours", "24",
+             "--limit", "30", "--json"],
+            capture_output=True, text=True, encoding="utf-8", timeout=60, check=True).stdout
+        items = json.loads(out)["items"]
+    except (OSError, ValueError, KeyError, subprocess.SubprocessError) as exc:
+        log.warning("election headlines unavailable: %s", exc)
+        return []
+    hits = [i for i in items if NEWS_PARTIES.search(i["title"] + " " + i.get("summary", ""))]
+    return [f"{i['source']}: {i['title']}" for i in hits[:limit]]
+
+
 def _load_poll() -> dict:
     try:
         with open(POLL_PATH, encoding="utf-8") as f:
@@ -273,6 +297,10 @@ def main() -> None:
     if alerts:
         poll = _load_poll()
         lines = [format_alert(a) + poll_note(a, poll) for a in alerts[:MAX_LINES]]
+        if any(a["family"] == "nzelect" for a in alerts[:MAX_LINES]) and today_nz <= NZ_ELECTION_LAST_DAY:
+            news = election_headlines()
+            if news:
+                lines += ["", "大選新聞："] + news
         if len(alerts) > MAX_LINES:
             lines.append(f"仲有 {len(alerts) - MAX_LINES} 個")
         message = "\n".join(lines)
