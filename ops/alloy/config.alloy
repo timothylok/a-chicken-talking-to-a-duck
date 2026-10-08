@@ -1,0 +1,88 @@
+// Grafana Alloy config for Grafana Cloud free tier (metrics + allowlisted logs).
+// Credentials come from GRAFANA_* env vars (gitignored repo-root .env, copied into the
+// Alloy service environment by ops/alloy/set_service_env.ps1), never from this file.
+
+// ---- metrics: host + the two services that matter --------------------------------
+
+prometheus.exporter.windows "host" {
+  enabled_collectors = ["cpu", "memory", "logical_disk", "net", "os", "service"]
+}
+
+prometheus.scrape "host" {
+  targets         = prometheus.exporter.windows.host.targets
+  forward_to      = [prometheus.relabel.services.receiver]
+  scrape_interval = "60s"
+}
+
+// The service collector emits every Windows service (where_clause is a no-op in this
+// Alloy version); keep only VoiceASR and Cloudflared to stay inside the free series cap.
+prometheus.relabel "services" {
+  forward_to = [prometheus.remote_write.cloud.receiver]
+  rule {
+    source_labels = ["__name__", "name"]
+    regex         = "windows_service_.*;(?i:voiceasr|cloudflared)"
+    target_label  = "__keep"
+    replacement   = "1"
+  }
+  rule {
+    source_labels = ["__name__", "__keep"]
+    regex         = "windows_service_.*;"
+    action        = "drop"
+  }
+}
+
+prometheus.remote_write "cloud" {
+  endpoint {
+    url = sys.env("GRAFANA_PROM_URL")
+    basic_auth {
+      username = sys.env("GRAFANA_PROM_USER")
+      password = sys.env("GRAFANA_TOKEN")
+    }
+  }
+}
+
+// ---- logs: service.log only, allowlist, fail closed -------------------------------
+// service.log carries transcripts (`received:`, `reply:`, `command [..]: '<text>'`).
+// Order matters: (1) mask every quoted string and IP, (2) drop any line that does not
+// match a known operational format. A new log format is therefore dropped, not leaked.
+
+local.file_match "service" {
+  path_targets = [{ __path__ = `D:\ai\voice-ecosystem\asr\logs\service.log`, job = "voiceasr" }]
+}
+
+loki.source.file "service" {
+  targets    = local.file_match.service.targets
+  forward_to = [loki.process.allowlist.receiver]
+}
+
+loki.process "allowlist" {
+  stage.replace {
+    expression = "'[^']*'"
+    replace    = "'~'"
+  }
+  stage.replace {
+    expression = `\d+\.\d+\.\d+\.\d+:\d+ - `
+    replace    = ""
+  }
+  // Drop lines NOT matching an allowed shape.
+  stage.match {
+    selector = "{job=\"voiceasr\"} !~ \"(Processing audio with duration|VAD filter removed|model=|ollama model [^ ]+ warmed|command [[][A-Za-z]+[]]: '~' -> [A-Za-z_]+ [(][a-z]+[)]|POST /command|Started server process|Application startup complete|ERROR|Traceback)\""
+    action   = "drop"
+  }
+  // /health polling is noise.
+  stage.match {
+    selector = "{job=\"voiceasr\"} |= \"GET /health\""
+    action   = "drop"
+  }
+  forward_to = [loki.write.cloud.receiver]
+}
+
+loki.write "cloud" {
+  endpoint {
+    url = sys.env("GRAFANA_LOKI_URL")
+    basic_auth {
+      username = sys.env("GRAFANA_LOKI_USER")
+      password = sys.env("GRAFANA_TOKEN")
+    }
+  }
+}

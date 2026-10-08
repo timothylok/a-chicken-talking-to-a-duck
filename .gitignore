@@ -8,6 +8,7 @@ ops/notion.json
 ops/ntfy.json
 # local env for ops/ scripts — holds the secret Google iCal URL, never commit
 .env
+.env.bak
 # third-party skills junctioned from D:\ai\thecolab-skills (not ours to vendor)
 .claude/skills/*
 !.claude/skills/stock-reports/
