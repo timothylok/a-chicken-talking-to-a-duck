@@ -135,7 +135,8 @@ _PRE0 = 1_790_000_000  # any pre-market start (epoch s)
 def _pre_chart(n_bars, last_price, prev=100.0, every=300):
     ts = [_PRE0 + i * every for i in range(n_bars)]
     return {"meta": {"chartPreviousClose": prev,
-                     "currentTradingPeriod": {"pre": {"start": _PRE0, "end": _PRE0 + 19800}}},
+                     "currentTradingPeriod": {"pre": {"start": _PRE0, "end": _PRE0 + 19800},
+                                              "regular": {"start": _PRE0 + 19800, "end": _PRE0 + 43200}}},
             "timestamp": ts,
             "indicators": {"quote": [{"close": [prev] * (n_bars - 1) + [last_price]}]}}
 

@@ -1541,11 +1541,37 @@ def _morning_briefing() -> str:
     return reply
 
 
+PREMARKET_LEDGER = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "logs", "premarket_alerts.jsonl")
+
+
+def _briefing_premarket() -> str:
+    # How the pre-market alerts scored overnight (ops/premarket_watch.py writes
+    # the outcome lines at 22:30); silent when none resolved in the last 20 h.
+    try:
+        with open(PREMARKET_LEDGER, encoding="utf-8") as f:
+            rows = [json.loads(line) for line in f if line.strip()]
+    except (OSError, ValueError):
+        return ""
+    now = dt.datetime.now(dt.timezone.utc)
+    alerts = {(r["ticker"], r["session"]): r for r in rows if r["type"] == "alert"}
+    parts = []
+    for o in rows:
+        if o["type"] != "outcome" or now - dt.datetime.fromisoformat(o["at"]) > dt.timedelta(hours=20):
+            continue
+        a = alerts.get((o["ticker"], o["session"]))
+        if a:
+            word = lambda m: ("升" if m >= 0 else "跌") + f"{abs(m):.1f}%"
+            parts.append(f"{o['ticker']}盤前{word(a['move'])}，收市{word(o['close_move'])}，"
+                         + ("守住咗" if o["held"] else "回吐咗"))
+    return "；".join(parts[:3])
+
+
 def _build_morning_briefing() -> str:
     # Compose existing sections; a failed source drops out instead of
     # killing the whole briefing.
     sections = []
-    for fn in (_weather_today, _briefing_agenda, _briefing_bins, _milk_drop_line, _news_headlines):
+    for fn in (_weather_today, _briefing_agenda, _briefing_bins, _milk_drop_line, _briefing_premarket, _news_headlines):
         try:
             part = fn()
             if isinstance(part, tuple):  # runners that also return history data

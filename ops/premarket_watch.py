@@ -114,6 +114,7 @@ def outcome(alert: dict, close: float) -> dict:
     close_move = (close / alert["prev"] - 1) * 100
     return {
         "type": "outcome", "ticker": alert["ticker"], "session": alert["session"],
+        "at": dt.datetime.now(dt.timezone.utc).isoformat(),
         "close": close, "close_move": close_move,
         # held = closed on the same side of the last close, at >= half the gap
         "held": close_move * alert["move"] > 0 and abs(close_move) >= abs(alert["move"]) / 2,
