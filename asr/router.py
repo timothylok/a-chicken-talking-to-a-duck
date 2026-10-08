@@ -1506,22 +1506,6 @@ def _pine_strategy(description: str, source: str, lang: str) -> dict:
     }
 
 
-def _briefing_bins() -> str:
-    # Bin reminder only when collection is today or tomorrow — the full
-    # schedule is BIN_DAY's job.
-    if not BIN_ADDRESS:
-        return ""
-    dates = _bin_next_dates()
-    now = dt.datetime.now(NZ_TZ)
-    for offset, word in ((0, "今日"), (1, "聽日")):
-        d = now + dt.timedelta(days=offset)
-        key = f"{d.strftime('%A')}, {d.day} {d.strftime('%B')}"
-        streams = [label for k, label in _BIN_STREAMS if dates.get(k) == key]
-        if streams:
-            return f"{word}收{'同'.join(streams)}，記住朝早七點前擺出嚟"
-    return ""
-
-
 # The iPhone's 10:00 briefing automation runs in the background, where iOS
 # times the shortcut out before a ~20 s build finishes (2026-10-06). The
 # "briefing-prewarm" workflow (ops/workflows.json, 09:55) builds it first;
@@ -1571,7 +1555,7 @@ def _build_morning_briefing() -> str:
     # Compose existing sections; a failed source drops out instead of
     # killing the whole briefing.
     sections = []
-    for fn in (_weather_today, _briefing_agenda, _briefing_bins, _milk_drop_line, _briefing_premarket, _news_headlines):
+    for fn in (_weather_today, _briefing_agenda, _milk_drop_line, _briefing_premarket, _news_headlines):
         try:
             part = fn()
             if isinstance(part, tuple):  # runners that also return history data

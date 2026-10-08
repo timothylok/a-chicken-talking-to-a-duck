@@ -35,7 +35,7 @@ DESCRIPTIONS = {
     "EARTHQUAKES": "報告紐西蘭最近一次有感地震：幾耐之前、邊度、幾多級、幾深",
     "NEWS_HEADLINES": "用廣東話讀出紐西蘭今日三條頭條新聞（人名地名保留英文）",
     "JACKET_CHECK": "出門前檢查：而家有冇落雨、兩個鐘內會唔會落雨，話你知使唔使帶遮帶褸",
-    "MORNING_BRIEFING": "一次過講晒：今日天氣、嚟緊嘅巴士、收垃圾提醒（今日或聽日先講）同三條新聞",
+    "MORNING_BRIEFING": "一次過講晒：今日天氣、嚟緊嘅巴士同三條新聞",
     "QUOTE_OF_DAY": "隨機講一句周星馳電影金句",
     "MOVIE_QUOTE": "隨機講一句港產片對白，會講埋戲名同角色",
     "SCHEDULE_TODAY": "讀出你Google日曆今日嘅安排：幾點、咩事，冇嘢就話你知冇安排",
@@ -64,7 +64,7 @@ CATEGORIES = [
 # the NZ wall-clock HH:MM the table is sorted by ("" = recurring, listed first),
 # so a new entry lands in time order wherever it is added.
 AUTOMATIONS = [
-    ("10:00", "朝早十點", "iPhone自動攞當日簡報然後讀出嚟：天氣、巴士、收垃圾提醒、新聞"),
+    ("10:00", "朝早十點", "iPhone自動攞當日簡報然後讀出嚟：天氣、巴士、新聞"),
     ("09:00", "朝早九點", "檢查牛奶價錢，如果今日最平嘅3公升奶平過琴日，推送通知去手機"),
     ("10:05", "朝早10點05分", "監察價錢：PriceSpy上面嘅Nintendo Switch 2、Kingston Fury Beast Black DDR4記憶體、G.Skill Ripjaws V Black DDR4記憶體、Pokemon Pokopia (Switch 2)、Zelda: Tears of the Kingdom (Switch 2)、Zelda: Ocarina of Time (Switch 2)、Asus GeForce RTX 5050顯示卡、Nintendo Switch 2薩爾達40週年特別版主機；Trade Me上面嘅Nintendo Switch 2；仲有Bottle-O同Super Liquor嘅Aberlour 12年威士忌。只計有貨嘅價錢，平過或者貴過上次記錄最少1%就推送通知去手機；缺貨嘅貨品一返貨都會即刻通知"),
     ("", "每個鐘", "系統心跳檢查 — 條通道或者語音服務死咗，手機即刻收到高優先通知"),
