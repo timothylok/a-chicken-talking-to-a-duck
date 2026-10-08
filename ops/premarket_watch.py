@@ -104,6 +104,8 @@ def _read_ledger() -> list[dict]:
 
 
 def _append_ledger(rows: list[dict]) -> None:
+    if not rows:
+        return
     with open(LEDGER, "a", encoding="utf-8") as f:
         for row in rows:
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
@@ -214,7 +216,13 @@ def main() -> None:
     log.info("alerts:\n%s", message)
     if dry:
         print(message)
-    elif not notify("美股盤前異動", message, priority=3):
+        return
+    _append_ledger([
+        {"type": "alert",
+         "session": dt.datetime.fromtimestamp(r["session_start"], ZoneInfo("America/New_York")).date().isoformat(),
+         **{k: r[k] for k in ("ticker", "price", "prev", "move", "session_start", "session_end")}}
+        for r in alerts])
+    if not notify("美股盤前異動", message, priority=3):
         log.warning("ntfy failed")
 
 
