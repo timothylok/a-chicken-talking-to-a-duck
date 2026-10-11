@@ -61,6 +61,8 @@ _TIME_RES = [
     re.compile(rf"{_PERIOD}?\s*({_NUM})\s*(?:點鐘|點|时|時)\s*(半|{_NUM}\s*分?)?", re.I),
     # 12pm / 7 am
     re.compile(r"()(\d{1,2})\s*(am|pm)\b", re.I),
+    # bare hour straight before the verb: 十二開始食 / 7食完 (the 點 got dropped)
+    re.compile(rf"{_PERIOD}?\s*({_NUM})(半)?(?=\s*(?:開始|开始|食完|食晒|吃完))", re.I),
 ]
 _PM_WORDS = {"下晝", "下午", "晏晝", "晚上", "夜晚", "今晚", "pm"}
 _AM_WORDS = {"朝早", "朝頭早", "早上", "早晨", "上午", "凌晨", "半夜", "am"}
@@ -86,8 +88,12 @@ def parse_clock(text: str) -> "tuple[tuple[int, int | None, bool | None], str] |
             suffix = None
             if h is None or mi is None:
                 continue
-        else:
+        elif i == 2:
             period, h, mi, suffix = "", int(m.group(2)), 0, m.group(3)
+        else:
+            period, h, mi, suffix = m.group(1), zh_int(m.group(2)), 30 if m.group(3) else 0, None
+            if h is None:
+                continue
         word = (suffix or period or "").lower()
         pm = True if word in _PM_WORDS else False if word in _AM_WORDS else None
         if not (0 <= h <= 24 and 0 <= mi <= 59):
