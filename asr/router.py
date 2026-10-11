@@ -1553,11 +1553,15 @@ def _briefing_premarket() -> str:
     return "；".join(parts[:3])
 
 
+def _briefing_health() -> str:
+    return health.briefing_line(dt.datetime.now(NZ_TZ))
+
+
 def _build_morning_briefing() -> str:
     # Compose existing sections; a failed source drops out instead of
     # killing the whole briefing.
     sections = []
-    for fn in (_weather_today, _briefing_agenda, _milk_drop_line, _briefing_premarket, _news_headlines):
+    for fn in (_weather_today, _briefing_agenda, _milk_drop_line, _briefing_premarket, _briefing_health, _news_headlines):
         try:
             part = fn()
             if isinstance(part, tuple):  # runners that also return history data

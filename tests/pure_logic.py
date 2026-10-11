@@ -390,6 +390,9 @@ check("long sentence mentioning 食完 falls through to chat",
       hl.handle("你食完飯之後通常會做啲咩呀同我講吓", _t0, _hp), None)
 check("early start is flagged non-compliant",
       (hl.handle("開始食 7:30", dt.datetime(2026, 10, 13, 8, 0, tzinfo=_NZ), _hp) or {}).get("data", {}).get("fast_ok"), False)
+check("briefing line is empty with nothing logged", hl.briefing_line(_t0, os.path.join(tempfile.mkdtemp(), "none.json")), "")
+check("briefing line reports the fast and the weight",
+      hl.briefing_line(dt.datetime(2026, 10, 13, 9, 0, tzinfo=_NZ), _hp), "今朝斷食咗11個鐘又30分鐘，未夠16個鐘")
 check("8h alert text", hl.stop_alert_text(dt.datetime(2026, 10, 13, 12, 30, tzinfo=_NZ)),
       "食完喇，由而家開始斷食到聽日晏晝12點30分")
 

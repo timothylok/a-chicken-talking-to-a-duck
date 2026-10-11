@@ -396,6 +396,31 @@ def handle(text: str, now: "dt.datetime | None" = None, path: str = STATE_PATH) 
     return None
 
 
+def briefing_line(now: dt.datetime, path: str = STATE_PATH) -> str:
+    """One spoken sentence for the morning briefing; empty when nothing is logged."""
+    state = load(path)
+    parts = []
+    if state["windows"]:
+        w = state["windows"][-1]
+        end = eff_end(w, now)
+        fast = None
+        if w["start"][:10] == now.date().isoformat() and len(state["windows"]) > 1:
+            prev_end = eff_end(state["windows"][-2], now)
+            fast = _t(w["start"]) - prev_end if prev_end else None
+            if fast is not None:
+                parts.append(f"今朝斷食咗{speak_hours(fast)}"
+                             + ("，達標" if fast >= dt.timedelta(hours=FAST_HOURS) else f"，未夠{FAST_HOURS}個鐘"))
+        elif end is not None:
+            gap = now - end
+            parts.append(f"斷食緊{speak_hours(gap)}" if gap < dt.timedelta(hours=FAST_HOURS)
+                         else f"斷食夠{FAST_HOURS}個鐘，可以食")
+    if state["weights"]:
+        kg = state["weights"][max(state["weights"])]
+        togo = kg - TARGET_WEIGHT
+        parts.append(f"最新體重{kg:g}公斤，" + (f"仲差{togo:.1f}公斤到{TARGET_WEIGHT:g}" if togo > 0 else "已達目標"))
+    return "，".join(parts)
+
+
 # --- per-day rows for the Notion mirror / weekly summary -----------------------
 
 def day_rows(state: dict, now: dt.datetime) -> "dict[str, dict]":
