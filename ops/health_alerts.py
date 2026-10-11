@@ -109,6 +109,8 @@ def run(now: dt.datetime, dry: bool = False) -> None:
     sent = _load_sent()
     today = now.date()
     todo = []  # (key, title, message, priority)
+    # Nothing logged yet: pace nudges and the weekly summary would only report an empty week.
+    started = bool(state["windows"] or state["weights"] or state["workouts"])
 
     last = state["windows"][-1] if state["windows"] else None
     if last and not last.get("end"):
@@ -135,12 +137,12 @@ def run(now: dt.datetime, dry: bool = False) -> None:
                              "仲未記" + "同".join(missing) + "，講「體重 88.5」或者「做完運動」", 3))
             else:
                 sent.append(f"morning:{today}")
-        if weekday >= 3 and f"pace:{today}" not in sent:
+        if weekday >= 3 and started and f"pace:{today}" not in sent:
             line = pace_line(state, today)
             if line:
                 todo.append((f"pace:{today}", "運動進度", line, 3))
 
-    if today.weekday() == 6 and now.time() >= WEEKLY_FROM:
+    if started and today.weekday() == 6 and now.time() >= WEEKLY_FROM:
         key = f"week:{hl.week_start(today)}"
         if key not in sent:
             todo.append((key, "今個禮拜總結", weekly_summary(state, now), 3))
