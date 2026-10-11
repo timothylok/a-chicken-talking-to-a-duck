@@ -45,6 +45,11 @@ DESCRIPTIONS = {
     "PINE_INDICATOR": "本機AI生成TradingView Pine Script v5指標代碼（淨係Slack或者文字介面用得）：講「pine indicator:」加埋想要嘅指標邏輯——AI生成代碼未經TradingView編譯器驗證，只係草稿",
     "PINE_STRATEGY": "本機AI生成TradingView Pine Script v5回測策略代碼（淨係Slack或者文字介面用得）：講「pine strategy:」加埋想要嘅策略邏輯，固定用0.1%手續費、10%資金比例、一萬蚊本金——AI生成代碼未經TradingView編譯器驗證，只係草稿",
     "GENERATE_IMAGE": "本機AI畫圖（淨係Slack用得）：講「畫」加內容（例：畫 一隻太空貓），約一分鐘後張圖出現喺Slack",
+    "FAST_START": "記低幾時開始食（16/8斷食）：講「開始食」，可以加時間（例：十二點半開始食），八個鐘後推送提醒你食完",
+    "FAST_STOP": "記低食完，會計埋今日食咗幾耐同斷食到幾點：講「食完」，可以加時間（例：八點半食完）",
+    "FAST_STATUS": "報告斷食狀態：仲有幾耐要食完，或者仲有幾耐先可以食",
+    "LOG_WEIGHT": "記低今日體重（公斤）：講「體重」加數字（例：體重88.5），同埋話你知離目標仲差幾多",
+    "LOG_WORKOUT": "記低今日做咗運動：講「做完運動」，同埋話你知今個禮拜第幾次",
     "RESTART_ASR": "重新啟動語音系統（約三十秒後恢復）",
 }
 
@@ -55,6 +60,7 @@ CATEGORIES = [
     ("天氣出行", ["WEATHER_TODAY", "WEATHER_COMPARE", "JACKET_CHECK", "BUS_TIMES", "TIDE_TIMES"]),
     ("生活資訊", ["FUEL_PRICES", "BIN_DAY", "MILK_PRICES", "MORTGAGE_RATES", "STOCK_ANALYSIS", "POLYMARKET_ODDS", "PINE_INDICATOR", "PINE_STRATEGY", "EARTHQUAKES", "NEWS_HEADLINES"]),
     ("日程提醒", ["MORNING_BRIEFING", "SCHEDULE_TODAY", "CREATE_REMINDER"]),
+    ("健康記錄", ["FAST_START", "FAST_STOP", "FAST_STATUS", "LOG_WEIGHT", "LOG_WORKOUT"]),
     ("玩吓", ["QUOTE_OF_DAY", "MOVIE_QUOTE", "GENERATE_IMAGE"]),
     ("系統", ["SYSTEM_STATUS", "LIST_COMMANDS", "RESTART_ASR"]),
 ]
@@ -123,6 +129,7 @@ CATEGORY_PANTONE = {
     "生活資訊": ("17-1463", "Tangerine Tango", "#DD4124"),
     "日程提醒": ("17-1230", "Mocha Mousse", "#A47864"),
     "玩吓": ("16-1546", "Living Coral", "#FF6F61"),
+    "健康記錄": ("17-5641", "Emerald", "#009473"),
     "系統": ("17-5104", "Ultimate Gray", "#939597"),
     "其他": ("15-0343", "Greenery", "#88B04B"),
 }

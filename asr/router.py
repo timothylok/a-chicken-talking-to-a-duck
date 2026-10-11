@@ -22,6 +22,8 @@ import urllib.parse
 import urllib.request
 import zoneinfo
 
+import health
+
 log = logging.getLogger("router")
 
 # STOCK_ANALYSIS gets its own log file instead of mixing into service.log.
@@ -1866,6 +1868,33 @@ COMMANDS = {
         "destructive": False,
         "run": lambda: "Say pine strategy: then describe the logic, e.g. pine strategy: 20/50 SMA crossover",
     },
+    "FAST_START": {
+        # Matched in route() via health.handle(), not exact phrase -- listed
+        # here so it appears in LIST_COMMANDS, the home page, and the Whisper prompt.
+        "phrases": ["開始食", "我十二點半開始食", "start eating"],
+        "destructive": False,
+        "run": lambda: "講開始食加埋時間，例如：十二點半開始食",
+    },
+    "FAST_STOP": {
+        "phrases": ["食完", "食完喇", "stop eating"],
+        "destructive": False,
+        "run": lambda: "講食完，或者加埋時間，例如：八點半食完",
+    },
+    "FAST_STATUS": {
+        "phrases": ["斷食狀態", "仲有幾耐", "fasting status"],
+        "destructive": False,
+        "run": lambda: health.fast_status(dt.datetime.now(NZ_TZ)),
+    },
+    "LOG_WEIGHT": {
+        "phrases": ["體重", "weight"],
+        "destructive": False,
+        "run": lambda: "講體重加埋數字，例如：體重88.5",
+    },
+    "LOG_WORKOUT": {
+        "phrases": ["做完運動", "運動完", "workout done"],
+        "destructive": False,
+        "run": lambda: "做完運動就講：做完運動",
+    },
     "RESTART_ASR": {
         "phrases": [
             "重啟語音系統", "重启语音系统", "重新啟動語音系統", "重新启动语音系统",
@@ -1918,7 +1947,7 @@ _MACROS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "o
 # Real dispatch for these 5 is intercepted by regex before the COMMANDS loop
 # (see route()); their registered "run" is just a usage-hint lambda, so
 # chaining them would silently produce a nonsense reply, not an error.
-_MACRO_STUB_IDS = {"CREATE_REMINDER", "GENERATE_IMAGE", "STOCK_ANALYSIS", "POLYMARKET_ODDS", "PINE_INDICATOR", "PINE_STRATEGY"}
+_MACRO_STUB_IDS = {"CREATE_REMINDER", "FAST_START", "FAST_STOP", "LOG_WEIGHT", "LOG_WORKOUT", "GENERATE_IMAGE", "STOCK_ANALYSIS", "POLYMARKET_ODDS", "PINE_INDICATOR", "PINE_STRATEGY"}
 # Not "destructive" but its run() schedules os._exit(0) via a 2s timer and
 # returns immediately, assuming "reply first, then exit" is atomic -- chained
 # with slower steps after it, the process can exit mid-macro.
@@ -2293,6 +2322,18 @@ def route(text: str, source: str = "voice", lang: str = "yue") -> dict:
 
     if source != "web" and phrase.startswith(REMINDER_PREFIXES):
         return _create_reminder(text)
+
+    # Fasting / weight / workout log: deterministic regex parsing in
+    # health.py (no LLM), personal, so never reachable from the public web.
+    if source != "web":
+        try:
+            health_out = health.handle(text)
+        except Exception as exc:
+            log.error("health command failed for %r: %s", text, exc)
+            health_out = {"command": "LOG_WEIGHT" if "重" in text else "FAST_START",
+                          "status": "error", "reply": "記錄唔到，再試一次"}
+        if health_out:
+            return health_out
 
     if source != "web" and phrase.startswith(STOCK_PREFIXES):
         return _stock_analysis(text)

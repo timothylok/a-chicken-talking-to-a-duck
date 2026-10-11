@@ -366,6 +366,34 @@ check("the threshold allowance does not reach other fields",
       srd._invented_numbers(_note(risks=["P/E above 30"]), _facts), [30.0])
 
 
+# --- health tracking (asr/health.py) ----------------------------------------
+# Deterministic parsing of fasting/weight/workout utterances against a temp
+# state file; the 16/8 arithmetic and the 8h alert text are what the owner
+# acts on, so they are pinned here.
+import tempfile  # noqa: E402
+
+import health as hl  # noqa: E402
+
+_hp = os.path.join(tempfile.mkdtemp(), "health.json")
+_NZ = hl.NZ_TZ
+_t0 = dt.datetime(2026, 10, 12, 13, 0, tzinfo=_NZ)
+check("zh_int 二十五", hl.zh_int("二十五"), 25)
+check("parse_weight chinese decimal", hl.parse_weight("我今日體重八十八點五公斤"), 88.5)
+check("parse_weight rejects implausible", hl.parse_weight("體重八點五"), None)
+check("bare 12點半 resolves to the latest past 12:30",
+      hl.resolve_past((12, 30, None), _t0), dt.datetime(2026, 10, 12, 12, 30, tzinfo=_NZ))
+check("start 12點半 parses", (hl.handle("我十二點半開始食", _t0, _hp) or {}).get("data", {}).get("stop_by"), "2026-10-12T20:30")
+check("restating the start corrects it, not a second window",
+      (hl.handle("十二點開始食", _t0, _hp) or {}).get("data", {}).get("correction"), True)
+check("chat is not hijacked", hl.handle("今日天氣", _t0, _hp), None)
+check("long sentence mentioning 食完 falls through to chat",
+      hl.handle("你食完飯之後通常會做啲咩呀同我講吓", _t0, _hp), None)
+check("early start is flagged non-compliant",
+      (hl.handle("開始食 7:30", dt.datetime(2026, 10, 13, 8, 0, tzinfo=_NZ), _hp) or {}).get("data", {}).get("fast_ok"), False)
+check("8h alert text", hl.stop_alert_text(dt.datetime(2026, 10, 13, 12, 30, tzinfo=_NZ)),
+      "食完喇，由而家開始斷食到聽日晏晝12點30分")
+
+
 # --- report ------------------------------------------------------------------
 if failures:
     print(f"FAILED ({len(failures)}):")
