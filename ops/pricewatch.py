@@ -89,7 +89,7 @@ LOG_PATH = os.path.join(ROOT, "asr", "logs", f"pricewatch-{dt.date.today():%Y-%m
 STATE_PATH = os.path.join(ROOT, "asr", "logs", "pricewatch_state.json")
 CLI = "D:/ai/thecolab-skills/skills/nz-pricewatch/scripts/cli.py"
 TRADEME_CLI = "D:/ai/thecolab-skills/skills/trademe-nz/scripts/cli.py"
-PRODUCTS = [p.strip() for p in os.environ.get("PRICEWATCH_PRODUCTS", "13101596,5848136,5241360,15436948,14576211,14908596,17276716,16655839").split(",") if p.strip()]
+PRODUCTS = [p.strip() for p in os.environ.get("PRICEWATCH_PRODUCTS", "13101596,5848136,5241360,15436948,14576211,14908596,17276716,16655839,4280454").split(",") if p.strip()]
 NZ_TZ = ZoneInfo("Pacific/Auckland")
 
 
@@ -108,7 +108,8 @@ TRADEME_SEARCHES = _parse_trademe_searches(os.environ.get("PRICEWATCH_TRADEME_SE
 DEFAULT_URLS = (
     "https://glenfield.shop.thebottleo.co.nz/lines/aberlour-12-year-old-double-cask-matured-700ml,"
     "https://www.superliquor.co.nz/aberlour-12yo-double-cask-matured-single-malt-700ml,"
-    "https://www.footlocker.co.nz/en/product/jordan-1-mid-se-men-shoes/284106302504.html"
+    "https://www.footlocker.co.nz/en/product/jordan-1-mid-se-men-shoes/284106302504.html,"
+    "https://addictedtoaudio.co.nz/collections/cd-players/products/fiio-snowsky-beatbox-portable-cd-player"
 )
 URLS = [u.strip() for u in os.environ.get("PRICEWATCH_URLS", DEFAULT_URLS).split(",") if u.strip()]
 # Minimum day-over-day fall, in percent, before an alert is worth sending.
