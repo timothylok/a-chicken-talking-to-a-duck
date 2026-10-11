@@ -146,5 +146,10 @@ def context_lines(hits: list) -> str:
     for e in hits:
         ts = e["ts"][:16].replace("T", " ")
         tag = e.get("command") or "傾偈"
-        out.append(f"{ts} [{tag}] 主人講：{(e.get('text') or '')[:120]}；回覆：{(e.get('reply') or '')[:160]}")
+        line = f"{ts} [{tag}] 主人講：{(e.get('text') or '')[:120]}"
+        # A chat reply is the persona's improvised nonsense, not a fact; fed back
+        # in, the model credited it to the owner ("你仲話要將啲餸斬到一萬嚿", 2026-10-12).
+        if e.get("status") != "chat":
+            line += f"；系統回覆：{(e.get('reply') or '')[:160]}"
+        out.append(line)
     return "\n".join(out)

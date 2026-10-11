@@ -2171,7 +2171,7 @@ HISTORY_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", 
 
 RECALL_SYSTEM_PROMPT = """\
 你係主人嘅記憶助手。主人想搵返以前同語音系統講過嘅嘢，下面係搜尋到嘅紀錄，每行開頭係日期時間。
-用兩至三句自然嘅廣東話口語總結紀錄入面同主人問題有關嘅內容，一定要講出日期。
+用兩至三句自然嘅廣東話口語總結紀錄入面同主人問題有關嘅內容，一定要講出日期。「主人講」先係主人講過嘅嘢，「系統回覆」係系統講嘅，唔好當成主人講過。
 只可以用紀錄入面嘅資料，唔好作。紀錄真係完全同問題無關先講「搵唔到有關嘅紀錄」。唔好用括號，唔好用列點。"""
 # The first wording ("答唔到就講搵唔到") made gemma3:4b refuse even a direct hit;
 # naming the extracted topic and date range in the question fixed it (2026-10-12).

@@ -415,6 +415,9 @@ _fx = [
 ]
 check("recall finds the match and skips briefings and earlier recalls",
       [e["ts"][:10] for e in rc.search(_fx, "針灸")], ["2026-08-27"])
+check("a chat reply is not fed back as the owner's words",
+      "斬" in rc.context_lines([{"ts": "2026-10-11T18:06:13+13:00", "text": "十二開始食", "command": None,
+                                 "status": "chat", "reply": "斬成一萬嚿"}]), False)
 check("recall with no match returns nothing", rc.search(_fx, "火星"), [])
 
 
