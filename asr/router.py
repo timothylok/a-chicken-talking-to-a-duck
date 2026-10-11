@@ -23,6 +23,7 @@ import urllib.request
 import zoneinfo
 
 import health
+import recall
 
 log = logging.getLogger("router")
 
@@ -1872,6 +1873,13 @@ COMMANDS = {
         "destructive": False,
         "run": lambda: "Say pine strategy: then describe the logic, e.g. pine strategy: 20/50 SMA crossover",
     },
+    "RECALL": {
+        # Matched by prefix in route() via recall.PREFIXES -- listed here so it
+        # appears in LIST_COMMANDS, the home page, and the Whisper prompt.
+        "phrases": ["記唔記得", "搵返", "recall"],
+        "destructive": False,
+        "run": lambda: "講記唔記得加埋想搵嘅嘢，例如：記唔記得上次幾時提我針灸",
+    },
     "FAST_START": {
         # Matched in route() via health.handle(), not exact phrase -- listed
         # here so it appears in LIST_COMMANDS, the home page, and the Whisper prompt.
@@ -1951,7 +1959,7 @@ _MACROS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "o
 # Real dispatch for these 5 is intercepted by regex before the COMMANDS loop
 # (see route()); their registered "run" is just a usage-hint lambda, so
 # chaining them would silently produce a nonsense reply, not an error.
-_MACRO_STUB_IDS = {"CREATE_REMINDER", "FAST_START", "FAST_STOP", "LOG_WEIGHT", "LOG_WORKOUT", "GENERATE_IMAGE", "STOCK_ANALYSIS", "POLYMARKET_ODDS", "PINE_INDICATOR", "PINE_STRATEGY"}
+_MACRO_STUB_IDS = {"CREATE_REMINDER", "RECALL", "FAST_START", "FAST_STOP", "LOG_WEIGHT", "LOG_WORKOUT", "GENERATE_IMAGE", "STOCK_ANALYSIS", "POLYMARKET_ODDS", "PINE_INDICATOR", "PINE_STRATEGY"}
 # Not "destructive" but its run() schedules os._exit(0) via a 2s timer and
 # returns immediately, assuming "reply first, then exit" is atomic -- chained
 # with slower steps after it, the process can exit mid-macro.
@@ -2161,6 +2169,49 @@ def _ollama_fallback(text: str) -> dict:
 
 HISTORY_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", "history.jsonl")
 
+RECALL_SYSTEM_PROMPT = """\
+你係主人嘅記憶助手。主人想搵返以前同語音系統講過嘅嘢，下面係搜尋到嘅紀錄，每行開頭係日期時間。
+用兩至三句自然嘅廣東話口語總結紀錄入面同主人問題有關嘅內容，一定要講出日期。
+只可以用紀錄入面嘅資料，唔好作。紀錄真係完全同問題無關先講「搵唔到有關嘅紀錄」。唔好用括號，唔好用列點。"""
+# The first wording ("答唔到就講搵唔到") made gemma3:4b refuse even a direct hit;
+# naming the extracted topic and date range in the question fixed it (2026-10-12).
+
+
+def _recall(text: str) -> dict:
+    # 記唔記得…: deterministic retrieval in recall.py, then local Ollama phrases
+    # the answer from the hits. Reply-only, like the chat fallback. Logged as
+    # command=None / status "recall" on purpose: the reply can quote chat
+    # turns, so it must stay out of the Notion mirror (commands only) and age
+    # out with chat under the 30-day prune -- both key on command == null.
+    terms, start, end = recall.parse_query(text, dt.datetime.now(NZ_TZ))
+    hits = recall.search(recall.load_entries(HISTORY_PATH), terms, start, end)
+    log.info("recall %r: terms=%r range=%s..%s hits=%d", text, terms, start, end, len(hits))
+    if not hits:
+        return {"command": None, "status": "recall", "reply": "搵唔到有關嘅紀錄"}
+    payload = json.dumps({
+        "model": OLLAMA_CHAT_MODEL,
+        "messages": [
+            {"role": "system", "content": RECALL_SYSTEM_PROMPT},
+            {"role": "user", "content": f"紀錄：\n{recall.context_lines(hits)}\n\n主人問：{text}"
+                                        f"（搵：{terms or '所有嘢'}{f'，日子：{start}至{end}' if start else ''}）"},
+        ],
+        "stream": False,
+        "keep_alive": "24h",
+        "options": {"num_predict": OLLAMA_CHAT_MAX_TOKENS},
+    }).encode()
+    req = urllib.request.Request(f"{OLLAMA_URL}/api/chat", data=payload,
+                                 headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=OLLAMA_CHAT_TIMEOUT) as resp:
+            reply = json.loads(resp.read()).get("message", {}).get("content", "")
+    except Exception as exc:
+        log.error("recall ollama failed: %s", exc)
+        return {"command": None, "status": "chat_error", "reply": "記憶搜尋暫時用唔到"}
+    reply = re.sub(r"<think>.*?</think>", "", reply, flags=re.S)
+    reply = re.sub(r"[（(][^）)]*[）)]", "", reply).strip()
+    return {"command": None, "status": "recall",
+            "reply": _pause_before_chinese(_localize_places(reply or "搵唔到有關嘅紀錄"))}
+
 
 def record_history(text: str, outcome: dict, source: str = "voice") -> None:
     # Local source of truth for conversation history (chat included);
@@ -2326,6 +2377,9 @@ def route(text: str, source: str = "voice", lang: str = "yue") -> dict:
 
     if source != "web" and phrase.startswith(REMINDER_PREFIXES):
         return _create_reminder(text)
+
+    if source != "web" and phrase.startswith(recall.PREFIXES):
+        return _recall(text)
 
     # Fasting / weight / workout log: deterministic regex parsing in
     # health.py (no LLM), personal, so never reachable from the public web.

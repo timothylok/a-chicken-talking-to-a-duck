@@ -205,6 +205,12 @@ Notion sync's byte-offset cursor has already passed, shifting the cursor by
 the bytes removed — nothing is double-synced or lost. If the service appends
 mid-prune, the run aborts and retries the next day.
 
+**Recall (記唔記得, since 2026-10-12)** searches this file and answers with the
+local Ollama model only — never Workers AI, since history is personal data. A
+recall reply can quote chat turns, so it is recorded with `command == null`
+(status `recall`): that keeps it out of the Notion mirror and under the 30-day
+chat retention above, with no change to either script.
+
 ## Log header audit (2026-09-09)
 
 Closes the last open item on the hardening checklist: *are `Authorization`

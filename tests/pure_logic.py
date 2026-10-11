@@ -397,6 +397,27 @@ check("8h alert text", hl.stop_alert_text(dt.datetime(2026, 10, 13, 12, 30, tzin
       "食完喇，由而家開始斷食到聽日晏晝12點30分")
 
 
+# --- recall (asr/recall.py) --------------------------------------------------
+import recall as rc  # noqa: E402
+
+_now = dt.datetime(2026, 10, 12, 11, 0, tzinfo=_NZ)
+check("recall strips prefix and filler", rc.parse_query("記唔記得我上次講過針灸係幾時", _now)[0], "針灸")
+check("recall parses 琴日 as a date-only query", rc.parse_query("記唔記得琴日我做咗咩", _now),
+      ("", dt.date(2026, 10, 11), dt.date(2026, 10, 11)))
+check("recall 上個禮拜 is the previous Mon-Sun", rc.parse_query("記唔記得上個禮拜油價", _now)[1:],
+      (dt.date(2026, 10, 5), dt.date(2026, 10, 11)))
+check("recall future 月號 rolls back a year", rc.parse_query("記唔記得十二月三號", _now)[1], dt.date(2025, 12, 3))
+_fx = [
+    {"ts": "2026-08-27T21:00:00+12:00", "text": "提我去針灸", "command": "CREATE_REMINDER", "status": "executed", "reply": "好，提你去針灸"},
+    {"ts": "2026-09-01T10:00:00+12:00", "text": "早晨", "command": "MORNING_BRIEFING", "status": "executed", "reply": "針灸新聞"},
+    {"ts": "2026-09-02T10:00:00+12:00", "text": "今日天氣", "command": "WEATHER_TODAY", "status": "executed", "reply": "17度"},
+    {"ts": "2026-09-03T10:00:00+12:00", "text": "記唔記得針灸", "command": None, "status": "recall", "reply": "針灸係8月27號"},
+]
+check("recall finds the match and skips briefings and earlier recalls",
+      [e["ts"][:10] for e in rc.search(_fx, "針灸")], ["2026-08-27"])
+check("recall with no match returns nothing", rc.search(_fx, "火星"), [])
+
+
 # --- report ------------------------------------------------------------------
 if failures:
     print(f"FAILED ({len(failures)}):")
