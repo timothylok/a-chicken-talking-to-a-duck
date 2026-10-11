@@ -53,7 +53,7 @@ def zh_int(s: str) -> "int | None":
 
 
 _NUM = r"(?:\d+|[零〇一二兩两三四五六七八九十]+)"
-_PERIOD = r"(朝早|朝頭早|早上|早晨|上午|凌晨|半夜|下晝|下午|晏晝|中午|晚上|夜晚|今晚|am|pm)"
+_PERIOD = r"(今朝|今早|朝早|朝頭早|早上|早晨|上午|凌晨|半夜|下晝|下午|晏晝|中午|晚上|夜晚|今晚|am|pm)"
 _TIME_RES = [
     # 12:30 / 12.30 / 12:30pm
     re.compile(rf"{_PERIOD}?\s*(\d{{1,2}})[:：](\d{{2}})\s*(am|pm)?", re.I),
@@ -65,7 +65,7 @@ _TIME_RES = [
     re.compile(rf"{_PERIOD}?\s*({_NUM})(半)?(?=\s*(?:開始|开始|食完|食晒|吃完))", re.I),
 ]
 _PM_WORDS = {"下晝", "下午", "晏晝", "晚上", "夜晚", "今晚", "pm"}
-_AM_WORDS = {"朝早", "朝頭早", "早上", "早晨", "上午", "凌晨", "半夜", "am"}
+_AM_WORDS = {"今朝", "今早", "朝早", "朝頭早", "早上", "早晨", "上午", "凌晨", "半夜", "am"}
 
 
 def parse_clock(text: str) -> "tuple[tuple[int, int | None, bool | None], str] | None":
@@ -345,8 +345,12 @@ def log_workout(now: dt.datetime, path: str = STATE_PATH) -> "tuple[str, dict]":
 
 # --- utterance matching (used by router.route) --------------------------------
 
-_START_RE = re.compile(r"^我?(?:開始食|开始食|開始吃|开始吃|開始食嘢|开始食嘢|開餐|开餐|starteating|startedeating|firstmeal)(?:喇|啦|了)?$")
-_STOP_RE = re.compile(r"^我?(?:食完|食晒|食咗|吃完|吃了|stopeating|stoppedeating|finishedeating|doneeating)(?:喇|啦|了|嘢)?$")
+_START_RE = re.compile(r"^(?:我|今朝|今早|今日|今天)*(?:開始食|开始食|開始吃|开始吃|開始食嘢|开始食嘢|開餐|开餐|starteating|startedeating|firstmeal)(?:喇|啦|了)?$")
+_STOP_RE = re.compile(r"^(?:我|今朝|今早|今日|今天)*(?:食完|食晒|食咗|吃完|吃了|stopeating|stoppedeating|finishedeating|doneeating)(?:喇|啦|了|嘢)?$")
+# Whisper adds filler ("我今朝九點半就開始食嘢啦"): a short utterance containing the
+# start verb still counts, unless it is a question for the chat fallback.
+_START_LOOSE = re.compile(r"開始食|开始食|開始吃|开始吃|startedeating|starteating")
+_QUESTION = re.compile(r"[邊幾咩乜點嗎呀]|what|when|how|why", re.I)
 _STATUS = {"斷食狀態", "断食状态", "斷食", "断食", "仲有幾耐", "仲有几耐", "幾時食得", "几时食得",
            "fastingstatus", "faststatus", "fasting"}
 _WORKOUT = {"做完運動", "做完运动", "做咗運動", "做咗运动", "運動完", "运动完", "運動做完", "运动做完",
@@ -374,7 +378,8 @@ def handle(text: str, now: "dt.datetime | None" = None, path: str = STATE_PATH) 
             return {"command": cmd, "status": "error", "reply": reply}
         return {"command": cmd, "status": "executed", "reply": reply, "data": data}
 
-    if _START_RE.match(rest_n):
+    if _START_RE.match(rest_n) or (_START_LOOSE.search(rest_n) and len(rest_n) <= 12
+                                   and not _QUESTION.search(rest_n)):
         return out("FAST_START", start_eating(clock, now, path))
     if _STOP_RE.match(rest_n):
         return out("FAST_STOP", stop_eating(clock, now, path))
