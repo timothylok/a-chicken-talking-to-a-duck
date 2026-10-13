@@ -1,10 +1,12 @@
-"""Daily Auckland <-> Queenstown round-trip fare watch (1 adult, carry-on fares).
+"""Daily Auckland <-> Queenstown round-trip fare watch (4 adults, carry-on fares).
 
 Departures 29 Dec 2026 .. 11 Jan 2027, return 4-6 days after departure (a "5 day
 trip" +/-1), nothing later than 15 Jan 2027. Cheapest fare per leg per day across
 Air NZ and Jetstar (airlines may be mixed across legs), then the cheapest
 (depart, return) pair. Jetstar is one fare-cache call per direction; Air NZ is
-one call per date (TheColab skills, no login). Air NZ answers a request-auth /
+one call per date (TheColab skills, no login). Both are asked for ADULTS
+seats: with 4 travelling the cheapest fare class often has fewer than 4 seats left, so a
+1-adult price understates what the party pays. Prices are per person. Air NZ answers a request-auth /
 CAPTCHA wall with schedules only (`fare_search_blocked`) -- that day counts as
 "no Air NZ price", never as a price.
 
@@ -40,6 +42,7 @@ HOME, DEST = "AKL", "ZQN"
 FIRST_DEPART = dt.date(2026, 12, 29)
 LAST_RETURN = dt.date(2027, 1, 15)
 TRIP_DAYS = (4, 5, 6)
+ADULTS = 4
 DROP_PCT = 0.05
 AIRNZ_PAUSE_S = 1.5
 STATE_KEEP_DAYS = 60
@@ -101,7 +104,7 @@ def find_alert(best: dict, state: dict, today: str) -> "str | None":
 
 def _jetstar(origin: str, dest: str, start: dt.date, days: int) -> dict:
     out = subprocess.run(
-        ["node", JETSTAR_CLI, "search", origin, dest, start.isoformat(), "--days", str(days), "--json"],
+        ["node", JETSTAR_CLI, "search", origin, dest, start.isoformat(), "--days", str(days), "--adults", str(ADULTS), "--json"],
         capture_output=True, text=True, encoding="utf-8", timeout=120,
     )
     prices = {}
@@ -116,7 +119,7 @@ def _jetstar(origin: str, dest: str, start: dt.date, days: int) -> dict:
 
 def _airnz(origin: str, dest: str, day: dt.date) -> "tuple[float, str] | None":
     out = subprocess.run(
-        [sys.executable, AIRNZ_CLI, origin, dest, day.isoformat(), "--json"],
+        [sys.executable, AIRNZ_CLI, origin, dest, day.isoformat(), "--adults", str(ADULTS), "--json"],
         capture_output=True, text=True, encoding="utf-8", timeout=90,
         env={**os.environ, "PYTHONIOENCODING": "utf-8"},
     )
@@ -179,7 +182,7 @@ def _save_state(state: dict) -> None:
 def _fmt(t: dict) -> str:
     d = dt.date.fromisoformat(t["depart"])
     r = dt.date.fromisoformat(t["return"])
-    return (f"${t['total']:.0f}  {d:%a %d %b} → {r:%a %d %b}  "
+    return (f"${t['total']:.0f}/人 (x{ADULTS} = ${t['total'] * ADULTS:.0f})  {d:%a %d %b} → {r:%a %d %b}  "
             f"({t['out_air']} ${t['out_price']:.0f} + {t['ret_air']} ${t['ret_price']:.0f})")
 
 
