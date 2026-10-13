@@ -1363,7 +1363,7 @@ def _polymarket_odds(text: str) -> dict:
                 "reply": "想查咩題目？例如：預測市場 聯儲局減息"}
     try:
         query = _polymarket_query(topic)
-        events = _run_skill(POLYMARKET_CLI, "--json", "search", query, "--limit", "3")
+        events = _run_skill(POLYMARKET_CLI, "--json", "search", "--limit", "3", "--", query)
     except Exception as exc:
         log.error("polymarket lookup failed for %r: %s", topic, exc)
         return {"command": "POLYMARKET_ODDS", "status": "error",
