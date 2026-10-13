@@ -16,6 +16,14 @@ const REPLAY_WINDOW_MS = 5 * 60_000;
 // VOICE_GATEWAY_KEY-bearing callback below gets sent.
 const GATEWAY_ORIGIN = process.env.GATEWAY_ORIGIN || "https://a-chicken-talking-to-a-duck.vercel.app";
 
+// Slack user IDs (comma-separated, e.g. "U012ABC,U034DEF") allowed to run
+// commands. Fails closed: unset/empty means nobody — the bridge reaches
+// personal commands and the global 確認 window, so any workspace member who
+// can @mention the bot must not be enough.
+const ALLOWED_USERS = new Set(
+  (process.env.SLACK_ALLOWED_USERS ?? "").split(",").map((u) => u.trim()).filter(Boolean),
+);
+
 function signatureValid(request: Request, rawBody: string): boolean {
   const secret = process.env.SLACK_SIGNING_SECRET;
   const ts = request.headers.get("x-slack-request-timestamp");
@@ -204,6 +212,11 @@ export async function POST(request: Request): Promise<Response> {
   // Mentions only; bot_id guards against replying to our own (or any bot's)
   // messages.
   if (body.type !== "event_callback" || event?.type !== "app_mention" || event.bot_id) {
+    return new Response("ignored");
+  }
+
+  if (!ALLOWED_USERS.has(String(event.user ?? ""))) {
+    console.error("slack mention from non-allowlisted user ignored:", String(event.user ?? "none"));
     return new Response("ignored");
   }
 
