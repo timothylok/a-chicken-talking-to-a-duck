@@ -68,18 +68,21 @@ RET_DATES = daterange(FIRST_DEPART + dt.timedelta(days=min(TRIP_DAYS)), LAST_RET
 # ---------------------------------------------------------------------------
 
 def best_trips(out: dict, ret: dict, limit: int = 5) -> list:
-    """out/ret: {date: (price, airline)}. Cheapest (depart, return) pairs first."""
+    """out/ret: {date: (price, airline, "HH:MM-HH:MM")}. Cheapest (depart, return) pairs first; ties by
+    earliest departure, then latest return."""
     trips = []
-    for d, (p_out, a_out) in out.items():
+    for d, (p_out, a_out, t_out) in out.items():
         for n in TRIP_DAYS:
             r = d + dt.timedelta(days=n)
             if r > LAST_RETURN or r not in ret:
                 continue
-            p_ret, a_ret = ret[r]
+            p_ret, a_ret, t_ret = ret[r]
             trips.append({"depart": d.isoformat(), "return": r.isoformat(),
                           "total": p_out + p_ret, "out_air": a_out, "ret_air": a_ret,
-                          "out_price": p_out, "ret_price": p_ret})
-    trips.sort(key=lambda t: (t["total"], t["depart"]))
+                          "out_price": p_out, "ret_price": p_ret,
+                          "out_time": t_out, "ret_time": t_ret})
+    # Ties: earliest departure, then latest return (longest stay).
+    trips.sort(key=lambda t: (t["total"], t["depart"], -dt.date.fromisoformat(t["return"]).toordinal()))
     return trips[:limit]
 
 
@@ -102,6 +105,11 @@ def find_alert(best: dict, state: dict, today: str) -> "str | None":
 # Fetching
 # ---------------------------------------------------------------------------
 
+def _span(dep: "str | None", arr: "str | None") -> str:
+    """'2027-01-09T14:25:00' + '...T16:15:00' -> '14:25-16:15'."""
+    return f"{(dep or '?')[11:16]}-{(arr or '?')[11:16]}"
+
+
 def _jetstar(origin: str, dest: str, start: dt.date, days: int) -> dict:
     out = subprocess.run(
         ["node", JETSTAR_CLI, "search", origin, dest, start.isoformat(), "--days", str(days), "--adults", str(ADULTS), "--json"],
@@ -113,7 +121,7 @@ def _jetstar(origin: str, dest: str, start: dt.date, days: int) -> dict:
             continue
         d = dt.date.fromisoformat(f["date"])
         if d not in prices or f["price"] < prices[d][0]:
-            prices[d] = (f["price"], "Jetstar")
+            prices[d] = (f["price"], "Jetstar", _span(f.get("departure"), f.get("arrival")))
     return prices
 
 
@@ -126,9 +134,13 @@ def _airnz(origin: str, dest: str, day: dt.date) -> "tuple[float, str] | None":
     data = json.loads(out.stdout)
     if data.get("fare_search_blocked"):
         return None
-    prices = [fare["price"] for f in data.get("flights", []) for fare in f.get("fares", [])
-              if fare.get("available") and isinstance(fare.get("price"), (int, float))]
-    return (min(prices), "Air NZ") if prices else None
+    best = None
+    for f in data.get("flights", []):
+        for fare in f.get("fares", []):
+            if fare.get("available") and isinstance(fare.get("price"), (int, float)):
+                if best is None or fare["price"] < best[0]:
+                    best = (fare["price"], "Air NZ", _span(f.get("departure"), f.get("arrival")))
+    return best
 
 
 def _cheaper(a: "dict", b: "dict") -> dict:
@@ -183,7 +195,8 @@ def _fmt(t: dict) -> str:
     d = dt.date.fromisoformat(t["depart"])
     r = dt.date.fromisoformat(t["return"])
     return (f"${t['total']:.0f}/人 (x{ADULTS} = ${t['total'] * ADULTS:.0f})  {d:%a %d %b} → {r:%a %d %b}  "
-            f"({t['out_air']} ${t['out_price']:.0f} + {t['ret_air']} ${t['ret_price']:.0f})")
+            f"\n  去 {t['out_air']} {t['out_time']} ${t['out_price']:.0f}"
+            f"\n  返 {t['ret_air']} {t['ret_time']} ${t['ret_price']:.0f}")
 
 
 def main() -> None:
