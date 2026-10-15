@@ -41,6 +41,8 @@ def zh_int(s: str) -> "int | None":
         return int(s)
     if not s or any(c not in _ZH_DIGITS and c != "十" for c in s):
         return None
+    if len(s) == 2 and s[0] in "零〇" and s[1] in _ZH_DIGITS:  # 零五 = 05, spoken minutes
+        return _ZH_DIGITS[s[1]]
     if "十" not in s:
         return _ZH_DIGITS[s] if len(s) == 1 else None
     head, _, tail = s.partition("十")
