@@ -394,6 +394,22 @@ def main() -> None:
                         if l.get("buy_now_price") is not None
                         and l["buy_now_price"] >= min_price
                         and _matches_query(str(l.get("title", "")), query)]
+            # The search is a relevance-ordered top 100 of thousands, so the tracked
+            # listing can drop out of it while still live (2026-10-17: $759 Rotorua
+            # console, ends 18 Oct). Look it up by id so that reads as "still
+            # there" and only a real end triggers 最平嘅盤冇咗.
+            tracked = (state.get(key) or {}).get("identity")
+            if tracked and not any(str(l.get("listing_id")) == tracked for l in listings):
+                try:
+                    kept = _run_skill(TRADEME_CLI, "listing", tracked, "--json").get("listing") or {}
+                    ends = kept.get("end_date")
+                    if (kept.get("buy_now_price") is not None and kept["buy_now_price"] >= min_price
+                            and ends and dt.datetime.fromisoformat(ends) > dt.datetime.now(dt.timezone.utc)
+                            and _matches_query(str(kept.get("title", "")), query)):
+                        listings.append(kept)
+                        log.info("trademe %s: tracked listing %s missing from search, still live -- kept", query, tracked)
+                except Exception as exc:
+                    log.warning("trademe %s: tracked listing %s lookup failed: %s", query, tracked, exc)
             if not listings:
                 log.warning("trademe %s: no matching buy-now listings >= $%.2f found", query, min_price)
                 continue
