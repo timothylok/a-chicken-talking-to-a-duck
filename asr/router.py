@@ -156,35 +156,25 @@ def _restart_service() -> str:
     return "語音系統重啟中，約三十秒後恢復"
 
 
-# TheColab petrolmate skill (vetted 2026-07-13, see D:\ai\thecolab-skills):
-# keyless Gaspy-backed fuel prices, cheapest first. FUEL_LOCATION needs a
-# disambiguated name ("glenfield auckland") — the API covers AU too and a bare
-# suburb can resolve across the Tasman.
-FUEL_CLI = "D:/ai/thecolab-skills/skills/petrolmate-nz-au/scripts/cli.py"
-FUEL_LOCATION = os.environ.get("FUEL_LOCATION", "auckland")
+# TheColab gaspy-nz skill: Gaspy's public crowd-sourced national averages,
+# keyless. Replaced the petrolmate station search 2026-10-19 when its API began
+# returning zero NZ stations; Gaspy's own nearby search needs a login, so this is
+# a national average, not Glenfield.
+FUEL_CLI = "D:/ai/thecolab-skills/skills/gaspy-nz/scripts/cli.py"
 
 
 def _fuel_prices(lang: str = "yue") -> tuple[str, dict] | str:
-    stations = _run_skill(
-        FUEL_CLI, "search", "--location", FUEL_LOCATION,
-        "--fuel", "PULP95", "--limit", "3", "--json", timeout=20,
-    )["stations"]
-    if not stations:
+    by_fuel = {p["fuel"]: p for p in _run_skill(FUEL_CLI, "prices", "--json", timeout=20)["prices"]}
+    prices = {f: round(by_fuel[f]["average"] / 100, 2) for f in ("91", "95", "diesel") if f in by_fuel}
+    if not prices:
         return "攞唔到油價資料" if lang != "en" else "Couldn't fetch fuel price data."
     if lang == "en":
-        parts = [f"{s['name']} ${float(s['price']) / 100:.2f}/L" for s in stations]
-        reply = f"Cheapest 95 petrol near {FUEL_LOCATION.split()[0].title()}: " + ", ".join(parts)
+        names = {"91": "91", "95": "95", "diesel": "diesel"}
+        reply = "NZ average fuel prices: " + ", ".join(f"{names[f]} ${v:.2f}/L" for f, v in prices.items())
     else:
-        parts = [f"{s['name']}每公升{float(s['price']) / 100:.2f}蚊" for s in stations]
-        reply = f"{FUEL_LOCATION.split()[0].title()}附近最平95汽油：" + "，".join(parts)
-    data = {
-        "fuel": "PULP95",
-        "stations": [
-            {"name": s["name"], "price": round(float(s["price"]) / 100, 2)}
-            for s in stations
-        ],
-    }
-    return reply, data
+        names = {"91": "91汽油", "95": "95汽油", "diesel": "柴油"}
+        reply = "全國平均油價：" + "，".join(f"{names[f]}每公升{v:.2f}蚊" for f, v in prices.items())
+    return reply, {"scope": "national", "prices": prices}
 
 
 # TheColab at-transport skill: live AT departures. BUS_STOPS holds AT stop
