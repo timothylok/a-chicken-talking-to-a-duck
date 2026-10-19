@@ -243,7 +243,7 @@ Gateway (Vercel env; local copy in `gateway/.env`, gitignored):
 - `SLACK_ALLOWED_USERS` — Slack member IDs permitted to run commands (empty = nobody)
 
 ASR service (AppEnvironmentExtra REG_MULTI_SZ under the service's Parameters key — write it with elevated `Set-ItemProperty`, not `nssm set`, whose quoting mangles values with spaces; currently set: HF_HOME, FUEL_LOCATION, BIN_ADDRESS, ASR_MODEL):
-- `HF_HOME` — model cache (`C:\Users\timlo\.cache\huggingface`)
+- `HF_HOME` — model cache (`D:\ai\huggingface`)
 - `FUEL_LOCATION` — no longer read (`FUEL_PRICES` moved to the Gaspy national average 2026-10-19 after petrolmate's NZ station data went empty); harmless to leave set
 - `BIN_ADDRESS` — Auckland Council property ID (numeric — keeps the street address out of git and the spoken reply)
 - `BUS_STOPS` / `TIDE_PORT` — optional overrides; default `3881,4010` (Glenfield Mall, both directions) / `auckland`

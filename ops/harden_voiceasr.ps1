@@ -46,7 +46,7 @@ Remove-Item $inf, $db -Force -ErrorAction SilentlyContinue
 # 4. Service env: redirect everything that writes to ~ or system temp
 #    (the virtual account has no usable home directory)
 $envExtra = @(
-    "HF_HOME=C:\Users\timlo\.cache\huggingface",
+    "HF_HOME=D:\ai\huggingface",
     "FUEL_LOCATION=glenfield auckland",
     "BIN_ADDRESS=12340757627",
     "ASR_MODEL=JackyHoCL/whisper-small-cantonese-yue-english-ct2",
@@ -62,7 +62,7 @@ icacls $repo /grant "${acct}:(OI)(CI)RX" | Out-Null
 icacls "$repo\asr\logs"  /grant "${acct}:(OI)(CI)M" | Out-Null
 icacls "$repo\asr\cache" /grant "${acct}:(OI)(CI)M" | Out-Null
 icacls "D:\ai\thecolab-skills" /grant "${acct}:(OI)(CI)RX" | Out-Null
-icacls "C:\Users\timlo\.cache\huggingface" /grant "${acct}:(OI)(CI)M" | Out-Null
+icacls "D:\ai\huggingface" /grant "${acct}:(OI)(CI)M" | Out-Null
 icacls "$repo\ops\notion.json" /deny "${acct}:R" | Out-Null
 icacls "$repo\ops\ntfy.json"   /deny "${acct}:R" | Out-Null
 icacls "$repo\gateway\.env"    /deny "${acct}:R" | Out-Null

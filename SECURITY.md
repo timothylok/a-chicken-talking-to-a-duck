@@ -31,7 +31,7 @@ the service is then contained to what that account can touch:
 | `D:\ai\voice-ecosystem\asr\logs` | modify | service.log, history.jsonl |
 | `D:\ai\voice-ecosystem\asr\cache` | modify | grocer parquet cache (`GROCER_NZ_CACHE`), temp (`TMP`/`TEMP`) |
 | `D:\ai\thecolab-skills` | read/execute | NZ data skill CLIs |
-| `C:\Users\timlo\.cache\huggingface` | modify | model cache (revision checks write lock files) |
+| `D:\ai\huggingface` | modify | model cache (revision checks write lock files) |
 | `ops/notion.json`, `ops/ntfy.json`, `gateway/.env` | **explicit deny** | secrets — see Measure 2 |
 
 Supporting changes (all applied by `ops/harden_voiceasr.ps1`):
