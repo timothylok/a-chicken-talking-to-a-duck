@@ -97,6 +97,12 @@ THRESHOLDS = {
     # TTM operating cash flow, worst of the two. Under 10% is comfortable;
     # at 50% half of operating cash goes to lenders before any capex.
     "neocloud_interest": (10.0, 50.0),
+    # 10-year Treasury yield (%): the risk-free discount rate. Long-duration
+    # AI cash flows are worth less as it rises; ~3% was the 2010s norm.
+    "treasury_10y": (3.0, 6.0),
+    # Mag 7 earnings yield (1/PE) minus the 10y yield (pp). Near zero or
+    # negative means investors take no extra return for equity risk, as in 1999.
+    "equity_risk_premium": (2.0, -2.0),
 }
 STATE_PATH = os.path.join(ROOT, "asr", "logs", "ai_bubble_state.json")
 ALERT_MOVE = 5  # composite points (0-100) vs the last recorded day
@@ -107,7 +113,7 @@ GAUGES = [
     ("economic", "Economic strain", ["capex_gdp", "capex_growth"]),
     ("industry", "Industry strain", ["capex_revenue", "capex_ocf"]),
     ("revenue", "Revenue momentum", ["nvda_revenue_growth", "hyperscaler_revenue_growth"]),
-    ("valuation", "Valuation heat", ["mag7_pe", "ai_breadth", "rsp_vs_spy"]),
+    ("valuation", "Valuation heat", ["mag7_pe", "ai_breadth", "rsp_vs_spy", "treasury_10y", "equity_risk_premium"]),
     ("funding", "Funding quality", ["credit_hyg_ief", "bdc_nav", "neocloud_interest"]),
 ]
 
@@ -338,6 +344,19 @@ def market_metrics() -> dict:
     return out
 
 
+def cost_of_capital_metrics(pe: "dict | None") -> dict:
+    y = _closes("^TNX")[-1]  # Yahoo quotes ^TNX directly in percent
+    today = dt.datetime.now(NZ_TZ).date().isoformat()
+    out = {"treasury_10y": _metric(round(y, 2), f"{y:.2f}%", today, "Yahoo ^TNX",
+                                   "Risk-free rate used to discount AI cash flows.")}
+    if pe:
+        erp = 100 / pe["value"] - y
+        out["equity_risk_premium"] = _metric(
+            round(erp, 2), f"{erp:+.2f} pp", pe["asOf"], "Mag 7 trailing P/E; Yahoo ^TNX",
+            f"Earnings yield {100 / pe['value']:.2f}% (1 / {pe['value']:.1f}x P/E) minus 10y yield {y:.2f}%.")
+    return out
+
+
 def bdc_metric() -> dict:
     changes, ends, parts = [], [], []
     for t in BDCS:
@@ -460,6 +479,8 @@ METRIC_NAMES = {
     "credit_hyg_ief": "Credit: HYG vs IEF (3m)",
     "bdc_nav": "Private credit: BDC NAV/share (YoY)",
     "neocloud_interest": "Neocloud credit: interest / operating cash flow",
+    "treasury_10y": "Cost of capital: 10y Treasury yield",
+    "equity_risk_premium": "Cost of capital: Mag 7 equity risk premium",
 }
 
 
@@ -492,6 +513,10 @@ def _collect() -> dict:
         except Exception as exc:
             log.warning("%s failed: %s", key, exc)
     metrics.update(market_metrics())
+    try:
+        metrics.update(cost_of_capital_metrics(metrics.get("mag7_pe")))
+    except Exception as exc:
+        log.warning("cost of capital failed: %s", exc)
     return metrics
 
 
