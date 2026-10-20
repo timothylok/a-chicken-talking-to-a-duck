@@ -108,7 +108,7 @@ STOCK_TIMELINE = [
     ("11:00", "朝早", "—", "業績報告通知",
      "如果凌晨嗰輪監察到新嘅季度業績報告，推送手機通知話你知——刻意同生成分開幾個鐘，唔會半夜嘈醒你"),
     ("11:10", "朝早", "Category 6", "風險評分儀表板 Risk Dashboard",
-     "計算10個KPI風險評分（0-1分同紅黃綠燈），三句總結由Cloudflare Workers AI生成，寫落Notion，然後自動出版去<a href=\"/dashboard\">網頁儀表板</a>——生成失敗就唔會出版，唔會俾舊儀表板落線"),
+     "計算10個KPI風險評分（0-1分同紅黃綠燈），三句總結由Cloudflare Workers AI生成，寫落Notion，然後自動出版去<a href=\"/dashboard\">網頁儀表板</a>——生成失敗就唔會出版，唔會俾舊儀表板落線；同一個程序仲會計<a href=\"/dashboard/bubble\">AI泡沫指標</a>：用SEC財報同市場數據計五個儀表（資本開支壓力、行業壓力、收入動力、估值熱度、融資質素）同0-100總分，全部由程式計，唔用AI"),
     ("11:25", "朝早", "—", "每日股價範圍 Stock Day Range",
      "即時攞Yahoo Finance數據計50/200日均線、RSI、支持阻力位，加上20日歷史波幅推算出嘅預期浮動範圍，再讀返Category 6嘅風險評分做參考，Cloudflare Workers AI寫低每隻股票嘅簡短分析——純粹技術/波幅參考，唔係價錢預測，都唔係投資建議，存做本機HTML報告"),
     ("11:45", "朝早", "—", "Polymarket 賠率監察",
@@ -257,6 +257,7 @@ PAGE = """<!DOCTYPE html>
 <nav class="nav">
 <a href="/dashboard">📊 風險儀表板</a>
 <a href="/dashboard/ai">🤖 AI精選</a>
+<a href="/dashboard/bubble">🫧 AI泡沫指標</a>
 <a href="/chat.html">💬 打字版傾偈</a>
 <a href="/snake.html">🐍 食蛇</a>
 </nav>

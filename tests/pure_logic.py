@@ -420,6 +420,34 @@ check("a chat reply is not fed back as the owner's words",
                                  "status": "chat", "reply": "斬成一萬嚿"}]), False)
 check("recall with no match returns nothing", rc.search(_fx, "火星"), [])
 
+# --- AI bubble gauges --------------------------------------------------------
+import ai_bubble as ab  # noqa: E402
+
+check("bubble score interpolates", ab.score(1.25, 0.5, 2.0), 0.5)
+check("bubble score clamps", (ab.score(-1, 0.5, 2.0), ab.score(9, 0.5, 2.0)), (0.0, 1.0))
+check("bubble score inverted thresholds (low value = risky)", ab.score(15.0, 60.0, 0.0), 0.75)
+check("bubble score N/A stays N/A", ab.score(None, 0, 1), None)
+check("bubble light bands", [ab.light(s) for s in (0.33, 0.5, 0.67, None)], ["Green", "Amber", "Red", None])
+
+
+def _ytd(start, end, val, form="10-Q", filed="2026-01-01"):
+    return {"start": start, "end": end, "val": val, "form": form, "filed": filed}
+
+
+# Cash-flow tags come only as YTD: Q1 3m, then 6m and 9m, then the FY.
+_cf = [_ytd("2025-01-01", "2025-03-31", 10), _ytd("2025-01-01", "2025-06-30", 25),
+       _ytd("2025-01-01", "2025-09-30", 45), _ytd("2025-01-01", "2025-12-31", 70, form="10-K"),
+       _ytd("2025-01-01", "2025-06-30", 99, form="8-K")]
+check("discrete quarters from YTD facts (non-periodic forms ignored)",
+      [(q["end"], q["val"]) for q in ab.discrete_quarters(_cf)],
+      [("2025-03-31", 10), ("2025-06-30", 15), ("2025-09-30", 20), ("2025-12-31", 25)])
+_qtd = [_ytd("2025-04-01", "2025-06-30", 15), _ytd("2025-01-01", "2025-06-30", 26)]
+check("a direct 3-month fact wins over a YTD difference",
+      [(q["end"], q["val"]) for q in ab.discrete_quarters(_qtd)], [("2025-06-30", 15)])
+check("HHI from percentage weights", ab.hhi([50.0, 30.0, 20.0]), 3800.0)
+check("3-month return needs 64 closes", ab.three_month_return([100.0] * 63), None)
+check("3-month return", round(ab.three_month_return([100.0] + [110.0] * 63), 1), 10.0)
+
 
 # --- report ------------------------------------------------------------------
 if failures:

@@ -1635,6 +1635,11 @@ def poll_and_generate() -> int:
     except Exception as exc:
         log.error("drawdown analogues / factor performance failed: %s", exc)
     try:
+        import ai_bubble  # after the volatility panel, whose JSON it reads
+        ai_bubble.write_bubble_snapshot(ai_bubble.build())
+    except Exception as exc:
+        log.error("AI bubble gauges failed: %s", exc)
+    try:
         write_notes_snapshot(research_notes())
     except Exception as exc:
         log.error("research notes failed: %s", exc)

@@ -49,6 +49,9 @@ export default function Dashboard() {
         <a href="/dashboard/notes">Research notes, bull/bear debates and pre-mortems →</a>
       </p>
       <p className="tagline">
+        <a href="/dashboard/bubble">AI bubble gauges: capex strain, valuation heat, funding quality →</a>
+      </p>
+      <p className="tagline">
         10 KPIs scored from SEC/Yahoo data by a local pipeline; only the one-paragraph summaries are written by
         Cloudflare Workers AI. Ranked by composite score, higher = lower risk. Static snapshot published {latest} NZT.
       </p>

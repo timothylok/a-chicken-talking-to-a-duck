@@ -426,3 +426,49 @@ footer {
 .tagline a {
   color: var(--accent);
 }
+
+.bubble-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin: 0.5rem 0 0.75rem;
+}
+
+.bubble-score {
+  font-size: 2.4rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.bubble-metric {
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.bubble-metric:last-child {
+  border-bottom: none;
+}
+
+.bubble-value {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.bubble-meta {
+  color: var(--muted);
+  font-size: 0.74rem;
+  margin: 0.2rem 0 0 1.15rem;
+}
+
+.bubble-context {
+  font-size: 0.85rem;
+  padding-left: 1.1rem;
+}
+
+.bubble-context li {
+  margin-bottom: 0.4rem;
+}
+
+.bubble-context a {
+  color: var(--accent);
+}
