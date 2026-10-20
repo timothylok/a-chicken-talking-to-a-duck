@@ -445,6 +445,11 @@ _qtd = [_ytd("2025-04-01", "2025-06-30", 15), _ytd("2025-01-01", "2025-06-30", 2
 check("a direct 3-month fact wins over a YTD difference",
       [(q["end"], q["val"]) for q in ab.discrete_quarters(_qtd)], [("2025-06-30", 15)])
 check("HHI from percentage weights", ab.hhi([50.0, 30.0, 20.0]), 3800.0)
+check("bubble alert names the composite move and the biggest gauge",
+      ab.alert_text({"composite": 47, "gauges": {"A": 80, "B": 40}}, 53, {"A": 82, "B": 52}),
+      "AI泡沫指數升咗6點：47 → 53（B +12）")
+check("bubble alert on a fall", ab.alert_text({"composite": 50, "gauges": {"A": 50}}, 44, {"A": 38}),
+      "AI泡沫指數跌咗6點：50 → 44（A -12）")
 check("3-month return needs 64 closes", ab.three_month_return([100.0] * 63), None)
 check("3-month return", round(ab.three_month_return([100.0] + [110.0] * 63), 1), 10.0)
 

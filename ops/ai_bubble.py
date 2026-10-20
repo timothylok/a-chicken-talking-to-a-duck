@@ -47,6 +47,11 @@ UA = {"User-Agent": "Mozilla/5.0"}
 
 HYPERSCALERS = ["MSFT", "GOOGL", "AMZN", "META"]
 MAG7 = ["AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA"]
+# Debt-funded AI builders. Their CDS spreads and bond yields are not free
+# (Markit/ICE; FINRA's bond search API is login-only, 401 on 2026-10-20),
+# so credit stress is read from the filings instead.
+NEOCLOUDS = [("CRWV", "CoreWeave"), ("ORCL", "Oracle")]
+INTEREST_TAGS = ["InterestExpenseDebt", "InterestExpense", "InterestExpenseNonoperating"]
 BDCS = ["ARCC", "FSK", "OBDC", "BXSL"]  # the four largest listed BDCs, all private-credit lenders
 # Fixed AI-exposed universe for the breadth read: chips, memory, networking,
 # servers, power/cooling, model platforms. Edit here; all trade on US exchanges.
@@ -88,7 +93,13 @@ THRESHOLDS = {
     "credit_hyg_ief": (2.0, -5.0),
     # Median BDC NAV/share YoY change (%): private-credit marks.
     "bdc_nav": (0.0, -10.0),
+    # Debt-funded AI builders (CoreWeave, Oracle): TTM interest expense /
+    # TTM operating cash flow, worst of the two. Under 10% is comfortable;
+    # at 50% half of operating cash goes to lenders before any capex.
+    "neocloud_interest": (10.0, 50.0),
 }
+STATE_PATH = os.path.join(ROOT, "asr", "logs", "ai_bubble_state.json")
+ALERT_MOVE = 5  # composite points (0-100) vs the last recorded day
 GREEN_MAX = 0.33
 RED_MIN = 0.67
 
@@ -97,7 +108,7 @@ GAUGES = [
     ("industry", "Industry strain", ["capex_revenue", "capex_ocf"]),
     ("revenue", "Revenue momentum", ["nvda_revenue_growth", "hyperscaler_revenue_growth"]),
     ("valuation", "Valuation heat", ["mag7_pe", "ai_breadth", "rsp_vs_spy"]),
-    ("funding", "Funding quality", ["credit_hyg_ief", "bdc_nav"]),
+    ("funding", "Funding quality", ["credit_hyg_ief", "bdc_nav", "neocloud_interest"]),
 ]
 
 log = logging.getLogger("ai_bubble")
@@ -354,6 +365,23 @@ def bdc_metric() -> dict:
                    "Median YoY NAV/share: " + ", ".join(parts) + ".")
 
 
+def neocloud_metric() -> dict:
+    ratios, ends = {}, []
+    for t, name in NEOCLOUDS:
+        f = _facts(t)
+        interest, _, end = ttm_pair(f, INTEREST_TAGS)
+        ocf, _, _ = ttm_pair(f, sf.OCF_TAGS)
+        if interest is None or not ocf or ocf <= 0:
+            raise ValueError(f"{t}: no TTM interest or positive operating cash flow")
+        ratios[name] = (interest / ocf * 100, interest)
+        ends.append(end)
+    worst = max(r for r, _ in ratios.values())
+    parts = ", ".join(f"{n} {r:.0f}% (interest {sf._fmt_usd(i)})" for n, (r, i) in ratios.items())
+    return _metric(round(worst, 1), f"{worst:.0f}% (worst of {len(ratios)})", min(ends),
+                   "SEC XBRL 10-Q/10-K (CRWV, ORCL)",
+                   f"TTM interest / TTM operating cash flow: {parts}. No CDS or bond yields: not free.")
+
+
 # ---------------------------------------------------------------------------
 # Context (shown, not scored)
 # ---------------------------------------------------------------------------
@@ -431,6 +459,7 @@ METRIC_NAMES = {
     "rsp_vs_spy": "Market breadth: RSP vs SPY (3m)",
     "credit_hyg_ief": "Credit: HYG vs IEF (3m)",
     "bdc_nav": "Private credit: BDC NAV/share (YoY)",
+    "neocloud_interest": "Neocloud credit: interest / operating cash flow",
 }
 
 
@@ -454,7 +483,8 @@ def _collect() -> dict:
     for key, fn in (("capex_gdp", lambda: gdp_metric(capex) if capex else None),
                     ("nvda_revenue_growth", nvda_metric),
                     ("mag7_pe", mag7_pe_metric),
-                    ("bdc_nav", bdc_metric)):
+                    ("bdc_nav", bdc_metric),
+                    ("neocloud_interest", neocloud_metric)):
         try:
             m = fn()
             if m:
@@ -513,6 +543,42 @@ def build() -> dict:
     }
 
 
+def alert_text(prev: dict, composite: int, gauges: dict) -> str:
+    """One Cantonese line: composite move plus the gauge that moved most."""
+    move = composite - prev["composite"]
+    deltas = {n: round(gauges[n] - prev["gauges"][n]) for n in gauges if n in prev["gauges"]}
+    top = max(deltas, key=lambda n: abs(deltas[n]), default=None)
+    text = f"AI泡沫指數{'升' if move > 0 else '跌'}咗{abs(move)}點：{prev['composite']} → {composite}"
+    if top and deltas[top]:
+        text += f"（{top} {deltas[top]:+d}）"
+    return text
+
+
+def check_move_alert(snapshot: dict) -> None:
+    """ntfy when the composite moved >= ALERT_MOVE points since the last
+    recorded day. Pricewatch baseline rules: a same-day rerun leaves the
+    baseline alone, and a failed push holds it so the next run retries."""
+    if snapshot["composite"] is None:
+        return
+    today = snapshot["generatedAt"][:10]
+    gauges = {g["name"]: round(g["score"] * 100) for g in snapshot["gauges"] if g["score"] is not None}
+    try:
+        with open(STATE_PATH, encoding="utf-8") as f:
+            prev = json.load(f)
+    except (OSError, ValueError):
+        prev = None
+    if prev and prev["date"] == today:
+        return
+    if prev and abs(snapshot["composite"] - prev["composite"]) >= ALERT_MOVE:
+        from notify import notify
+        if not notify("AI泡沫指標", alert_text(prev, snapshot["composite"], gauges), priority=3):
+            log.warning("move alert push failed; holding the baseline")
+            return
+    with open(STATE_PATH, "w", encoding="utf-8") as f:
+        json.dump({"date": today, "composite": snapshot["composite"], "gauges": gauges}, f,
+                  ensure_ascii=False, indent=2)
+
+
 def write_bubble_snapshot(snapshot: dict) -> None:
     if snapshot["freshMetrics"] == 0:
         log.warning("no metric fetched; keeping the previous ai-bubble.json")
@@ -522,6 +588,7 @@ def write_bubble_snapshot(snapshot: dict) -> None:
         json.dump(snapshot, f, ensure_ascii=False, indent=2)
     log.info("AI bubble composite %s (%s), %d fresh metrics", snapshot["composite"], snapshot["coverage"],
              snapshot["freshMetrics"])
+    check_move_alert(snapshot)
 
 
 def main() -> None:
