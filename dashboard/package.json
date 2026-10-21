@@ -8,7 +8,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "next": "16.2.12",
+    "next": "16.4.2",
     "react": "^18.3.0",
     "react-dom": "^18.3.0"
   },
