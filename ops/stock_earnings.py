@@ -187,7 +187,9 @@ def _exhibit_doc(cik: str, accn: str, prefix: str = "EX-99") -> "str | None":
 # column -- both confirmed live on real AAPL/MSFT press releases
 # (2026-07-28). Candidate patterns tried in order, same idiom as
 # stock_fundamentals.py's REVENUE_TAGS.
-_REVENUE_LINE_PATTERNS = [r"Total net sales", r"Total revenues?", r"Net revenues?"]
+_REVENUE_LINE_PATTERNS = [r"Total net sales", r"Total revenues?", r"Net revenues?",
+                          # SPCX: a bare "Revenue" row (no "Total"); the lookahead skips prose and segment rows
+                          r"Revenue(?=\s+[\d,]+\s+[\d,]+\s)"]
 _NUM = r"\$?\s*([\d,]+(?:\.\d+)?)"
 
 
@@ -238,7 +240,18 @@ def _number_run(text: str, label_end: int) -> list:
     return [float(x.replace(",", "")) for x in re.findall(r"\$?\s*([\d,]+(?:\.\d+)?)", numeric_part)]
 
 
+def _f(s: str) -> float:
+    """'1,234.5' -> 1234.5; '(0.36)' -> -0.36 (accounting negative)."""
+    v = float(s.strip("()").replace(",", ""))
+    return -v if s.startswith("(") else v
+
+
 def _extract_income_figures(text: str) -> dict:
+    # SPCX pads statement rows with dot leaders ("Revenue ..... $ 14,575"),
+    # which stop _NUM matching the first number.
+    if re.search(r"\.{4,}", text):
+        text = re.sub(r"\.{4,}", " ", text)
+        text = re.sub(r"\$\s+(?=[\d(])", "", text)  # and "$ 14,575" -> "14,575"
     out = {}
     rev_end = 0
     rev_start = 0
@@ -349,6 +362,12 @@ def _extract_income_figures(text: str) -> dict:
             order_pos = rev_start if m else None
             m_abs_end = rev_end + m.end() if m else None  # same slice-offset fix as above
         if not m:
+            # SPCX: "Diluted $ 0.35 $ (0.36) ..." -- a loss year is printed
+            # in parentheses, so the plain _NUM tiers can't read it.
+            m = re.search(r"Diluted\s+(\(?[\d,.]+\)?)\s+(\(?[\d,.]+\)?)", text[rev_end:rev_end + 30000])
+            order_pos = rev_start if m else None
+            m_abs_end = rev_end + m.end() if m else None
+        if not m:
             # Last resort: bare "Diluted NUM NUM" with no EPS-specific
             # wording nearby. Confirmed AMZN's real weighted-average-diluted-
             # shares row ("Diluted 10,806 10,806 ...") would otherwise match
@@ -358,7 +377,7 @@ def _extract_income_figures(text: str) -> dict:
             order_pos = rev_start if m else None  # same-table reasoning as above
             m_abs_end = rev_end + m.end() if m else None  # same slice-offset fix as above
         if m:
-            a, b = float(m.group(1).replace(",", "")), float(m.group(2).replace(",", ""))
+            a, b = _f(m.group(1)), _f(m.group(2))
             cur, prior = (a, b) if _column_order_current_first(text, order_pos) else (b, a)
             out["eps_cur"], out["eps_prior"] = cur, prior
             # Some filers (AON, confirmed live 2026-08-03) also report a

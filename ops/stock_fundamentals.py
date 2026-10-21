@@ -138,7 +138,7 @@ log.addHandler(_handler)
 DEFAULT_WATCHLIST = os.environ.get(
     "STOCK_WATCHLIST", "AAPL,MSFT,NVDA,TSLA,GOOGL,AMZN,META,AON,SPCX"
 )
-EXCLUDE_NO_SEC_FILINGS = {"SPCX"}
+EXCLUDE_NO_SEC_FILINGS: set = set()  # SPCX listed and files with the SEC since 2026-10; none excluded now
 
 # Candidate XBRL us-gaap tags, tried in order, per concept -- companies use
 # different (sometimes custom) tags for the same line item. All queried via
