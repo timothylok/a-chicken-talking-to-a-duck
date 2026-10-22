@@ -299,6 +299,14 @@ def stop_eating(clock, now: dt.datetime, path: str = STATE_PATH) -> "tuple[str, 
                    "window_ok": ok, "next_eat": _iso(nxt)}
 
 
+def _stale_open(clock, now: dt.datetime, path: str) -> bool:
+    """True when the open window would end >12h after it started, so the clock can't be its 食完."""
+    wins = load(path)["windows"]
+    if not wins or wins[-1].get("end"):
+        return False
+    return resolve_past(clock, now) - _t(wins[-1]["start"]) > dt.timedelta(hours=12)
+
+
 def fast_status(now: dt.datetime, path: str = STATE_PATH) -> "tuple[str, dict]":
     state = load(path)
     if not state["windows"]:
@@ -384,6 +392,8 @@ def handle(text: str, now: "dt.datetime | None" = None, path: str = STATE_PATH) 
                                    and not _QUESTION.search(rest_n)):
         return out("FAST_START", start_eating(clock, now, path))
     if _STOP_RE.match(rest_n):
+        if clock and _stale_open(clock, now, path):  # 食咗 at a time after a forgotten 食完 = a new start
+            return out("FAST_START", start_eating(clock, now, path))
         return out("FAST_STOP", stop_eating(clock, now, path))
     if clock is None and rest_n in _STATUS:
         return out("FAST_STATUS", fast_status(now, path))
