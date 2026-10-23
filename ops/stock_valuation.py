@@ -1408,6 +1408,11 @@ def poll_and_generate() -> int:
                 state.setdefault(ticker, {})["last_processed_accn"] = hit["accn"]
                 continue
 
+            if not sf._latest_filing(subs, "10-K"):
+                # Newly listed filer (SPCX): the DCF/WACC need a 10-K. Cursor left alone so it retries quietly.
+                log.info("%s: no 10-K on file yet, skipping valuation", ticker)
+                continue
+
             report = build_valuation_report(ticker, cik, subs, hit)
             _notion("POST", "/pages", {
                 "parent": {"database_id": cfg["valuation_database_id"]},
