@@ -228,7 +228,9 @@ def _fast_before(state: dict, start: dt.datetime, idx: int, now: dt.datetime) ->
     if idx == 0:
         return None
     prev_end = eff_end(state["windows"][idx - 1], now)
-    return start - prev_end if prev_end else None
+    if not prev_end or start - prev_end > dt.timedelta(hours=24):  # a skipped day: meals went unlogged
+        return None
+    return start - prev_end
 
 
 def start_eating(clock, now: dt.datetime, path: str = STATE_PATH) -> "tuple[str, dict]":
@@ -300,9 +302,9 @@ def stop_eating(clock, now: dt.datetime, path: str = STATE_PATH) -> "tuple[str, 
 
 
 def _stale_open(clock, now: dt.datetime, path: str) -> bool:
-    """True when the open window would end >12h after it started, so the clock can't be its 食完."""
+    """True when the latest window would end >12h after it started, so the clock can't be its 食完."""
     wins = load(path)["windows"]
-    if not wins or wins[-1].get("end"):
+    if not wins:
         return False
     return resolve_past(clock, now) - _t(wins[-1]["start"]) > dt.timedelta(hours=12)
 
@@ -419,7 +421,7 @@ def briefing_line(now: dt.datetime, path: str = STATE_PATH) -> str:
         if w["start"][:10] == now.date().isoformat() and len(state["windows"]) > 1:
             prev_end = eff_end(state["windows"][-2], now)
             fast = _t(w["start"]) - prev_end if prev_end else None
-            if fast is not None:
+            if fast is not None and fast <= dt.timedelta(hours=24):
                 parts.append(f"今朝斷食咗{speak_hours(fast)}"
                              + ("，達標" if fast >= dt.timedelta(hours=FAST_HOURS) else f"，未夠{FAST_HOURS}個鐘"))
         elif end is not None:
