@@ -463,7 +463,7 @@ def day_rows(state: dict, now: dt.datetime) -> "dict[str, dict]":
                 prev_end_for_next = end
             else:
                 prev_end_for_next = None
-            if prev_end is not None:
+            if prev_end is not None and start - prev_end <= dt.timedelta(hours=24):  # else a skipped day
                 fast = start - prev_end
                 row["fast_hours"] = round(fast.total_seconds() / 3600, 1)
                 row["fast_ok"] = fast >= dt.timedelta(hours=FAST_HOURS)
