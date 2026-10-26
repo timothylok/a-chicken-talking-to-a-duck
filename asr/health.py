@@ -363,7 +363,7 @@ _START_LOOSE = re.compile(r"開始食|开始食|開始吃|开始吃|startedeatin
 _QUESTION = re.compile(r"[邊幾咩乜點嗎呀]|what|when|how|why", re.I)
 _STATUS = {"斷食狀態", "断食状态", "斷食", "断食", "仲有幾耐", "仲有几耐", "幾時食得", "几时食得",
            "fastingstatus", "faststatus", "fasting"}
-_WORKOUT = {"做完運動", "做完运动", "做咗運動", "做咗运动", "運動完", "运动完", "運動做完", "运动做完",
+_WORKOUT = {"做完運動", "做完运动", "做運動", "做运动", "做咗運動", "做咗运动", "運動完", "运动完", "運動做完", "运动做完",
             "完成運動", "完成运动", "練完", "练完", "健身完", "訓練完", "训练完", "運動咗", "运动咗",
             "workout", "workoutdone", "workedout", "iworkedout", "didmyworkout", "doneworkout"}
 _FILLER = re.compile(r"^(?:我|今日|今朝|今天)+")
