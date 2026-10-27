@@ -416,6 +416,22 @@ def _extract_income_figures(text: str) -> dict:
                 )
                 if pm and abs(float(pm.group(1).replace(",", "")) - cur) < 0.005:
                     out["eps_adjusted"] = float(pm.group(2).replace(",", ""))
+    if out.get("eps_cur") is not None and "eps_adjusted" not in out:
+        # Tesla (confirmed live 2026-10-27) prints both EPS rows in a
+        # five-quarter reconciliation table, current quarter LAST:
+        # "... diluted (GAAP) 0.39 ... 0.22 ... diluted (non-GAAP) 0.50 ... 0.48".
+        # The GAAP row's last value must equal eps_cur, so a different
+        # table's row can't be mistaken for this quarter.
+        rm = re.search(
+            r"diluted\s*\(GAAP\)((?:\s+\(?-?\d+\.\d+\)?){3,8})[\s\S]{0,600}?"
+            r"diluted\s*\(non-GAAP\)((?:\s+\(?-?\d+\.\d+\)?){3,8})",
+            text,
+        )
+        if rm:
+            g = re.findall(r"\d+\.\d+", rm.group(1))
+            n = re.findall(r"\d+\.\d+", rm.group(2))
+            if g and n and abs(float(g[-1]) - out["eps_cur"]) < 0.005:
+                out["eps_adjusted"] = float(n[-1])
     if out.get("revenue_cur") is not None and out.get("revenue_prior"):
         out["revenue_yoy"] = (out["revenue_cur"] - out["revenue_prior"]) / abs(out["revenue_prior"]) * 100
     if out.get("eps_cur") is not None and (out.get("eps_prior") or 0) > 0:  # % off a loss is meaningless
@@ -618,15 +634,26 @@ def _section9_beat_miss(figures: dict, consensus: "dict | None") -> str:
         diff = compare_eps - consensus["eps_forecast"]
         pct = diff / abs(consensus["eps_forecast"]) * 100 if consensus["eps_forecast"] else None
         verdict = "beat" if diff > 0.005 else "miss" if diff < -0.005 else "in-line"
-        if "eps_adjusted" in figures:
-            basis_note = f" (basis: adjusted/non-GAAP; GAAP diluted EPS was ${figures['eps_cur']:.2f})"
+        fc = consensus["eps_forecast"]
+        if ("eps_adjusted" in figures and fc and abs(figures["eps_cur"] - fc) / abs(fc) <= 0.10
+                and abs(figures["eps_adjusted"] - fc) / abs(fc) > 0.50):
+            # TSLA 2026-10-21: consensus $0.22 = GAAP $0.22 but adjusted $0.48, so
+            # "beat +118%" would be fiction; Nasdaq's basis for it is unknown.
+            lines.append(
+                f"EPS: GAAP ${figures['eps_cur']:.2f}, adjusted ${figures['eps_adjusted']:.2f} vs. Nasdaq consensus "
+                f"${fc:.2f} ({consensus.get('num_estimates') or '?'} estimates) -- the consensus matches GAAP but "
+                "not adjusted EPS, so its basis is unclear and no beat/miss is called."
+            )
         else:
-            basis_note = ""
-        lines.append(
-            f"EPS {verdict}: actual ${compare_eps:.2f} vs. consensus "
-            f"${consensus['eps_forecast']:.2f} ({diff:+.2f}, {_pct(pct)}), based on "
-            f"{consensus.get('num_estimates') or '?'} analyst estimates (source: Nasdaq).{basis_note}"
-        )
+            if "eps_adjusted" in figures:
+                basis_note = f" (basis: adjusted/non-GAAP; GAAP diluted EPS was ${figures['eps_cur']:.2f})"
+            else:
+                basis_note = ""
+            lines.append(
+                f"EPS {verdict}: actual ${compare_eps:.2f} vs. consensus "
+                f"${consensus['eps_forecast']:.2f} ({diff:+.2f}, {_pct(pct)}), based on "
+                f"{consensus.get('num_estimates') or '?'} analyst estimates (source: Nasdaq).{basis_note}"
+            )
     elif figures.get("eps_cur") is not None:
         lines.append(f"EPS: actual ${figures['eps_cur']:.2f}. Beat/miss: N/A -- consensus estimate not available.")
     else:
