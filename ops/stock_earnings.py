@@ -418,7 +418,7 @@ def _extract_income_figures(text: str) -> dict:
                     out["eps_adjusted"] = float(pm.group(2).replace(",", ""))
     if out.get("revenue_cur") is not None and out.get("revenue_prior"):
         out["revenue_yoy"] = (out["revenue_cur"] - out["revenue_prior"]) / abs(out["revenue_prior"]) * 100
-    if out.get("eps_cur") is not None and out.get("eps_prior"):
+    if out.get("eps_cur") is not None and (out.get("eps_prior") or 0) > 0:  # % off a loss is meaningless
         out["eps_yoy"] = (out["eps_cur"] - out["eps_prior"]) / abs(out["eps_prior"]) * 100
     return out
 
@@ -568,16 +568,23 @@ CAPITAL_RETURN_PROMPT = (
     "release (accession {accn}, filed {filed}). This is sourced from the earnings "
     "release, not the conference call transcript -- do not claim otherwise. Using "
     "ONLY this text, summarize any share buyback program size/pace and dividend "
-    "updates (declared amount, increase, special distributions). If no such "
-    "information appears, say so. Under 150 words.\n\n---\n{excerpt}\n---"
+    "updates (declared amount, increase, special distributions). A cash-flow "
+    "line such as \"Payments for repurchase of ... stock\" is not a buyback program: "
+    "if that is all there is, report it as a cash-flow figure, state its period "
+    "(nine months vs the quarter) and units, and say no program or dividend was "
+    "announced. Dollar figures in the release are {units}. If no such information appears, say so. Under 150 words.\n\n---\n{excerpt}\n---"
 )
 
 
 def _section8_summary(ticker: str, ex99_text: str, figures: dict, accn: str, filed: str, url: str) -> str:
     rev_line = (f"{_fmt_usd_m(figures['revenue_cur'])} ({_pct(figures.get('revenue_yoy'))} YoY)"
                 if figures.get("revenue_cur") is not None else "N/A (could not extract from this release)")
-    eps_line = (f"${figures['eps_cur']:.2f} ({_pct(figures.get('eps_yoy'))} YoY)"
-                if figures.get("eps_cur") is not None else "N/A (could not extract from this release)")
+    if figures.get("eps_cur") is None:
+        eps_line = "N/A (could not extract from this release)"
+    elif (figures.get("eps_prior") or 0) < 0:
+        eps_line = f"${figures['eps_cur']:.2f} (vs a ${-figures['eps_prior']:.2f} loss a year ago)"
+    else:
+        eps_line = f"${figures['eps_cur']:.2f} ({_pct(figures.get('eps_yoy'))} YoY)"
     header = f"Revenue: {rev_line}. Diluted EPS: {eps_line}."
     if not ex99_text:
         return f"{header}\n\nN/A -- could not fetch the earnings press release text.\n\n*Source: {url}*"
@@ -756,7 +763,9 @@ def _section14_capital_return(ticker: str, ex99_text: str, accn: str, filed: str
     excerpt = sf._keyword_window(ex99_text, r"repurchas\w*|dividend\w*", before=300, after=1500)
     if not excerpt:
         return "N/A -- no buyback or dividend language found in this release."
-    prompt = CAPITAL_RETURN_PROMPT.format(ticker=ticker, accn=accn, filed=filed, excerpt=excerpt)
+    um = re.search(r"in\s+(millions|thousands|billions)", ex99_text, re.I)  # the excerpt window usually misses the header
+    units = f"stated {um.group(0).lower()}" if um else "of unstated units, so do not assume any"
+    prompt = CAPITAL_RETURN_PROMPT.format(ticker=ticker, accn=accn, filed=filed, excerpt=excerpt, units=units)
     try:
         return _generate(prompt)
     except Exception as exc:
