@@ -51,8 +51,8 @@ def create_database(parent_page_id: str, api_key: str) -> str:
             "Eating end": {"rich_text": {}},
             "Eating hours": {"number": {"format": "number"}},
             "Fast hours": {"number": {"format": "number"}},
-            "Window ≤8h": {"checkbox": {}},
-            "Fast ≥16h": {"checkbox": {}},
+            "Window ≤8h": {"select": {}},
+            "Fast ≥16h": {"select": {}},
             "Weight kg": {"number": {"format": "number"}},
             "7-day avg kg": {"number": {"format": "number"}},
             "To target kg": {"number": {"format": "number"}},
@@ -73,6 +73,11 @@ def _num(v):
     return {"number": v}
 
 
+def _yes_no(v):
+    """Select cell: Yes/No, blank when unknown (a checkbox can't say 'unknown')."""
+    return {"select": None if v is None else {"name": "Yes" if v else "No"}}
+
+
 def row_properties(row: dict, state: dict) -> dict:
     avg = _weight_avg(state, row["date"])
     props = {
@@ -82,8 +87,8 @@ def row_properties(row: dict, state: dict) -> dict:
         "Eating end": {"rich_text": ns._rich(row["end"] or "")},
         "Eating hours": _num(row["span_hours"]),
         "Fast hours": _num(row["fast_hours"]),
-        "Window ≤8h": {"checkbox": row["window_ok"] is True},
-        "Fast ≥16h": {"checkbox": row["fast_ok"] is True},
+        "Window ≤8h": _yes_no(row["window_ok"]),
+        "Fast ≥16h": _yes_no(row["fast_ok"]),
         "Weight kg": _num(row["weight"]),
         "7-day avg kg": _num(avg),
         "To target kg": _num(round(row["weight"] - hl.TARGET_WEIGHT, 1) if row["weight"] is not None else None),
