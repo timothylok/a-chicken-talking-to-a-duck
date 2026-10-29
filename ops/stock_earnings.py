@@ -363,8 +363,11 @@ def _extract_income_figures(text: str) -> dict:
             m_abs_end = rev_end + m.end() if m else None  # same slice-offset fix as above
         if not m:
             # SPCX: "Diluted $ 0.35 $ (0.36) ..." -- a loss year is printed
-            # in parentheses, so the plain _NUM tiers can't read it.
-            m = re.search(r"Diluted\s+(\(?[\d,.]+\)?)\s+(\(?[\d,.]+\)?)", text[rev_end:rev_end + 30000])
+            # in parentheses, so the plain _NUM tiers can't read it. Both values
+            # need a decimal point: without it this skipped MSFT's "Diluted
+            # $4.92 $3.72" (the "$") and took the weighted-average-shares row
+            # "Diluted 7,446 7,466" as EPS (2026-10-30).
+            m = re.search(r"Diluted\s+\$?\s*(\(?\d[\d,]*\.\d+\)?)\s+\$?\s*(\(?\d[\d,]*\.\d+\)?)", text[rev_end:rev_end + 30000])
             order_pos = rev_start if m else None
             m_abs_end = rev_end + m.end() if m else None
         if not m:
@@ -644,6 +647,15 @@ def _section9_beat_miss(figures: dict, consensus: "dict | None") -> str:
                 f"${fc:.2f} ({consensus.get('num_estimates') or '?'} estimates) -- the consensus matches GAAP but "
                 "not adjusted EPS, so its basis is unclear and no beat/miss is called."
             )
+        elif "eps_adjusted" not in figures and fc and abs(diff) / abs(fc) > 0.25:
+            # GOOGL 2026-10-30: GAAP $2.12 vs consensus $2.94 (-28%) -- Q3 carried an $8.7B
+            # equity-securities loss the Street figure almost certainly excludes, and GOOGL
+            # reports no adjusted EPS to compare, so a "miss" would be an artefact.
+            lines.append(
+                f"EPS: GAAP ${compare_eps:.2f} vs. Nasdaq consensus ${fc:.2f} ({_pct(pct)}, "
+                f"{consensus.get('num_estimates') or '?'} estimates) -- a gap this large usually means the consensus "
+                "excludes one-off items and this filer reports no adjusted EPS, so no beat/miss is called."
+            )
         else:
             if "eps_adjusted" in figures:
                 basis_note = f" (basis: adjusted/non-GAAP; GAAP diluted EPS was ${figures['eps_cur']:.2f})"
@@ -705,10 +717,10 @@ def _segment_excerpt(text: str) -> "str | None":
 # 10-Q prose, Llama 3.3 70B labelled AAPL's rising Americas/Europe growth
 # (9->11->12%) "decelerating" on 2 of 2 runs and qwen3:8b called it "steady"
 # (2026-10-02). The LLM now only narrates the labels below.
-_NUM = r"(\d{1,3}(?:,\d{3})+|\d+)"
+_SEG_NUM = r"(\d{1,3}(?:,\d{3})+|\d+)"  # not _NUM: that name is the EPS-table pattern above
 # AAPL-style table row: "Europe 29,395 24,014 22%" -- name, current quarter,
 # same quarter last year, printed change (ignored; recomputed from the dollars).
-_SEG_ROW = re.compile(r"([A-Z][A-Za-z&,.' ]{1,40}?)\s+\$?\s*" + _NUM + r"\s+\$?\s*" + _NUM + r"\s+\(?\d+\)?\s*%")
+_SEG_ROW = re.compile(r"([A-Z][A-Za-z&,.' ]{1,40}?)\s+\$?\s*" + _SEG_NUM + r"\s+\$?\s*" + _SEG_NUM + r"\s+\(?\d+\)?\s*%")
 # TSLA-style prose: "Automotive sales revenue increased $4.22 billion, or 27%,
 # in the three months ended ..." (the six-month sentences are skipped).
 _SEG_PROSE = re.compile(r"\b([A-Z][a-z]+(?:\s+[a-z&]+){0,4}\s+revenues?)\s+(increased|decreased)\s+\$[\d.,]+\s*(?:billion|million)?,\s+or\s+(\d+(?:\.\d+)?)%,\s+in the three months ended")
