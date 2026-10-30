@@ -683,7 +683,11 @@ def _section9_beat_miss(figures: dict, consensus: "dict | None") -> str:
 def _section11_guidance(ticker: str, ex99_text: str, prior: "dict | None", accn: str, filed: str) -> str:
     if not ex99_text:
         return "N/A -- could not fetch the earnings press release text."
-    excerpt = (sf._extract_section(ex99_text, r"Business\s+Outlook", r"Webcast|Conference\s+Call|Non-GAAP\s+Financial", max_len=2000)
+    # "outlook for the third quarter ... is as follows" is NVIDIA's real outlook;
+    # its forward-looking-statements boilerplate also says "business outlook",
+    # which the Business Outlook heading match below would otherwise take.
+    excerpt = (sf._keyword_window(ex99_text, r"outlook\s+for\s+[^.]{0,80}\s+is\s+as\s+follows", before=100, after=1500)
+               or sf._extract_section(ex99_text, r"Business\s+Outlook", r"Webcast|Conference\s+Call|Non-GAAP\s+Financial", max_len=2000)
                or sf._keyword_window(ex99_text, r"Financial\s+Guidance", before=200, after=1800)
                or sf._keyword_window(ex99_text, r"guidance|outlook|expects?\s+(revenue|EPS)", before=200, after=1800))
     if not excerpt:
