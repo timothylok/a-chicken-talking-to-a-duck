@@ -684,6 +684,7 @@ def _section11_guidance(ticker: str, ex99_text: str, prior: "dict | None", accn:
     if not ex99_text:
         return "N/A -- could not fetch the earnings press release text."
     excerpt = (sf._extract_section(ex99_text, r"Business\s+Outlook", r"Webcast|Conference\s+Call|Non-GAAP\s+Financial", max_len=2000)
+               or sf._keyword_window(ex99_text, r"Financial\s+Guidance", before=200, after=1800)
                or sf._keyword_window(ex99_text, r"guidance|outlook|expects?\s+(revenue|EPS)", before=200, after=1800))
     if not excerpt:
         return "N/A -- no guidance or outlook language found in this release."
