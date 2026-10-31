@@ -376,6 +376,15 @@ def main() -> None:
             _check_and_alert(notify, state, today, product_id, f"{title}（{merchant}）",
                              offer["price"], data.get("url", ""),
                              identity=str(offer.get("merchant_id") or merchant))
+        except RuntimeError as exc:
+            # PriceSpy drops a product page's Product schema once no shop lists
+            # it, and the CLI dies on that -- the same state as "no in-stock
+            # offer" (17276716, 2026-10-29), so treat it the same way.
+            if "could not find public Product schema" not in str(exc):
+                log.exception("%s: check failed", product_id)
+                continue
+            log.warning("%s: no Product schema, so no shop lists it", product_id)
+            _mark_out_of_stock(state, product_id, product_id)
         except Exception:
             log.exception("%s: check failed", product_id)
         finally:
