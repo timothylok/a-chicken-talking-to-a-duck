@@ -108,8 +108,7 @@ TRADEME_SEARCHES = _parse_trademe_searches(os.environ.get("PRICEWATCH_TRADEME_SE
 DEFAULT_URLS = (
     "https://glenfield.shop.thebottleo.co.nz/lines/aberlour-12-year-old-double-cask-matured-700ml,"
     "https://www.superliquor.co.nz/aberlour-12yo-double-cask-matured-single-malt-700ml,"
-    "https://www.footlocker.co.nz/en/product/jordan-1-mid-se-men-shoes/284106302504.html,"
-    "https://addictedtoaudio.co.nz/collections/cd-players/products/fiio-snowsky-beatbox-portable-cd-player"
+    "https://www.footlocker.co.nz/en/product/jordan-1-mid-se-men-shoes/284106302504.html"
 )
 URLS = [u.strip() for u in os.environ.get("PRICEWATCH_URLS", DEFAULT_URLS).split(",") if u.strip()]
 # Minimum day-over-day fall, in percent, before an alert is worth sending.
