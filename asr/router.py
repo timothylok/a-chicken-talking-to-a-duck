@@ -1713,6 +1713,7 @@ COMMANDS = {
             "邊度入油平", "入油", "fuel price", "fuel prices", "petrol price",
             "gas price",
             "有加",  # observed 2026-07-14: 油價 misheard on a short clip
+            "又加", "今日又加", "癲有家家",  # observed 2026-11-09: 今日油價 misheard, fell through to chat
             "casaprice",  # observed 2026-07-14: "gas price" run together
             "油家",  # observed 2026-07-15: cantonese fine-tune's near-miss
             "油㗎",  # same clip on GPU int8_float16
