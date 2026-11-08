@@ -73,6 +73,11 @@ def notify_discord(title: str, message: str) -> bool:
         return False
 
 
+def report_failure(job: str, detail: str) -> bool:
+    """Post a scheduled-job failure to Discord. The caller writes the local log line."""
+    return notify_discord(f"{job} failed", detail)
+
+
 if __name__ == "__main__":
     if len(sys.argv) < 3:
         sys.exit("usage: notify.py <title> <message> [priority 1-5]")

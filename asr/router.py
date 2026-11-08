@@ -595,12 +595,45 @@ def _run_skill(cli: str, *args: str, timeout: int = 30) -> dict:
     # PYTHONIOENCODING forces the child's stdout to UTF-8: under the service
     # it defaults to cp1252, and JSON containing macrons (rūnanga, Whangārei)
     # kills the child with UnicodeEncodeError before it prints anything.
-    out = subprocess.run(
-        [sys.executable, cli, *args],
-        capture_output=True, text=True, encoding="utf-8", timeout=timeout,
-        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
-    )
-    return json.loads(out.stdout)
+    name = os.path.basename(cli)
+    try:
+        out = subprocess.run(
+            [sys.executable, cli, *args],
+            capture_output=True, text=True, encoding="utf-8", timeout=timeout,
+            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+        )
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"{name} gave no answer within {timeout}s (upstream slow or unreachable)") from None
+    try:
+        return json.loads(out.stdout)
+    except ValueError:
+        # Say what the CLI said: a bare JSONDecodeError hid a DNS failure
+        # behind an empty stdout (milk watch, 2026-11-09).
+        stderr = (out.stderr or "").strip()[-300:]
+        raise RuntimeError(
+            f"{name} exited {out.returncode} with no JSON: {_classify_failure(stderr)}; stderr: {stderr or '(empty)'}"
+        ) from None
+
+
+_FAILURE_CAUSES = (
+    (r"getaddrinfo|11001|name or service not known|nameresolution", "DNS lookup failed"),
+    (r"timed out|timeout", "upstream timed out"),
+    (r"refused|10061", "connection refused"),
+    (r"reset|10054|remotedisconnected|connection aborted", "connection dropped"),
+    (r"certificate|ssl", "TLS error"),
+    (r"http error (\d{3})|status[ _]?code\D{0,3}(\d{3})", "upstream HTTP error"),
+)
+
+
+def _classify_failure(text: str) -> str:
+    """Short cause label from a CLI's stderr; 'cause unknown' when nothing matches."""
+    low = text.lower()
+    for pattern, label in _FAILURE_CAUSES:
+        m = re.search(pattern, low)
+        if m:
+            code = next((g for g in m.groups() if g), "")
+            return f"{label} {code}".strip()
+    return "cause unknown"
 
 
 # TheColab geonet-nz skill: GeoNet public quake feed, keyless. MMI >= 3

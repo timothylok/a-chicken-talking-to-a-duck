@@ -22,7 +22,6 @@ import datetime as dt
 import json
 import logging
 import os
-import subprocess
 import sys
 import zoneinfo
 
@@ -32,6 +31,7 @@ LOG_PATH = os.path.join(ROOT, "asr", "logs", f"fuelwatch-{dt.date.today():%Y-%m-
 GASPY_CLI = "D:/ai/thecolab-skills/skills/gaspy-nz/scripts/cli.py"
 NZ_TZ = zoneinfo.ZoneInfo("Pacific/Auckland")
 FUELS = {"91": "91", "95": "95", "diesel": "Diesel"}
+sys.path.insert(0, os.path.join(ROOT, "asr"))
 sys.path.insert(0, os.path.join(ROOT, "ops"))
 
 os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
@@ -45,11 +45,9 @@ import notion_sync as ns  # noqa: E402  (reuses its Notion HTTP helper and confi
 
 
 def fetch_prices() -> dict:
-    out = subprocess.run(
-        [sys.executable, GASPY_CLI, "prices", "--json"],
-        capture_output=True, text=True, encoding="utf-8", timeout=60, check=True,
-    ).stdout
-    by_fuel = {p["fuel"]: p for p in json.loads(out)["prices"]}
+    from router import _run_skill  # labels DNS/timeout/HTTP failures instead of a bare exit status
+
+    by_fuel = {p["fuel"]: p for p in _run_skill(GASPY_CLI, "prices", "--json", timeout=60)["prices"]}
     missing = [f for f in FUELS if f not in by_fuel]
     if missing:
         raise RuntimeError(f"gaspy returned no price for {missing}")
@@ -142,6 +140,9 @@ def main() -> None:
         run(dry="--dry" in sys.argv)
     except Exception as exc:
         log.error("fuelwatch stopped: %s", exc)
+        from notify import report_failure
+        sent = report_failure("Fuel watch", str(exc))
+        log.info("failure report to Discord %s", "sent" if sent else "NOT sent")
         sys.exit(1)
 
 

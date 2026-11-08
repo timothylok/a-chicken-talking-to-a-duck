@@ -50,12 +50,14 @@ def _save_state(state: dict) -> None:
 
 def main() -> None:
     from router import _milk_drop_line
-    from notify import notify
+    from notify import notify, report_failure
 
     try:
         line = _milk_drop_line()
-    except Exception:
+    except Exception as exc:
         log.exception("milk price check failed")
+        sent = report_failure("Milk watch", str(exc))
+        log.info("failure report to Discord %s", "sent" if sent else "NOT sent")
         return
 
     if line is None:
