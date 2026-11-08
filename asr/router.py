@@ -65,32 +65,14 @@ OLLAMA_CHAT_MAX_TOKENS = int(os.environ.get("OLLAMA_CHAT_MAX_TOKENS", "160"))
 # so the next chat pays a 13.7 s reload plus ~7 s of uncached prompt eval on top
 # of generation. Measured 27 s cold end to end, which left no headroom at 30 s.
 OLLAMA_CHAT_TIMEOUT = int(os.environ.get("OLLAMA_CHAT_TIMEOUT", "60"))
-OLLAMA_SYSTEM_PROMPT = """\
-你而家唔係一個 AI 助手。你係「周星馳」，係一個穿越咗去平行時空嘅喜劇之王，你嘅靈魂融合晒你演過嘅所有角色——由《賭聖》左頌星、《逃學威龍》周星星、《審死官》宋世傑、《鹿鼎記》韋小寶、《國產凌凌漆》凌凌漆，到《西遊記》至尊寶，全部一鑊過炒埋一碟。
-
-你嘅說話風格必須嚴格遵守以下規則：
-
-1. 終極無厘頭：每一句回覆都要有極度誇張、意想不到嘅轉折。唔需要邏輯，最緊要夠突然、夠騎呢。將兩件完全無關係嘅事撈埋一齊講。
-2. 經典對白大雜燴：將你啲電影金句改詞、亂入、重新組裝。例如：「曾經有一碗又燒味同我講...」、「你呀媽係女人，但係你點證明你呀媽係女人？我就話佢係一隻恐龍！」、「小強！小強你唔好死呀小強！你死咗邊個同我爭叉燒飯食呀？」
-3. 廣東話粗鄙但親切嘅語氣：大量使用「咩呀？」、「點呀？」、「搞錯呀？」、「你講嘢呀？」、「定係咁呀？」、「呢位施主...」。稱呼對方做「大佬」、「細佬」、「靚仔/靚女」、「施主」或者「朋友」，視乎語境亂咁嗌。
-4. 肢體動作與音效：經常描述自己嘅誇張動作同配音，例如：「等我除咗對孖煙囪，笠喺你頭上...」、「（突然從身後拎出一個銻煲）鏘鏘！你睇吓呢個係咩？係尚方寶劍，即係鹹魚！」、「我啱啱練成咗無敵風火輪，你信唔信我成個人攬住你碌落樓梯呀？」
-5. 答非所問，事後強行解釋：當人哋問一個正常問題，你要用一個極荒謬嘅角度回答，然後再兜番個歪理出嚟。例如，人哋問：「今日天氣點呀？」你要答：「天氣？我一向憑感覺。我感覺到...廚房碗泡麵夠鐘食啦，泡麵同天氣有咩關係？關係大喇！泡麵淥得太耐會腍，就好似你嘅愛情一樣，軟弱無力呀朋友！」
-
-終極示範：
-
-· 如果人哋問你：「你可唔可以幫我手？」
-  · 你就要答：「幫手？冇問題。我周星星，字膠吹，號閒人。上天賜我一副好心腸，就係要嚟用嘅。不過凡事都有代價，你幫我搵返當年跌咗落街嘅嗰粒鼻屎先，我實幫你。」
-· 如果人哋同你講：「我失戀。」
-  · 你就要答：「失戀？唏！你睇吓呢杯水（拎起杯水），佢而家好平靜，但係只要我落一匙羹阿華田...（倒阿華田粉落去）你睇！佢就激動到好似你而家個心咁，好似濤濤江水連綿不絕。所以我哋嘅結論係咩？就係要落多啲糖，沖杯好嘢飲，忘記咗佢！坐低飲杯茶，食個包，食完個包，我哋再叫多個外賣！」
-
-記住，你而家嘅任務，就係將所有對話變成一場周星馳電影嘅即興創作。開始表演啦，你係主角！
-
-最後一條技術規則，凌駕一切（包括上面第4條）：你嘅回覆會經電話語音一字一字讀出嚟，所以絕對唔准用括號描述動作或者音效——所有嘢要用對白講出嚟。無論幾誇張，每次回覆最多三句，短小精悍，一擊即中，講完即收。"""
-# The final rule above is an operational constraint, not part of the user's
-# persona text: replies are spoken by iOS TTS, so parenthetical stage
-# directions get read aloud, and unconstrained gemma3:4b generates 600+ char
-# replies (38-50 s on this GPU), past both the 30 s chat timeout and the
-# phone's patience.
+OLLAMA_SYSTEM_PROMPT = (
+    "你係一個喺電話度用語音傾偈嘅助手。用自然、口語嘅廣東話回答，唔好用書面語或者普通話。"
+    "盡量俾出具體答案，唔好輕易講唔知；真係完全唔識先講唔知，唔好作嘢。你可以參考之前嘅對話。直接答問題，唔好加「喂」「哎呀」呢類開場白。"
+    "回覆會由電話語音一字一字讀出嚟，所以唔准用括號、符號、列表或者表情；最多三句，簡短直接，答完即停。"
+)
+# The last sentence is operational: replies are spoken by iOS TTS, so symbols
+# get read aloud, and long replies run past the chat timeout and the phone's
+# patience (gemma3:4b unconstrained: 600+ chars, 38-50 s on this GPU).
 
 # Populated by server.py at startup.
 status_info = {"model": "?", "device": "?", "started": time.time()}
@@ -2065,11 +2047,11 @@ def _load_macros() -> None:
 _load_macros()
 
 
-def _recent_chat_turns(max_turns: int = 5, max_age_s: int = 1800) -> list:
+def _recent_chat_turns(max_turns: int = 8, max_age_s: int = 7200) -> list:
     # Short-term conversation memory: replay the last few chat exchanges so
     # follow-ups make sense. All channels share one thread (single-user
     # system); command entries are excluded — chat stays reply-only either
-    # way. Capped at 5 turns / 30 min to bound prompt-eval latency.
+    # way. Capped at 8 turns / 2 h to bound prompt-eval latency.
     # Best-effort: any read failure just means a memoryless reply.
     turns = []
     try:
@@ -2097,24 +2079,6 @@ def _recent_chat_turns(max_turns: int = 5, max_age_s: int = 1800) -> list:
     return messages
 
 
-def _persona_prompt() -> str:
-    # Blend rotating real quotes (asr/quotes.json) into the persona so replies
-    # draw on more than the few examples baked into the prompt — without them
-    # gemma3:4b recycles the same four lines. Seeded by the hour, not per call:
-    # a per-call shuffle would break Ollama's KV prefix cache and force a full
-    # persona+history re-eval on every reply.
-    return (
-        OLLAMA_SYSTEM_PROMPT
-        + "\n\n呢個鐘頭你腦入面浮起咗呢幾句你自己嘅經典對白。如果啱題，最多揀一句嚟改詞發揮；"
-        + "唔啱題就一句都唔好用。絕對唔准原句照抄，更加唔准將幾句對白堆喺回覆結尾：\n"
-        + "\n".join("· " + q for q in _hour_quotes())
-    )
-
-
-def _hour_quotes() -> list:
-    return random.Random(dt.datetime.now(NZ_TZ).strftime("%Y%m%d%H")).sample(QUOTES, 5)
-
-
 def _ollama_fallback(text: str) -> dict:
     # Chat mode for phrases that match no command. Reply-only: the LLM's
     # output is spoken back, never routed into COMMANDS.
@@ -2122,7 +2086,7 @@ def _ollama_fallback(text: str) -> dict:
     payload = json.dumps({
         "model": OLLAMA_CHAT_MODEL,
         "messages": [
-            {"role": "system", "content": _persona_prompt()},
+            {"role": "system", "content": OLLAMA_SYSTEM_PROMPT},
             *history,
             {"role": "user", "content": text},
         ],
@@ -2154,23 +2118,10 @@ def _ollama_fallback(text: str) -> dict:
         m = re.search(r"^.*[。！？!?…][」』）)\"']*", reply, re.S)
         if m:
             reply = m.group(0)
-    # The persona demands parenthetical stage directions and gemma3:4b keeps
-    # emitting them despite the prompt's ban; TTS would read them aloud, so
-    # strip them code-side (same approach as _snap_weekday).
+    # gemma3:4b still emits parenthetical asides despite the prompt's ban; TTS
+    # would read them aloud, so strip them code-side (same approach as _snap_weekday).
     reply = re.sub(r"[（(][^）)]*[）)]", "", reply)
     reply = re.sub(r"[ \t]{2,}", " ", reply).strip()
-    # gemma3:4b also ignores the "never dump quotes at the end" rule: chop
-    # trailing sentences that are verbatim (normalized) copies of this hour's
-    # injected quotes. Mid-reply use stays — that's the blending we want.
-    quote_norms = {_normalize(q) for q in _hour_quotes()}
-    while True:
-        m = re.search(r"([^。！？!?…]+[。！？!?…]*)\s*$", reply)
-        if not m or _normalize(m.group(1)) not in quote_norms:
-            break
-        trimmed = reply[: m.start()].rstrip()
-        if not trimmed:
-            break  # never strip the reply down to nothing
-        reply = trimmed
     # With conversation memory the model parrots whole riffs from its own
     # past replies verbatim every turn (the 阿華田 bit hit 100% of replies).
     # Drop sentences that verbatim-repeat a long sentence from an injected
