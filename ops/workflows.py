@@ -230,6 +230,13 @@ def _check_schedules(rules: list, state: dict, now: dt.datetime) -> None:
                 attempts[rule["id"]] = [today, n]
 
 
+def _save_state(state: dict) -> None:
+    if DRY_RUN:
+        return
+    with open(STATE, "w", encoding="utf-8") as f:
+        json.dump(state, f)
+
+
 def _check_history(rules: list, state: dict) -> None:
     history_rules = [
         r for r in rules
@@ -267,6 +274,11 @@ def _check_history(rules: list, state: dict) -> None:
             if entry.get("source") == "workflow":
                 continue
             log.info("%s: history trigger matched %r", rule["id"], entry.get("text"))
+            # Persist the cursor before acting: a run killed mid-action (hung DNS
+            # in ntfy, 2026-11-08) never reached the end-of-run save and replayed
+            # the same entry every run for ~19 h. The result of _fire is ignored
+            # for history rules anyway, so this adds no new lost-alert case.
+            _save_state(state)
             _fire(rule, entry)
 
 
@@ -287,9 +299,8 @@ def main() -> None:
     before = json.dumps(state, sort_keys=True)
     _check_schedules(rules, state, dt.datetime.now(NZ_TZ))
     _check_history(rules, state)
-    if not DRY_RUN and json.dumps(state, sort_keys=True) != before:
-        with open(STATE, "w", encoding="utf-8") as f:
-            json.dump(state, f)
+    if json.dumps(state, sort_keys=True) != before:
+        _save_state(state)
 
 
 if __name__ == "__main__":
