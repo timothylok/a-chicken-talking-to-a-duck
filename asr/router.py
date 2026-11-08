@@ -52,7 +52,11 @@ OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "gemma3:4b")
 # (971 MB free observed) — real voice calls fell back to CPU and blew the
 # 30 s timeout ("chat engine unavailable" in production). Defaulted back
 # to gemma3:4b; only worth revisiting on hardware with more VRAM headroom.
-OLLAMA_CHAT_MODEL = os.environ.get("OLLAMA_CHAT_MODEL", "gemma3:4b")
+# 2026-11-09: switched to qwen3:8b for the plain-assistant chat -- gemma3:4b
+# gave wrong facts (Japan "14万") and copied its own bad replies back; qwen3:8b
+# answered correctly in a 10-prompt benchmark at ~6 s vs ~4.6 s median. If chat
+# times out or the GPU thrashes, set OLLAMA_CHAT_MODEL=gemma3:4b to revert.
+OLLAMA_CHAT_MODEL = os.environ.get("OLLAMA_CHAT_MODEL", "qwen3:8b")
 # Cap the chat reply's length. Uncapped, an open question ("點解香港人咁鍾意飲奶茶
 # 呀，同我講吓歷史") ran 420 tokens / 31.3 s on a *warm* model and blew the 30 s
 # timeout below, turning a good answer into "chat engine unavailable"
@@ -2047,6 +2051,14 @@ def _load_macros() -> None:
 _load_macros()
 
 
+# Chat replies from before the plain-assistant / qwen3:8b switch are not replayed:
+# the Stephen Chow persona ones made it imitate the persona, and gemma3:4b's wrong
+# facts (Japan "14万") were copied back by qwen3 (2026-11-09). Safe to delete once
+# the 2 h replay window (max_age_s) has passed this moment.
+_CHAT_HISTORY_FLOOR = dt.datetime.fromisoformat("2026-11-09T11:02:00+13:00")
+_CHAT_GIVEUP = re.compile("唔知|唔識|唔記得|對唔住|抱歉|唔好意思|唔好再問")
+
+
 def _recent_chat_turns(max_turns: int = 8, max_age_s: int = 7200) -> list:
     # Short-term conversation memory: replay the last few chat exchanges so
     # follow-ups make sense. All channels share one thread (single-user
@@ -2065,7 +2077,12 @@ def _recent_chat_turns(max_turns: int = 8, max_age_s: int = 7200) -> list:
                 entry = json.loads(line)
                 if entry.get("status") != "chat" or not entry.get("reply"):
                     continue
-                if dt.datetime.fromisoformat(entry["ts"]) < cutoff:
+                ts = dt.datetime.fromisoformat(entry["ts"])
+                if ts < cutoff or ts < _CHAT_HISTORY_FLOOR:
+                    continue
+                # A 4B model copies its own earlier replies: one "唔知" in the
+                # replay made it answer 唔知 to everything after it (2026-11-09).
+                if _CHAT_GIVEUP.search(entry["reply"]):
                     continue
             except (ValueError, KeyError, TypeError):
                 continue
@@ -2091,6 +2108,7 @@ def _ollama_fallback(text: str) -> dict:
             {"role": "user", "content": text},
         ],
         "stream": False,
+        "think": False,  # qwen3 would spend the whole token cap on hidden reasoning
         "keep_alive": "24h",
         "options": {"num_predict": OLLAMA_CHAT_MAX_TOKENS},
     }).encode()
@@ -2174,6 +2192,7 @@ def _recall(text: str) -> dict:
                                         f"（搵：{terms or '所有嘢'}{f'，日子：{start}至{end}' if start else ''}）"},
         ],
         "stream": False,
+        "think": False,  # qwen3 would spend the whole token cap on hidden reasoning
         "keep_alive": "24h",
         "options": {"num_predict": OLLAMA_CHAT_MAX_TOKENS},
     }).encode()
