@@ -2173,8 +2173,12 @@ def _ollama_fallback(text: str) -> dict:
     # Chat mode for phrases that match no command. Reply-only: the LLM's
     # output is spoken back, never routed into COMMANDS.
     history = _recent_chat_turns()
+    now = dt.datetime.now(NZ_TZ)
     messages = [
-        {"role": "system", "content": OLLAMA_SYSTEM_PROMPT},
+        # The date is the only per-call addition: without it "黑色星期五係幾時"
+        # and similar get a rule instead of a date (2026-11-09).
+        {"role": "system", "content": OLLAMA_SYSTEM_PROMPT
+            + f"今日係紐西蘭時間{now.year}年{now.month}月{now.day}日星期{'一二三四五六日'[now.weekday()]}。"},
         *history,
         {"role": "user", "content": text},
     ]
@@ -2264,6 +2268,9 @@ def _recall(text: str) -> dict:
     # turns, so it must stay out of the Notion mirror (commands only) and age
     # out with chat under the 30-day prune -- both key on command == null.
     terms, start, end = recall.parse_query(text, dt.datetime.now(NZ_TZ))
+    if not terms and not start:
+        # Bare "記唔記得？" has nothing to search for; say so instead of 搵唔到.
+        return {"command": None, "status": "recall", "reply": "你想我記返乜嘢？講個題目或者日子都得"}
     hits = recall.search(recall.load_entries(HISTORY_PATH), terms, start, end)
     log.info("recall %r: terms=%r range=%s..%s hits=%d", text, terms, start, end, len(hits))
     if not hits:
