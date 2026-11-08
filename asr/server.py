@@ -83,12 +83,15 @@ threading.Thread(target=warm_ollama, daemon=True).start()
 # to speak: 尊嚴 was transcribed as its near-homophone 專業. Recurring personal
 # vocabulary earns a slot the same way: 針灸 came back as the non-word 針舊
 # (2026-08-27), which then derailed the reminder extraction downstream.
-INITIAL_PROMPT = "以下係廣東話指令或者問題。" + "。".join(
+# 紐西蘭 was heard as 流西蘭 and 澳洲 is a common chat country (2026-11-09). The
+# prompt sat at 217 of ~223 tokens, so the 12-token intro sentence was dropped
+# to make room -- anything added without a cut pushes real commands out the front.
+INITIAL_PROMPT = "。".join(
     p for p in (
         next((p for p in spec["phrases"] if not p.isascii()), None)
         for spec in COMMANDS.values()
     ) if p
-) + "。確認。取消。人最緊要係尊嚴。做人如果冇夢想，同條鹹魚有咩分別呀。老豆即係爸爸。去針灸。"
+) + "。確認。取消。紐西蘭。澳洲。人最緊要係尊嚴。做人如果冇夢想，同條鹹魚有咩分別呀。老豆即係爸爸。去針灸。"
 
 # Opt-in benchmark capture (ops/asr_bench.py): when ASR_CAPTURE_DIR is set,
 # every request's audio + transcript is saved there for offline model
