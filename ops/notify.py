@@ -17,11 +17,15 @@ non-sensitive (say "check the dashboard", not the numbers).
 
 import base64
 import json
+import logging
 import os
 import sys
+import time
 import urllib.request
 
 CONFIG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ntfy.json")
+FAILURE_STATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "asr", "logs", "job_failures.json")
+FAILURE_QUIET_SECS = 3600
 
 
 def notify(title: str, message: str, priority: int = 3) -> bool:
@@ -76,6 +80,31 @@ def notify_discord(title: str, message: str) -> bool:
 def report_failure(job: str, detail: str) -> bool:
     """Post a scheduled-job failure to Discord. The caller writes the local log line."""
     return notify_discord(f"{job} failed", detail)
+
+
+def run_job(job: str, fn):
+    """Run a scheduled job's main(). An uncaught exception is written to the job's
+    own log (pythonw discards stderr, so it used to vanish), posted to Discord at
+    most once per FAILURE_QUIET_SECS per job (an every-minute task would otherwise
+    page every minute), then exits 1 like the traceback it replaces."""
+    try:
+        return fn()
+    except Exception as exc:
+        logging.getLogger(job).exception("%s crashed", job)
+        try:
+            with open(FAILURE_STATE, encoding="utf-8") as f:
+                state = json.load(f)
+        except (OSError, ValueError):
+            state = {}
+        now = time.time()
+        if now - state.get(job, 0) >= FAILURE_QUIET_SECS:
+            sent = report_failure(job, f"{type(exc).__name__}: {exc}"[:1500])
+            logging.getLogger(job).info("crash report to Discord %s", "sent" if sent else "NOT sent")
+            if sent:
+                state[job] = now
+                with open(FAILURE_STATE, "w", encoding="utf-8") as f:
+                    json.dump(state, f)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

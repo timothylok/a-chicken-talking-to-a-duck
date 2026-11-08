@@ -159,5 +159,10 @@ def prune_rotated_logs() -> None:
 
 
 if __name__ == "__main__":
-    prune_history()
-    prune_rotated_logs()
+    from notify import run_job
+
+    def _prune_all():
+        prune_history()
+        prune_rotated_logs()
+
+    run_job("prune_logs", _prune_all)

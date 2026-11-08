@@ -81,4 +81,6 @@ def publish() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    from notify import run_job
+
+    run_job("deploy_dashboard", main)

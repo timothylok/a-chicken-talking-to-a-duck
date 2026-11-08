@@ -600,4 +600,6 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    from notify import run_job
+
+    run_job("stock_day_range", main)
