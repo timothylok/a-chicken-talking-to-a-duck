@@ -88,13 +88,13 @@ threading.Thread(target=warm_ollama, daemon=True).start()
 # to make room -- anything added without a cut pushes real commands out the front.
 # 有幾多人口 because 人口 kept coming back as 人好 (3 times, 2026-11-09). The two
 # Stephen Chow quotes (尊嚴, 鹹魚) went when the persona did, freeing ~30 tokens for
-# country/city names Whisper mangled (奧克蘭, 印度, 中國 -> 黑爛, 因對, 殺國). 214 tokens.
+# country/city names Whisper mangled (奧克蘭, 印度, 中國, 悉尼 -> 黑爛, 因對, 殺國, 說你). 219 tokens.
 INITIAL_PROMPT = "。".join(
     p for p in (
         next((p for p in spec["phrases"] if not p.isascii()), None)
         for spec in COMMANDS.values()
     ) if p
-) + "。確認。取消。奧克蘭。紐西蘭。澳洲。香港。日本。中國。印度。美國。新加坡。東京。有幾多人口。老豆即係爸爸。去針灸。"
+) + "。確認。取消。奧克蘭。悉尼。紐西蘭。澳洲。香港。日本。中國。印度。美國。新加坡。東京。有幾多人口。老豆即係爸爸。去針灸。"
 
 # Opt-in benchmark capture (ops/asr_bench.py): when ASR_CAPTURE_DIR is set,
 # every request's audio + transcript is saved there for offline model
