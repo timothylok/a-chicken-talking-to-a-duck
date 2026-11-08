@@ -1937,7 +1937,11 @@ COMMANDS = {
             # observed 2026-07-14: user naturally says 重置/系統重置/重啟系統
             "重置語音系統", "重置语音系统", "系統重置", "系统重置",
             "重啟系統", "重启系统", "重启系統",  # last: mixed-script as Whisper emits it
-            "restart voice system",
+            "restart voice system", "restart voice os",
+            # observed 2026-11-09: 重啟 said after 系統, which fell through to chat;
+            # the last two are Whisper's mishearings of 語音系統重啟 / 系統重啟
+            "語音系統重啟", "语音系统重启", "系統重啟", "系统重启",
+            "語音系統重解", "系統蟲計",
         ],
         "destructive": False,
         "run": _restart_service,
