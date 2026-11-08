@@ -2096,35 +2096,113 @@ def _recent_chat_turns(max_turns: int = 8, max_age_s: int = 7200) -> list:
     return messages
 
 
+# Cloudflare Workers AI answers chat first: a 4-8B local model gave wrong facts
+# (Japan 37M, Singapore 580k; 2026-11-09) where Llama 3.3 70B did not. SECURITY.md
+# records the owner's decision (2026-11-09) that chat turns may go there; the
+# local model is the fallback. Same ledger as the stock jobs so the free tier's
+# 10,000 neurons/day stays one count; chat stops at CHAT_NEURON_CEILING so it
+# can't starve the report jobs (~3,300/day).
+WORKERS_AI_CHAT_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+WORKERS_AI_LEDGER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", "workers_ai_usage.jsonl")
+CHAT_NEURON_CEILING = 8500
+
+
+def _utc_day() -> str:
+    return dt.datetime.now(dt.timezone.utc).date().isoformat()
+
+
+def _workers_ai_neurons_today() -> float:
+    day, total = _utc_day(), 0.0
+    try:
+        with open(WORKERS_AI_LEDGER, encoding="utf-8") as f:
+            for line in f:
+                try:
+                    row = json.loads(line)
+                except ValueError:
+                    continue
+                if row.get("day") == day:
+                    total += row.get("neurons", 0)
+    except OSError:
+        pass
+    return total
+
+
+def _workers_ai_chat(messages: list) -> "tuple[str, bool]":
+    """(reply, truncated) from Workers AI; raises on any failure so the caller falls back."""
+    env = {}
+    # Only the two Workers AI keys are read: the same .env holds the calendar feed
+    # URL and the Discord webhook, which this service must not pick up.
+    env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
+    with open(env_path, encoding="utf-8") as f:
+        for line in f:
+            key, sep, value = line.strip().partition("=")
+            if sep and key.strip() in ("CF_ACCOUNT_ID", "CF_AI_TOKEN"):
+                env[key.strip()] = value.strip().strip('"')
+    if len(env) < 2:
+        raise RuntimeError("CF_ACCOUNT_ID / CF_AI_TOKEN not set in .env")
+    if _workers_ai_neurons_today() >= CHAT_NEURON_CEILING:
+        raise RuntimeError("Workers AI daily neuron budget nearly spent")
+    req = urllib.request.Request(
+        f"https://api.cloudflare.com/client/v4/accounts/{env['CF_ACCOUNT_ID']}/ai/v1/chat/completions",
+        data=json.dumps({"model": WORKERS_AI_CHAT_MODEL, "messages": messages,
+                         "max_tokens": OLLAMA_CHAT_MAX_TOKENS}).encode(),
+        headers={"Content-Type": "application/json", "Authorization": f"Bearer {env['CF_AI_TOKEN']}"},
+    )
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        body = json.loads(resp.read())
+    neurons = (body.get("usage") or {}).get("neurons")
+    if neurons is not None:
+        try:
+            with open(WORKERS_AI_LEDGER, "a", encoding="utf-8") as f:
+                f.write(json.dumps({"day": _utc_day(), "neurons": round(float(neurons), 2),
+                                    "job": "voice_chat"}) + "\n")
+        except OSError as exc:
+            log.warning("could not record Workers AI usage: %s", exc)
+    choice = body["choices"][0]
+    reply = (choice["message"].get("content") or "").strip()
+    if not reply:
+        raise RuntimeError("Workers AI returned an empty reply")
+    return reply, choice.get("finish_reason") == "length"
+
+
 def _ollama_fallback(text: str) -> dict:
     # Chat mode for phrases that match no command. Reply-only: the LLM's
     # output is spoken back, never routed into COMMANDS.
     history = _recent_chat_turns()
-    payload = json.dumps({
-        "model": OLLAMA_CHAT_MODEL,
-        "messages": [
-            {"role": "system", "content": OLLAMA_SYSTEM_PROMPT},
-            *history,
-            {"role": "user", "content": text},
-        ],
-        "stream": False,
-        "think": False,  # qwen3 would spend the whole token cap on hidden reasoning
-        "keep_alive": "24h",
-        "options": {"num_predict": OLLAMA_CHAT_MAX_TOKENS},
-    }).encode()
-    req = urllib.request.Request(
-        f"{OLLAMA_URL}/api/chat",
-        data=payload,
-        headers={"Content-Type": "application/json"},
-    )
+    messages = [
+        {"role": "system", "content": OLLAMA_SYSTEM_PROMPT},
+        *history,
+        {"role": "user", "content": text},
+    ]
+    model = "workers-ai"
+    reply = None
     try:
-        with urllib.request.urlopen(req, timeout=OLLAMA_CHAT_TIMEOUT) as resp:
-            body = json.loads(resp.read())
-        reply = body.get("message", {}).get("content", "")
-        truncated = body.get("done_reason") == "length"
+        reply, truncated = _workers_ai_chat(messages)
     except Exception as exc:
-        log.error("ollama fallback failed: %s", exc)
-        return {"command": None, "status": "chat_error", "reply": "chat engine unavailable"}
+        log.warning("Workers AI chat failed (%s) -- falling back to local %s", exc, OLLAMA_CHAT_MODEL)
+        model = OLLAMA_CHAT_MODEL
+    if reply is None:
+        payload = json.dumps({
+            "model": OLLAMA_CHAT_MODEL,
+            "messages": messages,
+            "stream": False,
+            "think": False,  # qwen3 would spend the whole token cap on hidden reasoning
+            "keep_alive": "24h",
+            "options": {"num_predict": OLLAMA_CHAT_MAX_TOKENS},
+        }).encode()
+        req = urllib.request.Request(
+            f"{OLLAMA_URL}/api/chat",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=OLLAMA_CHAT_TIMEOUT) as resp:
+                body = json.loads(resp.read())
+            reply = body.get("message", {}).get("content", "")
+            truncated = body.get("done_reason") == "length"
+        except Exception as exc:
+            log.error("ollama fallback failed: %s", exc)
+            return {"command": None, "status": "chat_error", "reply": "chat engine unavailable"}
     # Thinking models (qwen3, deepseek-r1) wrap reasoning in <think> tags.
     reply = re.sub(r"<think>.*?</think>", "", reply, flags=re.S).strip()
     # The cap stops mid-word, which TTS then reads out as a sentence that just
@@ -2140,6 +2218,8 @@ def _ollama_fallback(text: str) -> dict:
     # would read them aloud, so strip them code-side (same approach as _snap_weekday).
     reply = re.sub(r"[（(][^）)]*[）)]", "", reply)
     reply = re.sub(r"[ \t]{2,}", " ", reply).strip()
+    # The prompt asks for at most three sentences; Llama 3.3 adds filler after them.
+    reply = "".join(re.findall(r".+?[。！？!?…]+[」』）)\"']*|.+$", reply, re.S)[:3]).strip()
     # With conversation memory the model parrots whole riffs from its own
     # past replies verbatim every turn (the 阿華田 bit hit 100% of replies).
     # Drop sentences that verbatim-repeat a long sentence from an injected
@@ -2159,7 +2239,7 @@ def _ollama_fallback(text: str) -> dict:
             reply = "".join(kept).strip()
     if not reply:
         return {"command": None, "status": "chat_error", "reply": "chat engine returned nothing"}
-    log.info("chat reply (%s): %r", OLLAMA_CHAT_MODEL, reply)
+    log.info("chat reply (%s): %r", model, reply)
     return {"command": None, "status": "chat", "reply": _localize_places(reply)}
 
 

@@ -96,8 +96,16 @@ service may hold a Workers AI token (`CF_AI_TOKEN`) for LLM calls that carry
 no personal data (e.g. public news headlines, public market data). Reasoning:
 no personal data is sent, and against local Ollama on the 4 GB GTX 1650 it is
 several times faster (benchmarked 2026-10-01) at negligible cost (10,000 free
-neurons/day). Chat transcripts, reminders and anything else personal stay on
-local Ollama.
+neurons/day). Reminders and anything else personal stay on local Ollama.
+
+**Amendment — chat fallback (owner decision, 2026-11-09):** unmatched speech
+(the chat fallback in `asr/router.py`) is answered by Workers AI first, because
+the local 4-8B models stated wrong facts (Japan 37M, Singapore 580k). The request
+carries the system prompt, the last 8 chat turns of the last 2 h, and the new
+utterance — chat only: command entries, health data, reminders and Recall stay
+local. Local Ollama is the fallback when Cloudflare is unreachable or the day's
+neuron ledger passes 8,500. The service reads only `CF_ACCOUNT_ID` / `CF_AI_TOKEN`
+from the repo-root `.env`; it does not read the other keys there.
 
 **Writes — marker-file hand-off** (as above), plus an idempotency key in the
 marker and the existing spoken-確認 flow for anything destructive. Not yet
@@ -206,7 +214,9 @@ the bytes removed — nothing is double-synced or lost. If the service appends
 mid-prune, the run aborts and retries the next day.
 
 **Recall (記唔記得, since 2026-10-12)** searches this file and answers with the
-local Ollama model only — never Workers AI, since history is personal data. A
+local Ollama model only — never Workers AI, since history is personal data (the
+chat fallback sends its last 8 turns to Workers AI, per the 2026-11-09 amendment
+above; Recall never does). A
 recall reply can quote chat turns, so it is recorded with `command == null`
 (status `recall`): that keeps it out of the Notion mirror and under the 30-day
 chat retention above, with no change to either script.
