@@ -306,4 +306,4 @@ def main() -> None:
 if __name__ == "__main__":
     from notify import run_job
 
-    run_job("workflows", main)
+    run_job("workflows", main, timeout=240)

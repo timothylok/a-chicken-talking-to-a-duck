@@ -130,4 +130,4 @@ def main() -> int:
 if __name__ == "__main__":
     from notify import run_job
 
-    sys.exit(run_job("calendar_sync", main))
+    sys.exit(run_job("calendar_sync", main, timeout=240))

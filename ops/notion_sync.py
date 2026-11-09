@@ -166,4 +166,4 @@ def main() -> None:
 if __name__ == "__main__":
     from notify import run_job
 
-    run_job("notion_sync", main)
+    run_job("notion_sync", main, timeout=240)

@@ -107,4 +107,4 @@ def main() -> None:
 if __name__ == "__main__":
     from notify import run_job
 
-    run_job("reminder_alerts", main)
+    run_job("reminder_alerts", main, timeout=100)

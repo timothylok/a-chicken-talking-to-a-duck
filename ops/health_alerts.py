@@ -168,4 +168,4 @@ def main() -> None:
 if __name__ == "__main__":
     from notify import run_job
 
-    run_job("health_alerts", main)
+    run_job("health_alerts", main, timeout=240)

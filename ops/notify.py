@@ -20,6 +20,7 @@ import json
 import logging
 import os
 import sys
+import threading
 import time
 import urllib.request
 
@@ -82,29 +83,55 @@ def report_failure(job: str, detail: str) -> bool:
     return notify_discord(f"{job} failed", detail)
 
 
-def run_job(job: str, fn):
+def _report_once_an_hour(job: str, detail: str) -> None:
+    """Discord-post a job problem at most once per FAILURE_QUIET_SECS per job."""
+    try:
+        with open(FAILURE_STATE, encoding="utf-8") as f:
+            state = json.load(f)
+    except (OSError, ValueError):
+        state = {}
+    now = time.time()
+    if now - state.get(job, 0) < FAILURE_QUIET_SECS:
+        return
+    sent = report_failure(job, detail[:1500])
+    logging.getLogger(job).info("report to Discord %s", "sent" if sent else "NOT sent")
+    if sent:
+        state[job] = now
+        with open(FAILURE_STATE, "w", encoding="utf-8") as f:
+            json.dump(state, f)
+
+
+def run_job(job: str, fn, timeout: "float | None" = None):
     """Run a scheduled job's main(). An uncaught exception is written to the job's
     own log (pythonw discards stderr, so it used to vanish), posted to Discord at
     most once per FAILURE_QUIET_SECS per job (an every-minute task would otherwise
-    page every minute), then exits 1 like the traceback it replaces."""
+    page every minute), then exits 1 like the traceback it replaces.
+
+    timeout (seconds): for the every-minute tasks only. A run stuck in a blocking
+    network call kept Task Scheduler's IgnoreNew from launching anything else for
+    13 h (2026-11-08/09: Workflows, Health Alerts, Notion Sync, Heartbeat,
+    Calendar Sync), and the task's own time limit did not kill it. A timer thread
+    force-exits the process instead."""
+    watchdog = None
+    if timeout:
+        def _hung():
+            logging.getLogger(job).error("%s hung for over %ss -- force-exiting", job, timeout)
+            try:
+                _report_once_an_hour(job, f"hung for over {timeout:.0f}s and was force-exited")
+            finally:
+                os._exit(1)
+        watchdog = threading.Timer(timeout, _hung)
+        watchdog.daemon = True
+        watchdog.start()
     try:
         return fn()
     except Exception as exc:
         logging.getLogger(job).exception("%s crashed", job)
-        try:
-            with open(FAILURE_STATE, encoding="utf-8") as f:
-                state = json.load(f)
-        except (OSError, ValueError):
-            state = {}
-        now = time.time()
-        if now - state.get(job, 0) >= FAILURE_QUIET_SECS:
-            sent = report_failure(job, f"{type(exc).__name__}: {exc}"[:1500])
-            logging.getLogger(job).info("crash report to Discord %s", "sent" if sent else "NOT sent")
-            if sent:
-                state[job] = now
-                with open(FAILURE_STATE, "w", encoding="utf-8") as f:
-                    json.dump(state, f)
+        _report_once_an_hour(job, f"{type(exc).__name__}: {exc}")
         sys.exit(1)
+    finally:
+        if watchdog:
+            watchdog.cancel()
 
 
 if __name__ == "__main__":
