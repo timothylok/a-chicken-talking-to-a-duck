@@ -895,9 +895,21 @@ def _describe_weather(code: int, lang: str = "yue") -> str:
     return ""
 
 
+def _open_meteo_json(url: str) -> dict:
+    # open-meteo intermittently stalls the TLS handshake (2026-11-15 17:38,
+    # 09:55); a fresh connection almost always succeeds, so retry fast.
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(url, timeout=5) as resp:
+                return json.loads(resp.read())
+        except OSError:
+            if attempt == 2:
+                raise
+            time.sleep(0.5)
+
+
 def _weather_today(lang: str = "yue") -> tuple[str, dict]:
-    with urllib.request.urlopen(OPEN_METEO_URL, timeout=10) as resp:
-        payload = json.loads(resp.read())
+    payload = _open_meteo_json(OPEN_METEO_URL)
     current = payload["current"]
     daily = payload["daily"]
     data = {
@@ -940,8 +952,7 @@ JACKET_IMMINENT_PROB = 60
 
 
 def _jacket_check(lang: str = "yue") -> tuple[str, dict]:
-    with urllib.request.urlopen(JACKET_URL, timeout=10) as resp:
-        payload = json.loads(resp.read())
+    payload = _open_meteo_json(JACKET_URL)
     code = payload["current"]["weather_code"]
     probs = payload["hourly"]["precipitation_probability"] or [0]
     imminent = max(p for p in probs if p is not None) if any(p is not None for p in probs) else 0
