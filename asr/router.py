@@ -951,11 +951,34 @@ JACKET_URL = (
 JACKET_IMMINENT_PROB = 60
 
 
+# Second source for JACKET_CHECK when open-meteo is unreachable (its connections
+# drop in bursts from this box, 2026-11-17). met.no gives rain amounts, not
+# probabilities: >= 0.2 mm in the next hour = raining, >= 0.5 mm over the next
+# two hours = imminent (reported as the 60 % threshold value).
+MET_NO_URL = "https://api.met.no/weatherapi/locationforecast/2.0/complete?lat=-36.85&lon=174.76"
+
+
+def _jacket_met_no() -> tuple[int, int]:
+    req = urllib.request.Request(MET_NO_URL, headers={"User-Agent": "voice-os-weather-fallback/1.0"})
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        series = json.loads(resp.read())["properties"]["timeseries"]
+    amounts = [t["data"]["next_1_hours"]["details"]["precipitation_amount"] for t in series[:2]]
+    code = 61 if amounts[0] >= 0.2 else 0
+    imminent = JACKET_IMMINENT_PROB if sum(amounts) >= 0.5 else 0
+    return code, imminent
+
+
 def _jacket_check(lang: str = "yue") -> tuple[str, dict]:
-    payload = _open_meteo_json(JACKET_URL)
-    code = payload["current"]["weather_code"]
-    probs = payload["hourly"]["precipitation_probability"] or [0]
-    imminent = max(p for p in probs if p is not None) if any(p is not None for p in probs) else 0
+    source = "open-meteo"
+    try:
+        payload = _open_meteo_json(JACKET_URL)
+        code = payload["current"]["weather_code"]
+        probs = payload["hourly"]["precipitation_probability"] or [0]
+        imminent = max(p for p in probs if p is not None) if any(p is not None for p in probs) else 0
+    except OSError as e:
+        log.warning("JACKET_CHECK: open-meteo failed (%s), using met.no", e)
+        code, imminent = _jacket_met_no()
+        source = "met.no"
     raining = code >= 51  # WMO: drizzle/rain/snow/showers/thunder all mean "wet"
     if lang == "en":
         # The 帶-avoidance rule below only matters for the iPhone leave-home
@@ -973,7 +996,7 @@ def _jacket_check(lang: str = "yue") -> tuple[str, dict]:
             reply = f"就嚟落雨，兩個鐘內機會百分之{imminent}，帶定遮啦"
         else:
             reply = "而家冇雨，放心出門"
-    return reply, {"raining": raining, "imminent_prob": imminent, "code": code}
+    return reply, {"raining": raining, "imminent_prob": imminent, "code": code, "source": source}
 
 
 def _yesterday_weather_data() -> dict | None:
